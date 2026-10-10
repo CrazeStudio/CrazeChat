@@ -28,6 +28,8 @@ class ProfileImageManager(private val context: Context) {
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        // Never follow an HTTPS redirect down to unencrypted HTTP.
+        .followSslRedirects(false)
         .build()
 
     private val _pfpVersion = MutableStateFlow<Long>(System.currentTimeMillis())
@@ -98,18 +100,19 @@ class ProfileImageManager(private val context: Context) {
         if (trimmed.isBlank()) {
             return Pair(false, "Image URL cannot be empty")
         }
-        if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
-            return Pair(false, "URL must start with http:// or https://")
-        }
         return try {
             val uri = URI(trimmed)
-            if (uri.host.isNullOrBlank()) {
-                Pair(false, "Invalid host in image URL")
-            } else {
-                Pair(true, null)
+            when {
+                !uri.scheme.equals("https", ignoreCase = true) ->
+                    Pair(false, "Image URLs must use HTTPS")
+                uri.host.isNullOrBlank() ->
+                    Pair(false, "Invalid host in image URL")
+                uri.userInfo != null ->
+                    Pair(false, "Image URLs must not contain embedded credentials")
+                else -> Pair(true, null)
             }
         } catch (e: Exception) {
-            Pair(false, "Invalid URL structure: ${e.message}")
+            Pair(false, "Invalid URL structure")
         }
     }
 
@@ -178,16 +181,37 @@ class ProfileImageManager(private val context: Context) {
                 .header("User-Agent", "CrazeChat/1.0 (Android E2EE Messenger)")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(IOException("HTTP error ${response.code} downloading image"))
-            }
+            val rawBytes = httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP error ${response.code} downloading image"))
+                }
 
-            val body = response.body ?: return@withContext Result.failure(IOException("Empty response from image host"))
-            val rawBytes = body.bytes()
+                val body = response.body
+                    ?: return@withContext Result.failure(IOException("Empty response from image host"))
 
-            if (rawBytes.size > MAX_DOWNLOAD_BYTES) {
-                return@withContext Result.failure(IllegalArgumentException("Image is too large (${rawBytes.size / (1024 * 1024)}MB). Maximum allowed is 10MB."))
+                // Reject known oversized bodies before reading, then enforce the limit while streaming
+                // so a missing or dishonest Content-Length cannot exhaust memory.
+                if (body.contentLength() > MAX_DOWNLOAD_BYTES.toLong()) {
+                    return@withContext Result.failure(
+                        IllegalArgumentException("Image exceeds the 10MB download limit")
+                    )
+                }
+
+                body.byteStream().use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    var totalBytes = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count == -1) break
+                        totalBytes += count
+                        if (totalBytes > MAX_DOWNLOAD_BYTES) {
+                            throw IOException("Image exceeds the 10MB download limit")
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
             }
 
             // Downscale and compress into optimized format
