@@ -47,7 +47,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -843,7 +842,7 @@ fun ChatScreen(
                                 modifier = Modifier.size(22.dp)
                             )
                         },
-                        modifier = Modifier.clickable(enabled = isWithin10Min) {
+                        modifier = Modifier.clickable(enabled = isWithin10Min && !isMessageActionSheetClosing) {
                             editingMessage = selected
                             inputMessage = decryptedText
                             dismissMessageActionSheet()
