@@ -669,7 +669,8 @@ class FirebaseRepository {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
             override fun onChildRemoved(snapshot: DataSnapshot) {
-                snapshot.key?.let { onReactionsUpdated(it, "{}") }
+                val targetMessageId = snapshot.key ?: return
+                onReactionsUpdated(targetMessageId, "{}")
             }
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
 
