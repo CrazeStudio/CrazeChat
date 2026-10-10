@@ -1269,6 +1269,16 @@ fun MessageBubbleItem(
                                     tint = Color.White.copy(alpha = 0.85f)
                                 )
                             }
+                            "FAILED" -> {
+                                Icon(
+                                    imageVector = Icons.Default.ErrorOutline,
+                                    contentDescription = "Failed to send. Tap to retry",
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable { viewModel.retryMessage(message.messageId) },
+                                    tint = Color(0xFFFF8A80)
+                                )
+                            }
                             "SERVER_DELETED" -> {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_server_deleted),
