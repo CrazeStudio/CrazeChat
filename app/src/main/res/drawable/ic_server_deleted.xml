@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp"
+    android:height="18dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Double check lines in bright emerald cyan -->
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M18,7l-1.41,-1.41l-6.34,6.34l1.41,1.41L18,7zM0.29,12.29l1.41,-1.41L7,16.17L19.29,3.88l1.41,1.41L7,19L0.29,12.29zM12.71,17.59l1.41,-1.41l2.59,2.59l-1.41,1.41L12.71,17.59z" />
+</vector>

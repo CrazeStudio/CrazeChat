@@ -1,0 +1,31 @@
+{
+  "rules": {
+    "users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["username"],
+      "$userId": {
+        ".read": "$userId === auth.uid",
+        ".write": "$userId === auth.uid",
+        "inbox": {
+          ".read": "$userId === auth.uid",
+          ".write": "$userId === auth.uid"
+        },
+        "groups": {
+          ".read": "$userId === auth.uid",
+          ".write": "$userId === auth.uid"
+        }
+      }
+    },
+    "account_backups": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "CrazeChat",
+  "description": "A private end-to-end encrypted messaging app using Firebase Realtime Database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

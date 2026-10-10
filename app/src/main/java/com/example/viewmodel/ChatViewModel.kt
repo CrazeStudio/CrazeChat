@@ -1,0 +1,540 @@
+package com.example.viewmodel
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.*
+import com.google.firebase.database.ChildEventListener
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.UUID
+
+class ChatViewModel(application: Application, val chatId: String) : AndroidViewModel(application) {
+    companion object {
+        var activeChatId: String? = null
+    }
+
+    private val db = CrazeDatabase.getDatabase(application)
+    private val messageDao = db.messageDao()
+    private val chatDao = db.chatDao()
+    private val userPrefs = UserPreferences(application)
+    private val firebaseRepo = FirebaseRepository()
+    private val soundEffects = SoundEffectsManager.getInstance(application)
+
+    val messages: StateFlow<List<MessageEntity>> = messageDao.getMessagesForChat(chatId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pinnedMessages: StateFlow<List<MessageEntity>> = messageDao.getPinnedMessages(chatId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _replyTargetMessage = MutableStateFlow<MessageEntity?>(null)
+    val replyTargetMessage: StateFlow<MessageEntity?> = _replyTargetMessage.asStateFlow()
+
+    private val _chat = MutableStateFlow<ChatEntity?>(null)
+    val chat: StateFlow<ChatEntity?> = _chat.asStateFlow()
+
+    val currentUserId: StateFlow<String> = userPrefs.userIdFlow
+        .map { it ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val currentUsername: StateFlow<String> = userPrefs.usernameFlow
+        .map { it ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val privateKey: StateFlow<String> = userPrefs.privateKeyFlow
+        .map { it ?: "" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    private val _groupInfo = MutableStateFlow<FirebaseGroupDto?>(null)
+    val groupInfo: StateFlow<FirebaseGroupDto?> = _groupInfo.asStateFlow()
+
+    private var firebaseMessageListener: ChildEventListener? = null
+    private var observationJob: Job? = null
+
+    init {
+        activeChatId = chatId
+        loadChatDetails()
+        loadGroupDetailsIfGroup()
+        startObservingFirebaseMessages()
+        markAsSeen()
+    }
+
+    fun markAsSeen() {
+        viewModelScope.launch {
+            userPrefs.userIdFlow.first()?.let { myId ->
+                val entity = chatDao.getChatById(ownerUserId = myId, chatId = chatId)
+                if (entity != null && entity.unreadCount > 0) {
+                    chatDao.insertChat(entity.copy(unreadCount = 0))
+                }
+            }
+        }
+    }
+
+    fun clearAllChatMessages() {
+        viewModelScope.launch {
+            messageDao.deleteAllMessagesForChat(chatId)
+            soundEffects.playMessageDeleted()
+        }
+    }
+
+    private fun loadChatDetails() {
+        viewModelScope.launch {
+            userPrefs.userIdFlow.collect { myId ->
+                if (!myId.isNullOrEmpty()) {
+                    val entity = chatDao.getChatById(ownerUserId = myId, chatId = chatId)
+                    if (entity != null) {
+                        if (entity.unreadCount > 0) {
+                            val resetChat = entity.copy(unreadCount = 0)
+                            chatDao.insertChat(resetChat)
+                            _chat.value = resetChat
+                        } else {
+                            _chat.value = entity
+                        }
+                        if (entity.isGroup) {
+                            loadGroupDetailsIfGroup()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadGroupDetailsIfGroup() {
+        viewModelScope.launch {
+            if (chatId.startsWith("group_")) {
+                val info = firebaseRepo.getGroupInfo(chatId)
+                if (info != null) {
+                    _groupInfo.value = info
+                    val myId = userPrefs.userIdFlow.first() ?: return@launch
+                    val current = _chat.value
+                    if (current != null) {
+                        val updated = current.copy(
+                            isGroup = true,
+                            groupName = info.groupName,
+                            groupOwnerId = info.groupOwnerId,
+                            pinnedMessageId = info.pinnedMessageId,
+                            memberIdsJson = info.members.keys.joinToString(",")
+                        )
+                        chatDao.insertChat(updated)
+                        _chat.value = updated
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startObservingFirebaseMessages() {
+        observationJob?.cancel()
+        observationJob = viewModelScope.launch {
+            combine(userPrefs.userIdFlow, userPrefs.privateKeyFlow) { uid, privKey ->
+                if (uid != null && privKey != null) Pair(uid, privKey) else null
+            }.filterNotNull().collect { (myId, privateKeyVal) ->
+                if (firebaseMessageListener != null) return@collect
+
+                val chatEntity = chatDao.getChatById(ownerUserId = myId, chatId = chatId)
+                val isGroup = chatEntity?.isGroup == true || chatId.startsWith("group_")
+                var peerPublicKey = chatEntity?.peerPublicKey ?: ""
+
+                firebaseMessageListener = firebaseRepo.observeMessages(
+                    chatId = chatId,
+                    onMessageReceived = { msgId, msgDto ->
+                        viewModelScope.launch {
+                            // In group chat, accept messages from anyone other than me.
+                            // In 1-on-1 chat, accept messages addressed to me.
+                            val isForMe = if (isGroup) {
+                                msgDto.senderId != myId
+                            } else {
+                                msgDto.receiverId == myId
+                            }
+
+                            if (isForMe) {
+                                val existing = messageDao.getMessageById(msgId)
+
+                                // Handle Reactions (transient signaling messages)
+                                if (msgDto.reactionTargetId.isNotBlank()) {
+                                    val targetMsg = messageDao.getMessageById(msgDto.reactionTargetId)
+                                    if (targetMsg != null) {
+                                        val reactions = if (targetMsg.reactionsJson.isNotBlank()) {
+                                            try { JSONObject(targetMsg.reactionsJson) } catch (e: Exception) { JSONObject() }
+                                        } else { JSONObject() }
+                                        reactions.put(msgDto.senderId, msgDto.reactionEmoji)
+                                        messageDao.updateReactions(targetMsg.messageId, reactions.toString())
+                                    }
+                                    // Delete reaction message from server after processing to keep cloud clean
+                                    firebaseRepo.deleteMessage(chatId, msgId)
+                                    return@launch
+                                }
+
+                                if (existing == null) {
+                                    try {
+                                        val decryptedText = if (isGroup) {
+                                            CryptoManager.decryptGroupMessage(chatId, msgDto.ciphertext, msgDto.nonce)
+                                        } else {
+                                            if (peerPublicKey.isBlank()) {
+                                                val senderUser = firebaseRepo.findUserById(msgDto.senderId)
+                                                if (senderUser != null) {
+                                                    peerPublicKey = senderUser.publicKey
+                                                }
+                                            }
+                                            CryptoManager.decryptMessage(
+                                                myPrivateKeyBase64 = privateKeyVal,
+                                                theirPublicKeyBase64 = peerPublicKey,
+                                                ciphertextBase64 = msgDto.ciphertext,
+                                                nonceBase64 = msgDto.nonce
+                                            )
+                                        }
+
+                                        if (decryptedText.isNotBlank()) {
+                                            val newMsg = MessageEntity(
+                                                messageId = msgId,
+                                                chatId = chatId,
+                                                senderId = msgDto.senderId,
+                                                receiverId = msgDto.receiverId,
+                                                plaintext = "",
+                                                ciphertext = msgDto.ciphertext,
+                                                nonce = msgDto.nonce,
+                                                timestamp = msgDto.timestamp,
+                                                status = "READ",
+                                                senderUsername = msgDto.senderUsername,
+                                                isEdited = msgDto.isEdited,
+                                                editedAt = msgDto.editedAt,
+                                                isPinned = msgDto.isPinned,
+                                                pinnedAt = msgDto.pinnedAt,
+                                                isDeleted = msgDto.isDeleted,
+                                                replyToId = msgDto.replyToId,
+                                                replyToText = msgDto.replyToText,
+                                                replyToSender = msgDto.replyToSender
+                                            )
+                                            messageDao.insertMessage(newMsg)
+
+                                            // Play pleasant receive sound effect
+                                            soundEffects.playMessageReceived()
+
+                                            // Update chat entity
+                                            val displayMsg = if (msgDto.senderId == myId) {
+                                                "You: $decryptedText"
+                                            } else if (isGroup) {
+                                                if (msgDto.senderUsername.isNotBlank()) "${msgDto.senderUsername}: $decryptedText" else decryptedText
+                                            } else {
+                                                decryptedText
+                                            }
+                                            val updatedChat = (chatEntity ?: ChatEntity(
+                                                ownerUserId = myId,
+                                                chatId = chatId,
+                                                peerUserId = msgDto.senderId,
+                                                peerUsername = msgDto.senderUsername.ifBlank { "User" },
+                                                peerPublicKey = peerPublicKey,
+                                                lastMessage = "",
+                                                lastTimestamp = 0L,
+                                                unreadCount = 0,
+                                                isGroup = isGroup
+                                            )).copy(
+                                                lastMessage = displayMsg,
+                                                lastTimestamp = msgDto.timestamp,
+                                                unreadCount = 0
+                                            )
+                                            chatDao.insertChat(updatedChat)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("ChatViewModel", "Decryption failed for $msgId: ${e.message}")
+                                    }
+                                }
+
+                                // Auto server delete for 1-on-1 messages and ALL replies to maintain strict cloud privacy
+                                if (!isGroup || msgDto.replyToId.isNotBlank()) {
+                                    firebaseRepo.deleteMessage(chatId, msgId)
+                                }
+                            }
+                        }
+                    },
+                    onMessageDeletedFromServer = { msgId ->
+                        viewModelScope.launch {
+                            val existing = messageDao.getMessageById(msgId)
+                            if (existing != null && existing.senderId == myId) {
+                                messageDao.updateMessageStatus(msgId, "SERVER_DELETED")
+                            }
+                        }
+                    },
+                    onMessageUpdated = { msgId, updatedDto ->
+                        viewModelScope.launch {
+                            val existing = messageDao.getMessageById(msgId)
+                            if (existing != null) {
+                                val updated = existing.copy(
+                                    ciphertext = updatedDto.ciphertext,
+                                    nonce = updatedDto.nonce,
+                                    isEdited = updatedDto.isEdited,
+                                    editedAt = updatedDto.editedAt,
+                                    isPinned = updatedDto.isPinned,
+                                    pinnedAt = updatedDto.pinnedAt,
+                                    isDeleted = updatedDto.isDeleted
+                                )
+                                messageDao.insertMessage(updated)
+
+                                if (updatedDto.isPinned && !existing.isPinned) {
+                                    soundEffects.playMessagePinned()
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    fun sendMessage(plaintext: String, replyToPreviewText: String = "") {
+        if (plaintext.isBlank()) return
+
+        viewModelScope.launch {
+            val myId = userPrefs.userIdFlow.first() ?: return@launch
+            val myUsername = userPrefs.usernameFlow.first() ?: "User"
+            val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
+            val chatEntity = _chat.value ?: return@launch
+            val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+
+            val messageId = UUID.randomUUID().toString()
+            val timestamp = System.currentTimeMillis()
+            val replyTarget = _replyTargetMessage.value
+
+            try {
+                val encrypted = if (isGroup) {
+                    CryptoManager.encryptGroupMessage(chatId, plaintext)
+                } else {
+                    CryptoManager.encryptMessage(
+                        myPrivateKeyBase64 = privateKeyVal,
+                        theirPublicKeyBase64 = chatEntity.peerPublicKey,
+                        plaintext = plaintext
+                    )
+                }
+
+                val localMsg = MessageEntity(
+                    messageId = messageId,
+                    chatId = chatId,
+                    senderId = myId,
+                    receiverId = if (isGroup) "" else chatEntity.peerUserId,
+                    plaintext = plaintext, // Store plaintext locally
+                    ciphertext = encrypted.ciphertext,
+                    nonce = encrypted.nonce,
+                    timestamp = timestamp,
+                    status = "SENDING",
+                    senderUsername = myUsername,
+                    replyToSender = replyTarget?.senderUsername ?: "",
+                    replyToText = replyToPreviewText
+                )
+                messageDao.insertMessage(localMsg)
+
+                // Play sound effect immediately for responsive feel
+                soundEffects.playMessageSent()
+
+                val sentSuccessfully = firebaseRepo.sendMessage(
+                    chatId = chatId,
+                    messageId = messageId,
+                    senderId = myId,
+                    receiverId = if (isGroup) "" else chatEntity.peerUserId,
+                    ciphertext = encrypted.ciphertext,
+                    nonce = encrypted.nonce,
+                    timestamp = timestamp,
+                    senderUsername = myUsername,
+                    replyToId = replyTarget?.messageId ?: "",
+                    replyToText = replyToPreviewText,
+                    replyToSender = replyTarget?.senderUsername ?: ""
+                )
+
+                // Clear reply target after sending
+                _replyTargetMessage.value = null
+
+                if (sentSuccessfully) {
+                    messageDao.updateMessageStatus(messageId, "SENT")
+                }
+
+                chatDao.insertChat(chatEntity.copy(
+                    lastMessage = "You: $plaintext",
+                    lastTimestamp = timestamp
+                ))
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Send message failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Edit message: allowed strictly within 10 minutes of creation by sender
+     */
+    fun editMessage(messageId: String, newPlaintext: String, onResult: (Boolean, String?) -> Unit) {
+        if (newPlaintext.isBlank()) {
+            onResult(false, "Message cannot be empty")
+            return
+        }
+
+        viewModelScope.launch {
+            val myId = userPrefs.userIdFlow.first() ?: return@launch
+            val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
+            val chatEntity = _chat.value ?: return@launch
+            val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+
+            val existing = messageDao.getMessageById(messageId)
+            if (existing == null) {
+                onResult(false, "Message not found")
+                return@launch
+            }
+
+            if (existing.senderId != myId) {
+                onResult(false, "You can only edit your own messages")
+                return@launch
+            }
+
+            // Check 10-minute limit (10 * 60 * 1000 ms = 600,000 ms)
+            val elapsed = System.currentTimeMillis() - existing.timestamp
+            if (elapsed > 10 * 60 * 1000L) {
+                onResult(false, "Edit window expired (10 minutes limit)")
+                return@launch
+            }
+
+            try {
+                val encrypted = if (isGroup) {
+                    CryptoManager.encryptGroupMessage(chatId, newPlaintext)
+                } else {
+                    CryptoManager.encryptMessage(
+                        myPrivateKeyBase64 = privateKeyVal,
+                        theirPublicKeyBase64 = chatEntity.peerPublicKey,
+                        plaintext = newPlaintext
+                    )
+                }
+
+                val now = System.currentTimeMillis()
+                messageDao.updateMessageContent(messageId, encrypted.ciphertext, encrypted.nonce, now)
+                firebaseRepo.editMessage(chatId, messageId, encrypted.ciphertext, encrypted.nonce)
+
+                chatDao.insertChat(chatEntity.copy(
+                    lastMessage = "You: $newPlaintext (edited)",
+                    lastTimestamp = now
+                ))
+
+                soundEffects.playClick()
+                onResult(true, null)
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Failed to edit")
+            }
+        }
+    }
+
+    /**
+     * Delete message: "forEveryone" or "forMe"
+     */
+    fun deleteMessage(messageId: String, forEveryone: Boolean) {
+        viewModelScope.launch {
+            val myId = userPrefs.userIdFlow.first() ?: return@launch
+            val existing = messageDao.getMessageById(messageId) ?: return@launch
+
+            if (forEveryone) {
+                // Delete from cloud or mark deleted
+                firebaseRepo.deleteMessage(chatId, messageId)
+                // Mark locally or delete
+                messageDao.deleteMessageById(messageId)
+            } else {
+                messageDao.deleteMessageById(messageId)
+            }
+            soundEffects.playMessageDeleted()
+        }
+    }
+
+    /**
+     * Toggle pin message: pins/unpins in local database and cloud
+     */
+    fun togglePinMessage(messageId: String) {
+        viewModelScope.launch {
+            val myId = userPrefs.userIdFlow.first() ?: return@launch
+            val existing = messageDao.getMessageById(messageId) ?: return@launch
+            val newPinState = !existing.isPinned
+            val now = if (newPinState) System.currentTimeMillis() else 0L
+
+            messageDao.updatePinStatus(messageId, newPinState, now)
+            firebaseRepo.pinMessage(chatId, messageId, newPinState)
+
+            val currentChat = _chat.value
+            if (currentChat != null) {
+                val updatedPinnedId = if (newPinState) messageId else ""
+                chatDao.updatePinnedMessageId(myId, chatId, updatedPinnedId)
+                _chat.value = currentChat.copy(pinnedMessageId = updatedPinnedId)
+            }
+
+            soundEffects.playMessagePinned()
+        }
+    }
+
+    fun setReplyTarget(message: MessageEntity?) {
+        _replyTargetMessage.value = message
+    }
+
+    fun clearReplyTarget() {
+        _replyTargetMessage.value = null
+    }
+
+    fun sendReaction(targetMessageId: String, emoji: String) {
+        viewModelScope.launch {
+            val myId = userPrefs.userIdFlow.first() ?: return@launch
+            val myUsername = userPrefs.usernameFlow.first() ?: "User"
+            val chatEntity = _chat.value ?: return@launch
+            val reactionId = "react_" + UUID.randomUUID().toString()
+            val timestamp = System.currentTimeMillis()
+
+            // Send as a transient signaling message
+            firebaseRepo.sendReaction(
+                chatId = chatId,
+                reactionId = reactionId,
+                senderId = myId,
+                receiverId = if (chatEntity.isGroup) "" else chatEntity.peerUserId,
+                targetMessageId = targetMessageId,
+                emoji = emoji,
+                timestamp = timestamp,
+                senderUsername = myUsername
+            )
+
+            // Update local state immediately for fast feedback
+            val targetMsg = messageDao.getMessageById(targetMessageId)
+            if (targetMsg != null) {
+                val reactions = if (targetMsg.reactionsJson.isNotBlank()) {
+                    try { JSONObject(targetMsg.reactionsJson) } catch (e: Exception) { JSONObject() }
+                } else { JSONObject() }
+                reactions.put(myId, emoji)
+                messageDao.updateReactions(targetMessageId, reactions.toString())
+            }
+        }
+    }
+
+    fun addMemberToGroup(newMemberId: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val cleanId = newMemberId.trim()
+            if (cleanId.isBlank()) {
+                onResult(false, "User ID cannot be empty")
+                return@launch
+            }
+
+            val user = firebaseRepo.findUserById(cleanId)
+            if (user == null) {
+                onResult(false, "User not found with this ID")
+                return@launch
+            }
+
+            val success = firebaseRepo.addGroupMember(chatId, cleanId)
+            if (success) {
+                loadGroupDetailsIfGroup()
+                soundEffects.playClick()
+                onResult(true, "Added ${user.username} to group")
+            } else {
+                onResult(false, "Failed to add user to group")
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        firebaseMessageListener?.let { firebaseRepo.removeMessageListener(chatId, it) }
+        observationJob?.cancel()
+        if (activeChatId == chatId) {
+            activeChatId = null
+        }
+    }
+}
