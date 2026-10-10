@@ -529,6 +529,32 @@ class FirebaseRepository {
         }
     }
 
+    /**
+     * Converts reaction nodes to the JSON map consumed by Room and Compose.
+     * Ignore malformed Firebase values instead of letting a conversion exception escape
+     * a Realtime Database callback and terminate the app process.
+     */
+    private fun safeReactionsToJson(snapshot: DataSnapshot): String {
+        val json = JSONObject()
+        try {
+            snapshot.children.forEach { reaction ->
+                val uid = reaction.key
+                val emoji = try {
+                    reaction.getValue(String::class.java)
+                } catch (e: Exception) {
+                    Log.w("FirebaseRepository", "Ignoring malformed reaction value at ${reaction.key}: ${e.message}")
+                    null
+                }
+                if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) {
+                    json.put(uid, emoji)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseRepository", "Failed to parse reaction snapshot: ${e.message}", e)
+        }
+        return json.toString()
+    }
+
     fun observeMessages(
         chatId: String,
         onMessageReceived: (String, FirebaseMessageDto) -> Unit,
@@ -556,13 +582,7 @@ class FirebaseRepository {
                 val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
                 val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
                 val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
-                val reactionsJson = JSONObject().apply {
-                    snapshot.child("reactions").children.forEach { reaction ->
-                        val uid = reaction.key
-                        val emoji = reaction.getValue(String::class.java)
-                        if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) put(uid, emoji)
-                    }
-                }.toString()
+                val reactionsJson = safeReactionsToJson(snapshot.child("reactions"))
 
                 if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
                     onMessageReceived(
@@ -608,13 +628,7 @@ class FirebaseRepository {
                 val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
                 val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
                 val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
-                val reactionsJson = JSONObject().apply {
-                    snapshot.child("reactions").children.forEach { reaction ->
-                        val uid = reaction.key
-                        val emoji = reaction.getValue(String::class.java)
-                        if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) put(uid, emoji)
-                    }
-                }.toString()
+                val reactionsJson = safeReactionsToJson(snapshot.child("reactions"))
 
                 if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
                     val dto = FirebaseMessageDto(
@@ -670,21 +684,21 @@ class FirebaseRepository {
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
             override fun onChildRemoved(snapshot: DataSnapshot) {
                 val targetMessageId = snapshot.key ?: return
-                onReactionsUpdated(targetMessageId, "{}")
+                try {
+                    onReactionsUpdated(targetMessageId, "{}")
+                } catch (e: Exception) {
+                    Log.e("FirebaseRepository", "Reaction removal callback failed for $targetMessageId: ${e.message}", e)
+                }
             }
             override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
 
             private fun publish(snapshot: DataSnapshot) {
                 val targetMessageId = snapshot.key ?: return
-                val json = JSONObject()
-                snapshot.children.forEach { reaction ->
-                    val uid = reaction.key
-                    val emoji = reaction.getValue(String::class.java)
-                    if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) {
-                        json.put(uid, emoji)
-                    }
+                try {
+                    onReactionsUpdated(targetMessageId, safeReactionsToJson(snapshot))
+                } catch (e: Exception) {
+                    Log.e("FirebaseRepository", "Reaction callback failed for $targetMessageId: ${e.message}", e)
                 }
-                onReactionsUpdated(targetMessageId, json.toString())
             }
 
             override fun onCancelled(error: DatabaseError) {
