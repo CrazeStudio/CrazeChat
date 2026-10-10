@@ -290,7 +290,9 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                     isPinned = updatedDto.isPinned,
                                     pinnedAt = updatedDto.pinnedAt,
                                     isDeleted = updatedDto.isDeleted,
-                                    reactionsJson = updatedDto.reactionsJson.ifBlank { existing.reactionsJson }
+                                    reactionsJson = if (
+                                        updatedDto.reactionsJson.isBlank() || updatedDto.reactionsJson == "{}"
+                                    ) existing.reactionsJson else updatedDto.reactionsJson
                                 )
                                 messageDao.insertMessage(updated)
 
