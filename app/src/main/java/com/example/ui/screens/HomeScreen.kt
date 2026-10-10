@@ -440,8 +440,63 @@ fun HomeScreen(
                 EmptyChatsState(
                     onNewChat = { showCreateChatChoiceSheet = true }
                 )
+            } else if (filteredChats.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp, vertical = 64.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SearchOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "No chats found",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Try another name or clear your search.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(onClick = { searchQuery = "" }) {
+                        Text("Clear search")
+                    }
+                }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 12.dp)
+                ) {
+                    item(key = "conversation_heading") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = if (showSearchBar && searchQuery.isNotBlank()) "Search results" else "Messages",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = filteredChats.size.toString(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     items(filteredChats, key = { it.chatId }) { chat ->
                         ChatItemRow(
                             chat = chat,
@@ -449,8 +504,8 @@ fun HomeScreen(
                             onLongClick = { chatToDelete = chat }
                         )
                         HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                            modifier = Modifier.padding(start = 76.dp)
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            modifier = Modifier.padding(start = 82.dp, end = 16.dp)
                         )
                     }
                 }
@@ -642,12 +697,18 @@ fun ChatItemRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = if (chat.isGroup) (chat.groupName.ifBlank { chat.peerUsername }) else chat.peerUsername,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onBackground
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (chat.isGroup) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -674,11 +735,15 @@ fun ChatItemRow(
                         )
                     }
                 }
-                Text(
-                    text = timeString,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (timeString.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = timeString,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
