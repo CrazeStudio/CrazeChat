@@ -1,5 +1,7 @@
 package com.example.data
 
+import org.json.JSONObject
+
 import android.util.Log
 import com.example.BuildConfig
 import com.google.firebase.database.ChildEventListener
@@ -41,7 +43,8 @@ data class FirebaseMessageDto(
     val reactionEmoji: String = "",
     val replyToId: String = "",
     val replyToText: String = "",
-    val replyToSender: String = ""
+    val replyToSender: String = "",
+    val reactionsJson: String = ""
 )
 
 data class FirebaseGroupDto(
@@ -264,23 +267,22 @@ class FirebaseRepository {
         senderUsername: String = ""
     ): Boolean {
         val database = db ?: return false
+        if (chatId.isBlank() || targetMessageId.isBlank() || senderId.isBlank() || emoji.isBlank()) return false
         return withTimeoutOrNull(8000L) {
             try {
-                val chatRef = database.getReference("chats").child(chatId)
-                val reactionMap = mapOf(
-                    "senderId" to senderId,
-                    "receiverId" to receiverId,
-                    "reactionTargetId" to targetMessageId,
-                    "reactionEmoji" to emoji,
-                    "timestamp" to timestamp,
-                    "senderUsername" to senderUsername,
-                    "ciphertext" to "", // Empty for reactions
-                    "isDeleted" to false
-                )
-                chatRef.child("messages").child(reactionId).setValue(reactionMap).await()
+                // Persist on the target message instead of creating transient message events.
+                // This avoids reaction-event/delete loops that can freeze the chat UI.
+                database.getReference("chats")
+                    .child(chatId)
+                    .child("messages")
+                    .child(targetMessageId)
+                    .child("reactions")
+                    .child(senderId)
+                    .setValue(emoji)
+                    .await()
                 true
             } catch (e: Exception) {
-                Log.e("FirebaseRepository", "sendReaction error: ${e.message}", e)
+                Log.e("FirebaseRepository", "sendReaction failed: ${e.message}", e)
                 false
             }
         } ?: false
@@ -555,8 +557,15 @@ class FirebaseRepository {
                 val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
                 val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
                 val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
+                val reactionsJson = JSONObject().apply {
+                    snapshot.child("reactions").children.forEach { reaction ->
+                        val uid = reaction.key
+                        val emoji = reaction.getValue(String::class.java)
+                        if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) put(uid, emoji)
+                    }
+                }.toString()
 
-                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank()) {
+                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
                     onMessageReceived(
                         msgId,
                         FirebaseMessageDto(
@@ -575,7 +584,8 @@ class FirebaseRepository {
                             reactionEmoji,
                             replyToId,
                             replyToText,
-                            replyToSender
+                            replyToSender,
+                            reactionsJson
                         )
                     )
                 }
@@ -599,8 +609,15 @@ class FirebaseRepository {
                 val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
                 val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
                 val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
+                val reactionsJson = JSONObject().apply {
+                    snapshot.child("reactions").children.forEach { reaction ->
+                        val uid = reaction.key
+                        val emoji = reaction.getValue(String::class.java)
+                        if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) put(uid, emoji)
+                    }
+                }.toString()
 
-                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank()) {
+                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
                     val dto = FirebaseMessageDto(
                         senderId,
                         receiverId,
@@ -617,7 +634,8 @@ class FirebaseRepository {
                         reactionEmoji,
                         replyToId,
                         replyToText,
-                        replyToSender
+                        replyToSender,
+                        reactionsJson
                     )
                     onMessageUpdated?.invoke(msgId, dto)
                 }
