@@ -516,15 +516,7 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.width(6.dp))
 
-                        // Animated Micro-interaction on Send button press
-                        val interactionSource = remember { MutableInteractionSource() }
-                        val isPressed by interactionSource.collectIsPressedAsState()
-                        val sendScale by animateFloatAsState(
-                            targetValue = if (isPressed) 0.88f else 1f,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-                            label = "sendScale"
-                        )
-
+                        // Keep the send control steady and easy to tap.
                         FloatingActionButton(
                             onClick = {
                                 if (inputMessage.isNotBlank()) {
@@ -558,13 +550,10 @@ fun ChatScreen(
                                     }
                                 }
                             },
-                            interactionSource = interactionSource,
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                             shape = CircleShape,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .scale(sendScale),
+                            modifier = Modifier.size(48.dp),
                             elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
                         ) {
                             if (editingMessage != null) {
