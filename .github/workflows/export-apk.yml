@@ -14,8 +14,7 @@ on:
       - ".github/workflows/export-apk.yml"
 
 permissions:
-  contents: read
-  actions: write
+  contents: write
 
 concurrency:
   group: crazechat-apk-${{ github.ref }}
@@ -23,26 +22,13 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build debug APK
+    name: Build and publish debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
-      - name: Free old APK artifact storage
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name == "CrazeChat-debug-apk") | .id' |
-          while read -r artifact_id; do
-            [ -n "$artifact_id" ] || continue
-            gh api --silent --method DELETE \
-              "repos/${GITHUB_REPOSITORY}/actions/artifacts/$artifact_id"
-            echo "Deleted old APK artifact: $artifact_id"
-          done
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -84,10 +70,22 @@ jobs:
       - name: Build APK
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CrazeChat-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 1
+      - name: Publish APK to repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p Apk_Download
+          cp app/build/outputs/apk/debug/*.apk Apk_Download/CrazeChat-debug.apk
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Apk_Download/CrazeChat-debug.apk
+
+          if git diff --cached --quiet; then
+            echo "APK is unchanged; no commit needed."
+            exit 0
+          fi
+
+          git commit -m "Update CrazeChat debug APK"
+          git push origin HEAD:main
