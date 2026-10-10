@@ -274,9 +274,8 @@ class FirebaseRepository {
                 // This avoids reaction-event/delete loops that can freeze the chat UI.
                 database.getReference("chats")
                     .child(chatId)
-                    .child("messages")
-                    .child(targetMessageId)
                     .child("reactions")
+                    .child(targetMessageId)
                     .child(senderId)
                     .setValue(emoji)
                     .await()
@@ -654,6 +653,49 @@ class FirebaseRepository {
         }
         ref.addChildEventListener(listener)
         return listener
+    }
+
+    /**
+     * Observe reactions separately from message records. Direct-chat messages may be
+     * removed from the server after delivery, so reactions cannot live under /messages.
+     */
+    fun observeReactions(
+        chatId: String,
+        onReactionsUpdated: (targetMessageId: String, reactionsJson: String) -> Unit
+    ): ChildEventListener? {
+        val database = db ?: return null
+        val ref = database.getReference("chats").child(chatId).child("reactions")
+        val listener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                snapshot.key?.let { onReactionsUpdated(it, "{}") }
+            }
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+
+            private fun publish(snapshot: DataSnapshot) {
+                val targetMessageId = snapshot.key ?: return
+                val json = JSONObject()
+                snapshot.children.forEach { reaction ->
+                    val uid = reaction.key
+                    val emoji = reaction.getValue(String::class.java)
+                    if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) {
+                        json.put(uid, emoji)
+                    }
+                }
+                onReactionsUpdated(targetMessageId, json.toString())
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("FirebaseRepository", "observeReactions cancelled: ${error.message}")
+            }
+        }
+        ref.addChildEventListener(listener)
+        return listener
+    }
+
+    fun removeReactionListener(chatId: String, listener: ChildEventListener) {
+        db?.getReference("chats")?.child(chatId)?.child("reactions")?.removeEventListener(listener)
     }
 
     fun removeMessageListener(chatId: String, listener: ChildEventListener) {
