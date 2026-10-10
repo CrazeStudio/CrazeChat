@@ -645,7 +645,8 @@ fun ChatScreen(
                         privateKey = privateKey,
                         peerPublicKey = peerPublicKey,
                         chatId = viewModel.chatId,
-                        onLongClick = { selectedMessageForAction = message }
+                        onLongClick = { selectedMessageForAction = message },
+                        onRetry = { viewModel.retryMessage(message.messageId) }
                     )
                 }
 
@@ -1080,7 +1081,8 @@ fun MessageBubbleItem(
     privateKey: String,
     peerPublicKey: String,
     chatId: String,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onRetry: () -> Unit
 ) {
     val decryptedText = remember(message.messageId, message.ciphertext, privateKey, peerPublicKey) {
         if (isGroup) {
@@ -1264,7 +1266,7 @@ fun MessageBubbleItem(
                                     contentDescription = "Failed to send. Tap to retry",
                                     modifier = Modifier
                                         .size(14.dp)
-                                        .clickable { viewModel.retryMessage(message.messageId) },
+                                        .clickable(onClick = onRetry),
                                     tint = Color(0xFFFF8A80)
                                 )
                             }
