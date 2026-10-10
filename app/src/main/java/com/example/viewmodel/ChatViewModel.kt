@@ -200,6 +200,12 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                         }
 
                                         if (decryptedText.isNotBlank()) {
+                                            val decryptedReplyText = decryptReplyPreview(
+                                                encodedPreview = msgDto.replyToText,
+                                                isGroup = isGroup,
+                                                privateKey = privateKeyVal,
+                                                peerPublicKey = peerPublicKey
+                                            )
                                             val newMsg = MessageEntity(
                                                 messageId = msgId,
                                                 chatId = chatId,
@@ -217,7 +223,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                                 pinnedAt = msgDto.pinnedAt,
                                                 isDeleted = msgDto.isDeleted,
                                                 replyToId = msgDto.replyToId,
-                                                replyToText = msgDto.replyToText,
+                                                replyToText = decryptedReplyText,
                                                 replyToSender = msgDto.replyToSender
                                             )
                                             messageDao.insertMessage(newMsg)
@@ -296,6 +302,63 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
         }
     }
 
+    private fun encryptReplyPreview(
+        preview: String,
+        isGroup: Boolean,
+        chatId: String,
+        privateKey: String,
+        peerPublicKey: String
+    ): String {
+        if (preview.isBlank()) return ""
+        return try {
+            val payload = if (isGroup) {
+                CryptoManager.encryptGroupMessage(chatId, preview)
+            } else {
+                CryptoManager.encryptMessage(
+                    myPrivateKeyBase64 = privateKey,
+                    theirPublicKeyBase64 = peerPublicKey,
+                    plaintext = preview
+                )
+            }
+            // Base64 payloads don't contain '|', so this is safe to split on receive.
+            "ENCv1|${payload.nonce}|${payload.ciphertext}"
+        } catch (e: Exception) {
+            Log.e("ChatViewModel", "Reply preview encryption failed: ${e.message}", e)
+            // Fail closed: don't send a plaintext preview if encryption fails.
+            ""
+        }
+    }
+
+    private fun decryptReplyPreview(
+        encodedPreview: String,
+        isGroup: Boolean,
+        privateKey: String,
+        peerPublicKey: String
+    ): String {
+        if (encodedPreview.isBlank()) return ""
+        // Older messages used plaintext reply previews. Keep those readable for compatibility;
+        // all newly sent reply previews use the encrypted ENCv1 format.
+        if (!encodedPreview.startsWith("ENCv1|")) return encodedPreview
+
+        return try {
+            val parts = encodedPreview.split("|", limit = 3)
+            if (parts.size != 3 || parts[1].isBlank() || parts[2].isBlank()) return ""
+            if (isGroup) {
+                CryptoManager.decryptGroupMessage(chatId, parts[2], parts[1])
+            } else {
+                CryptoManager.decryptMessage(
+                    myPrivateKeyBase64 = privateKey,
+                    theirPublicKeyBase64 = peerPublicKey,
+                    ciphertextBase64 = parts[2],
+                    nonceBase64 = parts[1]
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("ChatViewModel", "Reply preview decryption failed: ${e.message}", e)
+            ""
+        }
+    }
+
     fun sendMessage(plaintext: String, replyToPreviewText: String = "") {
         if (plaintext.isBlank()) return
 
@@ -320,6 +383,15 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                         plaintext = plaintext
                     )
                 }
+
+                // Keep the readable preview locally, but never upload it as plaintext.
+                val encryptedReplyPreview = encryptReplyPreview(
+                    preview = replyToPreviewText,
+                    isGroup = isGroup,
+                    chatId = chatId,
+                    privateKey = privateKeyVal,
+                    peerPublicKey = chatEntity.peerPublicKey
+                )
 
                 val localMsg = MessageEntity(
                     messageId = messageId,
@@ -350,7 +422,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                     timestamp = timestamp,
                     senderUsername = myUsername,
                     replyToId = replyTarget?.messageId ?: "",
-                    replyToText = replyToPreviewText,
+                    replyToText = encryptedReplyPreview,
                     replyToSender = replyTarget?.senderUsername ?: ""
                 )
 
