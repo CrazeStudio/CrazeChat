@@ -74,7 +74,24 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val messageActionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var isMessageActionSheetClosing by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    // Keep the sheet composed until its hide animation finishes. Removing ModalBottomSheet
+    // immediately from its onClick can interrupt its anchored-drag/animation state.
+    fun dismissMessageActionSheet() {
+        if (isMessageActionSheetClosing) return
+        isMessageActionSheetClosing = true
+        coroutineScope.launch {
+            try {
+                messageActionSheetState.hide()
+            } finally {
+                selectedMessageForAction = null
+                isMessageActionSheetClosing = false
+            }
+        }
+    }
 
     val isGroupChat = chat?.isGroup == true || viewModel.chatId.startsWith("group_")
     val peerPublicKey = chat?.peerPublicKey ?: ""
@@ -677,7 +694,11 @@ fun ChatScreen(
         }
 
         ModalBottomSheet(
-            onDismissRequest = { selectedMessageForAction = null },
+            sheetState = messageActionSheetState,
+            onDismissRequest = {
+                selectedMessageForAction = null
+                isMessageActionSheetClosing = false
+            },
             containerColor = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
         ) {
@@ -723,9 +744,9 @@ fun ChatScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier
                                 .size(44.dp)
-                                .clickable {
+                                .clickable(enabled = !isMessageActionSheetClosing) {
                                     viewModel.sendReaction(selected.messageId, emoji)
-                                    selectedMessageForAction = null
+                                    dismissMessageActionSheet()
                                 }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -753,9 +774,9 @@ fun ChatScreen(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isMessageActionSheetClosing) {
                         viewModel.setReplyTarget(selected)
-                        selectedMessageForAction = null
+                        dismissMessageActionSheet()
                     }
                 )
 
@@ -770,9 +791,9 @@ fun ChatScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isMessageActionSheetClosing) {
                         viewModel.togglePinMessage(selected.messageId)
-                        selectedMessageForAction = null
+                        dismissMessageActionSheet()
                     }
                 )
 
@@ -825,7 +846,7 @@ fun ChatScreen(
                         modifier = Modifier.clickable(enabled = isWithin10Min) {
                             editingMessage = selected
                             inputMessage = decryptedText
-                            selectedMessageForAction = null
+                            dismissMessageActionSheet()
                         }
                     )
                 }
@@ -840,11 +861,11 @@ fun ChatScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isMessageActionSheetClosing) {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("CrazeChat", decryptedText))
                         Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                        selectedMessageForAction = null
+                        dismissMessageActionSheet()
                     }
                 )
 
@@ -860,9 +881,9 @@ fun ChatScreen(
                                 modifier = Modifier.size(22.dp)
                             )
                         },
-                        modifier = Modifier.clickable {
+                        modifier = Modifier.clickable(enabled = !isMessageActionSheetClosing) {
                             viewModel.deleteMessage(selected.messageId, forEveryone = true)
-                            selectedMessageForAction = null
+                            dismissMessageActionSheet()
                             Toast.makeText(context, "Message deleted for everyone", Toast.LENGTH_SHORT).show()
                         }
                     )
@@ -879,9 +900,9 @@ fun ChatScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.clickable(enabled = !isMessageActionSheetClosing) {
                         viewModel.deleteMessage(selected.messageId, forEveryone = false)
-                        selectedMessageForAction = null
+                        dismissMessageActionSheet()
                     }
                 )
 
@@ -1130,8 +1151,7 @@ fun MessageBubbleItem(
             Color(0xFF2563EB), Color(0xFF0D9488), Color(0xFF7C3AED),
             Color(0xFFEA580C), Color(0xFFD97706), Color(0xFF0284C7)
         )
-        val hash = message.senderId.hashCode().absoluteValue
-        colors[hash % colors.size]
+        colors[Math.floorMod(message.senderId.hashCode(), colors.size)]
     }
 
     Column(
