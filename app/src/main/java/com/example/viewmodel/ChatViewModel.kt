@@ -153,18 +153,30 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                             if (isForMe) {
                                 val existing = messageDao.getMessageById(msgId)
 
-                                // Handle Reactions (transient signaling messages)
+                                // Handle reaction signaling messages defensively: malformed/stale reactions
+                                // must never crash the chat screen or its message-observer coroutine.
                                 if (msgDto.reactionTargetId.isNotBlank()) {
-                                    val targetMsg = messageDao.getMessageById(msgDto.reactionTargetId)
-                                    if (targetMsg != null) {
-                                        val reactions = if (targetMsg.reactionsJson.isNotBlank()) {
-                                            try { JSONObject(targetMsg.reactionsJson) } catch (e: Exception) { JSONObject() }
-                                        } else { JSONObject() }
-                                        reactions.put(msgDto.senderId, msgDto.reactionEmoji)
-                                        messageDao.updateReactions(targetMsg.messageId, reactions.toString())
+                                    try {
+                                        val targetMsg = messageDao.getMessageById(msgDto.reactionTargetId)
+                                        if (targetMsg != null && msgDto.senderId.isNotBlank() && msgDto.reactionEmoji.isNotBlank()) {
+                                            val reactions = try {
+                                                JSONObject(targetMsg.reactionsJson.ifBlank { "{}" })
+                                            } catch (_: Exception) {
+                                                JSONObject()
+                                            }
+                                            reactions.put(msgDto.senderId, msgDto.reactionEmoji)
+                                            messageDao.updateReactions(targetMsg.messageId, reactions.toString())
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("ChatViewModel", "Could not apply reaction $msgId: ${e.message}", e)
+                                    } finally {
+                                        // Best-effort cleanup; failure to delete a transient event is non-fatal.
+                                        try {
+                                            firebaseRepo.deleteMessage(chatId, msgId)
+                                        } catch (e: Exception) {
+                                            Log.w("ChatViewModel", "Could not clean up reaction $msgId: ${e.message}")
+                                        }
                                     }
-                                    // Delete reaction message from server after processing to keep cloud clean
-                                    firebaseRepo.deleteMessage(chatId, msgId)
                                     return@launch
                                 }
 
@@ -473,33 +485,38 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     }
 
     fun sendReaction(targetMessageId: String, emoji: String) {
+        if (targetMessageId.isBlank() || emoji.isBlank()) return
+
         viewModelScope.launch {
-            val myId = userPrefs.userIdFlow.first() ?: return@launch
-            val myUsername = userPrefs.usernameFlow.first() ?: "User"
-            val chatEntity = _chat.value ?: return@launch
-            val reactionId = "react_" + UUID.randomUUID().toString()
-            val timestamp = System.currentTimeMillis()
+            try {
+                val myId = userPrefs.userIdFlow.first()
+                if (myId.isNullOrBlank()) return@launch
+                val myUsername = userPrefs.usernameFlow.first() ?: "User"
+                val chatEntity = _chat.value ?: return@launch
+                val targetMsg = messageDao.getMessageById(targetMessageId) ?: return@launch
 
-            // Send as a transient signaling message
-            firebaseRepo.sendReaction(
-                chatId = chatId,
-                reactionId = reactionId,
-                senderId = myId,
-                receiverId = if (chatEntity.isGroup) "" else chatEntity.peerUserId,
-                targetMessageId = targetMessageId,
-                emoji = emoji,
-                timestamp = timestamp,
-                senderUsername = myUsername
-            )
-
-            // Update local state immediately for fast feedback
-            val targetMsg = messageDao.getMessageById(targetMessageId)
-            if (targetMsg != null) {
-                val reactions = if (targetMsg.reactionsJson.isNotBlank()) {
-                    try { JSONObject(targetMsg.reactionsJson) } catch (e: Exception) { JSONObject() }
-                } else { JSONObject() }
+                // Update locally first so a transient network failure does not crash or block the UI.
+                val reactions = try {
+                    JSONObject(targetMsg.reactionsJson.ifBlank { "{}" })
+                } catch (_: Exception) {
+                    JSONObject()
+                }
                 reactions.put(myId, emoji)
                 messageDao.updateReactions(targetMessageId, reactions.toString())
+
+                val reactionId = "react_" + UUID.randomUUID().toString()
+                firebaseRepo.sendReaction(
+                    chatId = chatId,
+                    reactionId = reactionId,
+                    senderId = myId,
+                    receiverId = if (chatEntity.isGroup || chatId.startsWith("group_")) "" else chatEntity.peerUserId,
+                    targetMessageId = targetMessageId,
+                    emoji = emoji,
+                    timestamp = System.currentTimeMillis(),
+                    senderUsername = myUsername
+                )
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Send reaction failed: ${e.message}", e)
             }
         }
     }
