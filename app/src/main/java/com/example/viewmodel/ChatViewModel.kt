@@ -431,16 +431,60 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 // Clear reply target after sending
                 _replyTargetMessage.value = null
 
-                if (sentSuccessfully) {
-                    messageDao.updateMessageStatus(messageId, "SENT")
-                }
+                messageDao.updateMessageStatus(
+                    messageId,
+                    if (sentSuccessfully) "SENT" else "FAILED"
+                )
 
                 chatDao.insertChat(chatEntity.copy(
                     lastMessage = "You: $plaintext",
                     lastTimestamp = timestamp
                 ))
             } catch (e: Exception) {
-                Log.e("ChatViewModel", "Send message failed: ${e.message}")
+                Log.e("ChatViewModel", "Send message failed: ${e.message}", e)
+                runCatching { messageDao.updateMessageStatus(messageId, "FAILED") }
+            }
+        }
+    }
+
+    /**
+     * Retry a message that previously failed to upload.
+     * Reuses its existing encrypted payload and message ID to avoid duplicate messages.
+     */
+    fun retryMessage(messageId: String) {
+        viewModelScope.launch {
+            val message = messageDao.getMessageById(messageId) ?: return@launch
+            if (message.senderId != userPrefs.userIdFlow.first() || message.status != "FAILED") return@launch
+            val chatEntity = _chat.value ?: return@launch
+            val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
+            val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+
+            messageDao.updateMessageStatus(messageId, "SENDING")
+            try {
+                val encryptedReplyPreview = encryptReplyPreview(
+                    preview = message.replyToText,
+                    isGroup = isGroup,
+                    chatId = chatId,
+                    privateKey = privateKeyVal,
+                    peerPublicKey = chatEntity.peerPublicKey
+                )
+                val sent = firebaseRepo.sendMessage(
+                    chatId = chatId,
+                    messageId = message.messageId,
+                    senderId = message.senderId,
+                    receiverId = message.receiverId,
+                    ciphertext = message.ciphertext,
+                    nonce = message.nonce,
+                    timestamp = message.timestamp,
+                    senderUsername = message.senderUsername,
+                    replyToId = message.replyToId,
+                    replyToText = encryptedReplyPreview,
+                    replyToSender = message.replyToSender
+                )
+                messageDao.updateMessageStatus(messageId, if (sent) "SENT" else "FAILED")
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Retry send failed for $messageId: ${e.message}", e)
+                messageDao.updateMessageStatus(messageId, "FAILED")
             }
         }
     }
