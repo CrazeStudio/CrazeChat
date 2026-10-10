@@ -224,7 +224,8 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                                 isDeleted = msgDto.isDeleted,
                                                 replyToId = msgDto.replyToId,
                                                 replyToText = decryptedReplyText,
-                                                replyToSender = msgDto.replyToSender
+                                                replyToSender = msgDto.replyToSender,
+                                                reactionsJson = msgDto.reactionsJson
                                             )
                                             messageDao.insertMessage(newMsg)
 
@@ -287,7 +288,8 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                     editedAt = updatedDto.editedAt,
                                     isPinned = updatedDto.isPinned,
                                     pinnedAt = updatedDto.pinnedAt,
-                                    isDeleted = updatedDto.isDeleted
+                                    isDeleted = updatedDto.isDeleted,
+                                    reactionsJson = updatedDto.reactionsJson.ifBlank { existing.reactionsJson }
                                 )
                                 messageDao.insertMessage(updated)
 
