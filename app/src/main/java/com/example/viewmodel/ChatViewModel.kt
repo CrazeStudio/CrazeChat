@@ -52,6 +52,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     val groupInfo: StateFlow<FirebaseGroupDto?> = _groupInfo.asStateFlow()
 
     private var firebaseMessageListener: ChildEventListener? = null
+    private var firebaseReactionListener: ChildEventListener? = null
     private var observationJob: Job? = null
 
     init {
@@ -300,6 +301,20 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                         }
                     }
                 )
+
+                // Reactions have their own listener because delivered direct-chat messages
+                // can be deleted from Firebase before someone reacts to them.
+                firebaseReactionListener = firebaseRepo.observeReactions(chatId) { targetMessageId, reactionsJson ->
+                    viewModelScope.launch {
+                        try {
+                            if (messageDao.getMessageById(targetMessageId) != null) {
+                                messageDao.updateReactions(targetMessageId, reactionsJson)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ChatViewModel", "Could not sync reactions for $targetMessageId: ${e.message}", e)
+                        }
+                    }
+                }
             }
         }
     }
@@ -667,6 +682,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     override fun onCleared() {
         super.onCleared()
         firebaseMessageListener?.let { firebaseRepo.removeMessageListener(chatId, it) }
+        firebaseReactionListener?.let { firebaseRepo.removeReactionListener(chatId, it) }
         observationJob?.cancel()
         if (activeChatId == chatId) {
             activeChatId = null
