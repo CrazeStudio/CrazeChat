@@ -259,14 +259,23 @@ class FirebaseRepository(private val context: Context? = null) {
         }
     }
 
-    suspend fun changeAccountPassword(userId: String, currentPassword: String, newPassword: String): JSONObject =
-        withContext(Dispatchers.IO) {
-            val result = api(userId, "POST", "/auth/change-password",
-                JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword))
-            tokenCache.remove(userId)
-            preferences?.clearApiSession(userId)
-            result
-        }
+    suspend fun changeAccountPassword(
+        userId: String,
+        currentPassword: String,
+        newPassword: String,
+        publicKey: String,
+        encryptedBackup: String
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val result = api(userId, "POST", "/auth/change-password",
+            JSONObject()
+                .put("currentPassword", currentPassword)
+                .put("newPassword", newPassword)
+                .put("publicKey", publicKey)
+                .put("encryptedBackup", encryptedBackup))
+        tokenCache.remove(userId)
+        preferences?.clearApiSession(userId)
+        result
+    }
 
     suspend fun deleteRemoteAccount(userId: String, password: String): Boolean = withContext(Dispatchers.IO) {
         api(userId, "DELETE", "/auth/account", JSONObject().put("password", password))
