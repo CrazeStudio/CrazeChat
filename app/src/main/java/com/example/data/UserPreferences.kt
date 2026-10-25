@@ -107,6 +107,35 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { prefs -> prefs.remove(apiTokenKey(userId)) }
     }
 
+    private fun groupKeyPreference(userId: String, chatId: String, version: Int) =
+        stringPreferencesKey(
+            "group_key_${userId}_${android.util.Base64.encodeToString(chatId.toByteArray(Charsets.UTF_8), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)}_v${version}"
+        )
+
+    /** Each group's random encryption secret is encrypted with the device's Android Keystore key. */
+    suspend fun saveGroupKey(userId: String, chatId: String, version: Int, groupKey: String) {
+        if (userId.isBlank() || chatId.isBlank() || version <= 0 || !CryptoManager.isValidGroupKey(groupKey)) return
+        val preferenceKey = groupKeyPreference(userId, chatId, version)
+        context.dataStore.edit { prefs -> prefs[preferenceKey] = SecureVault.encrypt(groupKey) }
+    }
+
+    suspend fun getGroupKey(userId: String, chatId: String, version: Int): String? {
+        if (userId.isBlank() || chatId.isBlank() || version <= 0) return null
+        val preferenceKey = groupKeyPreference(userId, chatId, version)
+        return context.dataStore.data.map { prefs ->
+            SecureVault.decrypt(prefs[preferenceKey])?.takeIf(CryptoManager::isValidGroupKey)
+        }.first()
+    }
+
+    suspend fun clearGroupKeys(userId: String, chatId: String, throughVersion: Int = Int.MAX_VALUE) {
+        if (userId.isBlank() || chatId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            (1..throughVersion.coerceAtMost(10000)).forEach { version ->
+                prefs.remove(groupKeyPreference(userId, chatId, version))
+            }
+        }
+    }
+
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_THEME_MODE] = mode
