@@ -582,7 +582,9 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                     isGroup = isGroup,
                     chatId = chatId,
                     privateKey = privateKeyVal,
-                    peerPublicKey = chatEntity.peerPublicKey
+                    peerPublicKey = chatEntity.peerPublicKey,
+                    groupKey = groupKey,
+                    groupKeyVersion = groupKeyVersion
                 )
                 val sent = firebaseRepo.sendMessage(
                     chatId = chatId,
