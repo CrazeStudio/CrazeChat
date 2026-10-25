@@ -644,7 +644,7 @@ fun ChatScreen(
                                     text = if (isGroupChat) {
                                         "New group messages use random, versioned keys encrypted separately for each member. Earlier messages may use legacy encryption."
                                     } else {
-                                        "End-to-End Encrypted: Cloud copies are permanently deleted immediately after delivery."
+                                        "Direct messages are encrypted on-device; the server stores ciphertext until message expiry."
                                     },
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -652,6 +652,22 @@ fun ChatScreen(
                                     fontWeight = FontWeight.Medium
                                 )
                             }
+                        }
+                    }
+
+                    if (isGroupChat && !groupKeyError.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(0.95f).align(Alignment.CenterHorizontally),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Text(
+                                text = groupKeyError.orEmpty(),
+                                modifier = Modifier.padding(10.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 12.sp
+                            )
                         }
                     }
 
