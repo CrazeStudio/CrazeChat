@@ -390,7 +390,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                                     lastTimestamp = 0L,
                                                     unreadCount = 0
                                                 )).copy(
-                                                    lastMessage = displayMsg,
+                                                    lastMessage = if (displayMsg.isBlank()) "" else SecureVault.encrypt(displayMsg),
                                                     lastTimestamp = msgDto.timestamp,
                                                     unreadCount = if (ChatViewModel.activeChatId == chatId) 0 else (existingChat?.unreadCount ?: 0) + 1
                                                 )
@@ -426,7 +426,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 peerUserId = "",
                                 peerUsername = groupInfo.groupName,
                                 peerPublicKey = "",
-                                lastMessage = "Encrypted group chat",
+                                lastMessage = SecureVault.encrypt("Encrypted group chat"),
                                 lastTimestamp = groupInfo.createdAt,
                                 unreadCount = 0,
                                 isGroup = true,
