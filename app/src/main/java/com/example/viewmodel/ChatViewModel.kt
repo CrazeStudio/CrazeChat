@@ -56,11 +56,26 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     private var observationJob: Job? = null
 
     init {
+        migrateLocalMessageText()
         activeChatId = chatId
         loadChatDetails()
         loadGroupDetailsIfGroup()
         startObservingFirebaseMessages()
         markAsSeen()
+    }
+
+    private fun migrateLocalMessageText() {
+        viewModelScope.launch {
+            runCatching {
+                messageDao.getAllMessagesForMigration().forEach { message ->
+                    val securePlaintext = if (message.plaintext.isNotBlank() && !message.plaintext.startsWith("enc:")) SecureVault.encrypt(message.plaintext) else message.plaintext
+                    val secureReply = if (message.replyToText.isNotBlank() && !message.replyToText.startsWith("enc:") && !message.replyToText.startsWith("ENCv1|")) SecureVault.encrypt(message.replyToText) else message.replyToText
+                    if (securePlaintext != message.plaintext || secureReply != message.replyToText) {
+                        messageDao.insertMessage(message.copy(plaintext = securePlaintext, replyToText = secureReply))
+                    }
+                }
+            }.onFailure { Log.w("ChatViewModel", "Local message encryption migration failed: ${it.message}") }
+        }
     }
 
     fun markAsSeen() {
@@ -417,14 +432,14 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                     chatId = chatId,
                     senderId = myId,
                     receiverId = if (isGroup) "" else chatEntity.peerUserId,
-                    plaintext = plaintext, // Store plaintext locally
+                    plaintext = SecureVault.encrypt(plaintext),
                     ciphertext = encrypted.ciphertext,
                     nonce = encrypted.nonce,
                     timestamp = timestamp,
                     status = "SENDING",
                     senderUsername = myUsername,
                     replyToSender = replyTarget?.senderUsername ?: "",
-                    replyToText = replyToPreviewText
+                    replyToText = if (replyToPreviewText.isBlank()) "" else SecureVault.encrypt(replyToPreviewText)
                 )
                 messageDao.insertMessage(localMsg)
 
@@ -551,7 +566,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 }
 
                 val now = System.currentTimeMillis()
-                messageDao.updateMessageContent(messageId, encrypted.ciphertext, encrypted.nonce, now)
+                messageDao.updateMessageContent(messageId, SecureVault.encrypt(newPlaintext), encrypted.ciphertext, encrypted.nonce, now)
                 firebaseRepo.editMessage(chatId, messageId, encrypted.ciphertext, encrypted.nonce)
 
                 chatDao.insertChat(chatEntity.copy(
