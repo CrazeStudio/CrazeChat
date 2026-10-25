@@ -420,22 +420,39 @@ class FirebaseRepository(private val context: Context? = null) {
         try {
             val result = api(uid, "GET", "/api/chat/users/${segment(clean)}").optJSONObject("user")
             if (result != null) return dto(result)
-        } catch (_: ApiException) {
-            // If this was a username, fall back to exact username lookup.
         } catch (e: Exception) {
-            Log.w(TAG, "ID lookup failed; trying username lookup: ${e.message}")
+            Log.w(TAG, "Direct user lookup failed; trying directory fallback: ${e.message}")
         }
-        return try { users(uid).firstOrNull { it.username.equals(clean, ignoreCase = true) } }
-        catch (e: Exception) { Log.e(TAG, "findUser failed", e); null }
+        return try {
+            users(uid).firstOrNull {
+                it.userId.equals(clean, ignoreCase = true) ||
+                    it.username.equals(clean, ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "findUser failed", e)
+            null
+        }
     }
 
     suspend fun findUserByUsername(usernameQuery: String): FirebaseUserDto? =
         try { users(activeUid()).firstOrNull { it.username.equals(usernameQuery.trim(), ignoreCase = true) } }
         catch (e: Exception) { Log.e(TAG, "findUserByUsername failed", e); null }
 
-    suspend fun findUserById(userId: String): FirebaseUserDto? = try {
-        dto(api(activeUid(), "GET", "/api/chat/users/${segment(userId)}").getJSONObject("user"))
-    } catch (e: Exception) { Log.w(TAG, "findUserById failed: ${e.message}"); null }
+    suspend fun findUserById(userId: String): FirebaseUserDto? {
+        val cleanId = userId.trim()
+        if (cleanId.isBlank()) return null
+        return try {
+            val result = api(activeUid(), "GET", "/api/chat/users/${segment(cleanId)}").optJSONObject("user")
+            result?.let(::dto)
+        } catch (e: Exception) {
+            Log.w(TAG, "findUserById direct lookup failed: ${e.message}")
+            try { users(activeUid()).firstOrNull { it.userId.equals(cleanId, ignoreCase = true) } }
+            catch (fallback: Exception) {
+                Log.w(TAG, "findUserById fallback failed: ${fallback.message}")
+                null
+            }
+        }
+    }
 
     suspend fun createDirectChat(chatId: String, userId: String, peerUserId: String): Boolean = try {
         api(userId, "GET", "/api/chat/chats/${segment(chatId)}")
