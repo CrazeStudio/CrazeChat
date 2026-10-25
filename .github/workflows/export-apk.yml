@@ -68,6 +68,9 @@ jobs:
             -noprompt
 
       - name: Build APK
+        env:
+          CRAZECHAT_API_ACCESS_KEY: ${{ secrets.CRAZECHAT_API_ACCESS_KEY }}
+          CRAZECHAT_API_BASE_URL: https://crazechat-api.vercel.app
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Publish APK to repository
