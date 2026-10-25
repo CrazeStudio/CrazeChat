@@ -246,12 +246,14 @@ object CryptoManager {
             Base64.encodeToString(iv, Base64.NO_WRAP))
     }
 
-    fun decryptLegacyGroupMessage(chatId: String, ciphertextBase64: String, nonceBase64: String): String = try {
-        if (ciphertextBase64.isBlank() || nonceBase64.isBlank()) return ""
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, deriveLegacyGroupKey(chatId), GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
-        String(cipher.doFinal(Base64.decode(ciphertextBase64, Base64.NO_WRAP)), Charsets.UTF_8)
-    } catch (_: Exception) { "[Legacy Encrypted Group Message]" }
+    fun decryptLegacyGroupMessage(chatId: String, ciphertextBase64: String, nonceBase64: String): String {
+        return try {
+            if (ciphertextBase64.isBlank() || nonceBase64.isBlank()) return ""
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, deriveLegacyGroupKey(chatId), GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(ciphertextBase64, Base64.NO_WRAP)), Charsets.UTF_8)
+        } catch (_: Exception) { "[Legacy Encrypted Group Message]" }
+    }
 
     fun decryptGroupMessageCompat(chatId: String, groupKeyBase64: String, ciphertext: String, nonceBase64: String): String =
         if (groupMessageVersion(ciphertext) > 0) decryptGroupMessage(groupKeyBase64, ciphertext, nonceBase64)
