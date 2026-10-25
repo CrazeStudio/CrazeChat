@@ -299,9 +299,11 @@ class FirebaseRepository(private val context: Context? = null) {
     }
 
     suspend fun getAccountProfile(authUid: String): FirebaseUserDto? = try {
-        dto(api(authUid, "GET", "/api/chat/users/${segment(authUid)}").getJSONObject("user"))
+        // Resolve the profile from the authenticated session, not a legacy UID path.
+        // The /me endpoint is canonical and can repair a missing profile record.
+        dto(api(authUid, "GET", "/api/chat/users/me").getJSONObject("user"))
     } catch (e: Exception) {
-        Log.w(TAG, "Could not load encrypted account backup: ${e.message}")
+        Log.w(TAG, "Could not load authenticated account profile: ${e.message}")
         null
     }
 
