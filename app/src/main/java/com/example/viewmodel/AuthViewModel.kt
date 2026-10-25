@@ -48,6 +48,18 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     val hapticFeedbackEnabled: StateFlow<Boolean> = userPrefs.hapticFeedbackEnabledFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val showOnlineStatus: StateFlow<Boolean> = userPrefs.showOnlineStatusFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val readReceiptsEnabled: StateFlow<Boolean> = userPrefs.readReceiptsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val allowDiscovery: StateFlow<Boolean> = userPrefs.allowDiscoveryFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val allowGroupInvites: StateFlow<Boolean> = userPrefs.allowGroupInvitesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    private val _privacySyncError = MutableStateFlow<String?>(null)
+    val privacySyncError: StateFlow<String?> = _privacySyncError.asStateFlow()
+
     fun setThemeMode(mode: String) {
         viewModelScope.launch {
             userPrefs.setThemeMode(mode)
@@ -63,6 +75,47 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun setHapticFeedbackEnabled(enabled: Boolean) {
         viewModelScope.launch {
             userPrefs.setHapticFeedbackEnabled(enabled)
+        }
+    }
+
+    fun setPrivacySetting(name: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val uid = userPrefs.userIdFlow.first().orEmpty()
+            if (uid.isBlank()) {
+                _privacySyncError.value = "Sign in to save privacy settings."
+                return@launch
+            }
+            val previous = when (name) {
+                "showOnlineStatus" -> userPrefs.showOnlineStatusFlow.first()
+                "readReceipts" -> userPrefs.readReceiptsFlow.first()
+                "allowDiscovery" -> userPrefs.allowDiscoveryFlow.first()
+                "allowGroupInvites" -> userPrefs.allowGroupInvitesFlow.first()
+                else -> return@launch
+            }
+            userPrefs.setPrivacyPreference(name, enabled)
+            _privacySyncError.value = null
+            try {
+                firebaseRepo.updatePrivacySetting(uid, name, enabled)
+            } catch (e: Exception) {
+                userPrefs.setPrivacyPreference(name, previous)
+                _privacySyncError.value = e.message ?: "Could not save privacy setting to the server."
+                Log.w("AuthViewModel", "Privacy setting update failed", e)
+            }
+        }
+    }
+
+    private suspend fun refreshPrivacySettings(userId: String) {
+        try {
+            val settings = firebaseRepo.getPrivacySettings(userId)
+            userPrefs.savePrivacySettings(
+                showOnlineStatus = settings.optBoolean("showOnlineStatus", true),
+                readReceipts = settings.optBoolean("readReceipts", true),
+                allowDiscovery = settings.optBoolean("allowDiscovery", true),
+                allowGroupInvites = settings.optBoolean("allowGroupInvites", true)
+            )
+            _privacySyncError.value = null
+        } catch (e: Exception) {
+            Log.w("AuthViewModel", "Could not fetch server privacy settings: " + e.message)
         }
     }
 
@@ -103,6 +156,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     _authState.value = AuthState.NeedsRegistration
                 } else {
                     _authState.value = AuthState.Authenticated
+                    refreshPrivacySettings(userId)
                 }
             }
         }
