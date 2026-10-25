@@ -41,7 +41,6 @@ fun SettingsScreen(
     val profiles by authViewModel.profiles.collectAsState()
     val canAddProfile by authViewModel.canAddProfile.collectAsState()
     val currentUserId by authViewModel.userIdFlow.collectAsState(initial = "")
-    val currentUsername by authViewModel.usernameFlow.collectAsState(initial = "")
     val themeMode by authViewModel.themeMode.collectAsState()
     val soundEffectsEnabled by authViewModel.soundEffectsEnabled.collectAsState()
     val hapticFeedbackEnabled by authViewModel.hapticFeedbackEnabled.collectAsState()
@@ -480,7 +479,7 @@ fun SettingsScreen(
             AlertDialog(
                 onDismissRequest = { profileToDelete = null },
                 title = { Text("Remove User?") },
-                text = { Text("Are you sure you want to remove '${profileToDelete!!.username}' from this phone? Local keys and chats for this user will be deleted.") },
+                text = { Text("Remove this profile from this phone only? The cloud account will remain. Use Account Security to permanently delete the cloud account.") },
                 confirmButton = {
                     TextButton(onClick = {
                         authViewModel.deleteProfile(profileToDelete!!.userId)
