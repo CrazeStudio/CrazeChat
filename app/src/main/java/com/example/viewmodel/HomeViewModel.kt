@@ -16,7 +16,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val chatDao = db.chatDao()
     private val messageDao = db.messageDao()
     private val profileDao = db.profileDao()
-    private val firebaseRepo = FirebaseRepository()
+    private val firebaseRepo = FirebaseRepository(application)
     private val userPrefs = UserPreferences(application)
     private val pfpManager = ProfileImageManager.getInstance(application)
 
@@ -494,6 +494,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val chatId = "chat_${sortedIds[0]}_${sortedIds[1]}"
 
         val existingChat = chatDao.getChatById(ownerUserId = myId, chatId = chatId)
+        val remoteReady = firebaseRepo.createDirectChat(chatId, myId, peerUser.userId)
+        if (!remoteReady) {
+            Log.w("HomeViewModel", "Direct chat API setup failed; will retry when sending a message")
+        }
         if (existingChat == null) {
             val newChat = ChatEntity(
                 ownerUserId = myId,
