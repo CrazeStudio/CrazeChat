@@ -250,6 +250,30 @@ fun SettingsScreen(
                 }
             }
 
+            Text("Privacy & Discovery", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    PrivacyToggleRow("Online status and last seen", "Hide online and last-seen indicators", showOnlineStatus) {
+                        authViewModel.setPrivacySetting("showOnlineStatus", it)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                    PrivacyToggleRow("Read receipts", "Choose whether reading sends a receipt", readReceiptsEnabled) {
+                        authViewModel.setPrivacySetting("readReceipts", it)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                    PrivacyToggleRow("Show in user search", "Let other accounts find you in the directory", allowDiscovery) {
+                        authViewModel.setPrivacySetting("allowDiscovery", it)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                    PrivacyToggleRow("Accept group invitations", "Allow group owners to add this account", allowGroupInvites) {
+                        authViewModel.setPrivacySetting("allowGroupInvites", it)
+                    }
+                }
+            }
+            if (!privacySyncError.isNullOrBlank()) {
+                Text(privacySyncError.orEmpty(), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+
             // Accounts Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
