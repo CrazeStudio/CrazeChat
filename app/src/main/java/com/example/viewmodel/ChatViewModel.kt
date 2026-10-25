@@ -238,6 +238,12 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                             }
 
                             if (isForMe) {
+                                // The server enforces the signed-in account's read-receipt preference.
+                                // Keep the receipt index separate because direct-message ciphertext
+                                // may be deleted from cloud storage immediately after delivery.
+                                if (msgDto.reactionTargetId.isBlank()) {
+                                    firebaseRepo.markMessageSeen(myId, msgId)
+                                }
                                 val existing = messageDao.getMessageById(msgId)
 
                                 // Handle reaction signaling messages defensively: malformed/stale reactions
@@ -360,7 +366,8 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                         viewModelScope.launch {
                             val existing = messageDao.getMessageById(msgId)
                             if (existing != null && existing.senderId == myId) {
-                                messageDao.updateMessageStatus(msgId, "SERVER_DELETED")
+                                val seen = firebaseRepo.isMessageSeen(myId, msgId)
+                                messageDao.updateMessageStatus(msgId, if (seen) "READ" else "SERVER_DELETED")
                             }
                         }
                     },
