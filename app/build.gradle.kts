@@ -1,5 +1,24 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
+// Local .env is ignored by Git. CI supplies CRAZECHAT_API_ACCESS_KEY from repository secrets.
+val localEnvValues = rootProject.file(".env").takeIf { it.isFile }?.readLines()
+    ?.mapNotNull { line ->
+        val clean = line.substringBefore("#").trim()
+        val split = clean.indexOf("=")
+        if (split <= 0) null else clean.substring(0, split).trim() to clean.substring(split + 1).trim().trim('"', '\'')
+    }?.toMap().orEmpty()
+val apiAccessKey = (
+    System.getenv("CRAZECHAT_API_ACCESS_KEY")
+        ?: (project.findProperty("CRAZECHAT_API_ACCESS_KEY") as? String)
+        ?: localEnvValues["CRAZECHAT_API_ACCESS_KEY"]
+        ?: ""
+    ).replace("\\", "\\\\").replace("\"", "\\\"")
+val apiBaseUrl = (
+    System.getenv("CRAZECHAT_API_BASE_URL")
+        ?: localEnvValues["CRAZECHAT_API_BASE_URL"]
+        ?: "https://crazechat-api.vercel.app"
+    ).trimEnd('/')
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
