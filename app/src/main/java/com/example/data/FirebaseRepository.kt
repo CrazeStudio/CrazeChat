@@ -305,6 +305,12 @@ class FirebaseRepository(private val context: Context? = null) {
         null
     }
 
+    suspend fun getPrivacySettings(userId: String): JSONObject =
+        api(userId, "GET", "/api/chat/privacy/me").optJSONObject("privacy") ?: JSONObject()
+
+    suspend fun updatePrivacySetting(userId: String, name: String, enabled: Boolean): JSONObject =
+        api(userId, "PATCH", "/api/chat/privacy/me", JSONObject().put(name, enabled))
+
     private fun dto(value: JSONObject): FirebaseUserDto {
         val rawKey = value.optString("publicKey")
         return FirebaseUserDto(
