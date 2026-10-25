@@ -534,6 +534,17 @@ class FirebaseRepository(private val context: Context? = null) {
         return groupKey
     }
 
+    suspend fun decryptGroupMessageForUser(
+        chatId: String, userId: String, ciphertext: String, nonce: String
+    ): String {
+        val version = CryptoManager.groupMessageVersion(ciphertext)
+        return if (version > 0) {
+            CryptoManager.decryptGroupMessage(loadGroupKey(chatId, userId, version), ciphertext, nonce)
+        } else {
+            CryptoManager.decryptLegacyGroupMessage(chatId, ciphertext, nonce)
+        }
+    }
+
     suspend fun getUserGroupIds(userId: String): List<String> = try {
         chats(userId).filter { it.optBoolean("isGroup") }
             .filter { it.optJSONObject("members")?.has(userId) == true }
