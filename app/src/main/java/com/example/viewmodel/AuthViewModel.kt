@@ -82,6 +82,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         viewModelScope.launch {
+            val uid = userPrefs.userIdFlow.first().orEmpty()
+            if (uid.isNotBlank()) firebaseRepo.logoutAccount(uid)
             userPrefs.clearSession()
             _authState.value = AuthState.NeedsRegistration
         }
