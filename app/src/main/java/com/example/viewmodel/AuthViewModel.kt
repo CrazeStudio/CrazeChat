@@ -154,7 +154,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     AccountProfileEntity(
                         userId = accountUid,
                         username = canonicalUsername,
-                        password = CryptoManager.hashPassword(password),
+                        password = withContext(Dispatchers.IO) { CryptoManager.hashPassword(password) },
                         publicKey = localProfile.publicKey,
                         privateKey = SecureVault.encrypt(localProfile.privateKeyPlain)
                     )
@@ -173,7 +173,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     AccountProfileEntity(
                         userId = accountUid,
                         username = canonicalUsername,
-                        password = CryptoManager.hashPassword(password),
+                        password = withContext(Dispatchers.IO) { CryptoManager.hashPassword(password) },
                         publicKey = parts[3],
                         privateKey = SecureVault.encrypt(parts[4])
                     )
