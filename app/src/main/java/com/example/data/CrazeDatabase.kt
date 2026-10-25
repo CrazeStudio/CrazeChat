@@ -59,12 +59,18 @@ data class ChatEntity(
     val groupOwnerId: String = "",
     val memberIdsJson: String = "",
     val pinnedMessageId: String = ""
-)
+) {
+    /** Decrypt only when a UI surface needs the preview text. */
+    val lastMessageValue: String get() = SecureVault.decrypt(lastMessage).orEmpty()
+}
 
 @Dao
 interface ChatDao {
     @Query("SELECT * FROM chats WHERE ownerUserId = :ownerUserId ORDER BY lastTimestamp DESC")
     fun getChatsForUser(ownerUserId: String): Flow<List<ChatEntity>>
+
+    @Query("SELECT * FROM chats")
+    suspend fun getAllChatsForMigration(): List<ChatEntity>
 
     @Query("SELECT * FROM chats WHERE ownerUserId = :ownerUserId AND chatId = :chatId")
     suspend fun getChatById(ownerUserId: String, chatId: String): ChatEntity?
