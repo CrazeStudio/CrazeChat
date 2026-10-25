@@ -332,7 +332,7 @@ class FirebaseRepository(private val context: Context? = null) {
     } catch (e: Exception) { Log.e(TAG, "addGroupMember failed", e); false }
 
     suspend fun getGroupInfo(chatId: String): FirebaseGroupDto? = try {
-        val chat = api(activeUid(), "GET", "/api/chat/chats/${segment(chatId)}").optJSONObject("chat") ?: return null
+        val chat = api(activeUid(), "GET", "/api/chat/chats/${segment(chatId)}").optJSONObject("chat") ?: throw IOException("Chat not found")
         val memberObject = chat.optJSONObject("members") ?: JSONObject()
         val members = mutableMapOf<String, Boolean>()
         val keys = memberObject.keys()
