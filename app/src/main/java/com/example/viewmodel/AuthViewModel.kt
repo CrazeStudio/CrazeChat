@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 sealed class AuthState {
@@ -162,7 +164,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         throw IllegalStateException("Account signed in, but no compatible encrypted key backup exists on this device or server.")
                     }
                     val backupUsername = remoteProfile?.username?.ifBlank { canonicalUsername } ?: canonicalUsername
-                    val decrypted = CryptoManager.decryptProfile(password, backupUsername, encryptedBackup)
+                    val decrypted = withContext(Dispatchers.IO) { CryptoManager.decryptProfile(password, backupUsername, encryptedBackup) }
                         ?: throw IllegalStateException("Password accepted, but the encrypted key backup could not be opened. Keep the old device until recovery is fixed.")
                     val parts = decrypted.split("|")
                     if (parts.size < 5 || parts[3].isBlank() || parts[4].isBlank()) {
@@ -185,7 +187,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Re-wrap the profile backup with the current password after successful sign-in.
                 val backupPayload = "${profile.userId}|${profile.username}|${profile.password}|${profile.publicKey}|${profile.privateKeyPlain}"
-                val encryptedBackup = CryptoManager.encryptProfile(password, profile.username, backupPayload)
+                val encryptedBackup = withContext(Dispatchers.IO) { CryptoManager.encryptProfile(password, profile.username, backupPayload) }
                 val uploaded = firebaseRepo.registerUser(accountUid, profile.username, profile.publicKey, encryptedBackup)
                 if (!uploaded) Log.w("AuthViewModel", "Signed in locally; profile backup refresh failed")
                 _authState.value = AuthState.Authenticated
@@ -259,7 +261,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     privateKey = SecureVault.encrypt(keyPair.privateKeyBase64)
                 )
                 val backupPayload = "${newProfile.userId}|${newProfile.username}|${newProfile.password}|${newProfile.publicKey}|${newProfile.privateKeyPlain}"
-                val encryptedBackup = CryptoManager.encryptProfile(password, canonicalUsername, backupPayload)
+                val encryptedBackup = withContext(Dispatchers.IO) { CryptoManager.encryptProfile(password, canonicalUsername, backupPayload) }
 
                 profileDao.insertProfile(newProfile)
                 userPrefs.setActiveProfile(newProfile)
@@ -302,7 +304,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 profileDao.insertProfile(updated)
                 val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${updated.privateKeyPlain}"
-                val encryptedBackup = CryptoManager.encryptProfile(newPassword, updated.username, backupPayload)
+                val encryptedBackup = withContext(Dispatchers.IO) { CryptoManager.encryptProfile(newPassword, updated.username, backupPayload) }
                 if (!firebaseRepo.registerUser(userId, updated.username, updated.publicKey, encryptedBackup)) {
                     throw IllegalStateException("Password changed, but encrypted key backup could not be updated. Keep a local copy of this device's keys.")
                 }
