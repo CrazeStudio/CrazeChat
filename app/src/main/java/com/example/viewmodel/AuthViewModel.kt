@@ -290,24 +290,35 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val userId = userPrefs.userIdFlow.first().orEmpty()
                 val username = userPrefs.usernameFlow.first().orEmpty()
                 if (userId.isBlank() || username.isBlank()) throw IllegalStateException("No signed-in account.")
-                firebaseRepo.changeAccountPassword(userId, currentPassword, newPassword)
-                // Password change increments the server token version; sign in again for a fresh token.
-                firebaseRepo.loginAccount(username, newPassword)
                 val oldProfile = profileDao.getProfileByUsername(username)
                     ?: throw IllegalStateException("Local encryption keys are missing.")
+
+                // Build the new backup before the request; the backend atomically updates
+                // the scrypt credential and this password-protected backup in one DB update.
+                val newPasswordHash = withContext(Dispatchers.IO) { CryptoManager.hashPassword(newPassword) }
                 val updated = AccountProfileEntity(
                     userId = oldProfile.userId,
                     username = oldProfile.username,
-                    password = CryptoManager.hashPassword(newPassword),
+                    password = newPasswordHash,
                     publicKey = oldProfile.publicKey,
                     privateKey = SecureVault.encrypt(oldProfile.privateKeyPlain)
                 )
-                profileDao.insertProfile(updated)
                 val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${updated.privateKeyPlain}"
-                val encryptedBackup = withContext(Dispatchers.IO) { CryptoManager.encryptProfile(newPassword, updated.username, backupPayload) }
-                if (!firebaseRepo.registerUser(userId, updated.username, updated.publicKey, encryptedBackup)) {
-                    throw IllegalStateException("Password changed, but encrypted key backup could not be updated. Keep a local copy of this device's keys.")
+                val encryptedBackup = withContext(Dispatchers.IO) {
+                    CryptoManager.encryptProfile(newPassword, updated.username, backupPayload)
                 }
+                firebaseRepo.changeAccountPassword(
+                    userId = userId,
+                    currentPassword = currentPassword,
+                    newPassword = newPassword,
+                    publicKey = updated.publicKey,
+                    encryptedBackup = encryptedBackup
+                )
+
+                // Password change revokes existing sessions. Establish a fresh session with
+                // the new password before declaring the operation complete.
+                firebaseRepo.loginAccount(username, newPassword)
+                profileDao.insertProfile(updated)
                 userPrefs.setActiveProfile(updated)
                 onComplete(true, null)
             } catch (e: Exception) {
