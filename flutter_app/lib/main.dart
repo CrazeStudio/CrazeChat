@@ -254,12 +254,19 @@ class _HomePageState extends State<HomePage> {
       if (!userSnap.exists) throw Exception('User ID not found. Ask them to share their exact ID.');
       final data = Map<String, dynamic>.from(userSnap.value as Map);
       final ids = [widget.uid, peerId]..sort();
-      final chatId = ids.join('_');
+      final chatId = 'chat_' + ids[0] + '_' + ids[1];
       await db.child('chats/' + chatId).update({
         'chatId': chatId,
         'members': {widget.uid: true, peerId: true},
+        'participants': {widget.uid: true, peerId: true},
         'createdAt': ServerValue.timestamp,
         'isGroup': false,
+      });
+      await db.child('users/' + widget.uid + '/inbox/' + chatId).set({
+        'chatId': chatId, 'senderId': widget.uid, 'senderUsername': widget.username, 'timestamp': ServerValue.timestamp,
+      });
+      await db.child('users/' + peerId + '/inbox/' + chatId).set({
+        'chatId': chatId, 'senderId': widget.uid, 'senderUsername': widget.username, 'timestamp': ServerValue.timestamp,
       });
       if (!mounted) return;
       Navigator.push(context, MaterialPageRoute(builder: (_) => ConversationPage(
@@ -425,6 +432,14 @@ class _ConversationPageState extends State<ConversationPage> {
       await db.child('chats/' + widget.chatId).update({
         'updatedAt': ServerValue.timestamp,
         'lastMessage': text,
+      });
+      if (widget.peerId.isNotEmpty) {
+        await db.child('users/' + widget.peerId + '/inbox/' + widget.chatId).set({
+          'chatId': widget.chatId, 'senderId': widget.uid, 'senderUsername': widget.username, 'timestamp': ServerValue.timestamp,
+        });
+      }
+      await db.child('users/' + widget.uid + '/inbox/' + widget.chatId).set({
+        'chatId': widget.chatId, 'senderId': widget.uid, 'senderUsername': widget.username, 'timestamp': ServerValue.timestamp,
       });
       message.clear();
     } catch (e) {
