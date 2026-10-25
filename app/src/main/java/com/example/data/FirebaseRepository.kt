@@ -95,7 +95,7 @@ class FirebaseRepository(private val context: Context? = null) {
     private val listenerJobs = ConcurrentHashMap<ChildEventListener, Job>()
     private val refreshLocks = ConcurrentHashMap<String, Mutex>()
 
-    private class ApiException(val status: Int, message: String) : IOException(message)
+    class ApiException internal constructor(val status: Int, message: String) : IOException(message)
 
     private suspend fun activeUid(): String =
         preferences?.userIdFlow?.first()?.takeIf { it.isNotBlank() } ?: "device"
