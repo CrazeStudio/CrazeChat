@@ -25,6 +25,9 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -99,10 +102,16 @@ class FirebaseRepository(private val context: Context? = null) {
     private fun segment(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
-    private fun millis(value: String?): Long = try {
-        java.time.Instant.parse(value).toEpochMilli()
-    } catch (_: Exception) {
-        try { value?.toLong() ?: 0L } catch (_: Exception) { 0L }
+    private fun millis(value: String?): Long {
+        if (value.isNullOrBlank() || value == "null") return 0L
+        for (pattern in listOf("yyyy-MM-dd'T'HH:mm:ss.SSSX", "yyyy-MM-dd'T'HH:mm:ssX")) {
+            try {
+                return SimpleDateFormat(pattern, Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.parse(value)?.time ?: continue
+            } catch (_: Exception) { }
+        }
+        return value.toLongOrNull() ?: 0L
     }
 
     private fun rawRequest(method: String, path: String, body: JSONObject?, bearer: String?): JSONObject {
@@ -292,7 +301,7 @@ class FirebaseRepository(private val context: Context? = null) {
         replyToId: String = "", replyToText: String = "", replyToSender: String = ""
     ): Boolean = try {
         api(senderId, "POST", "/api/chat/messages", JSONObject()
-            .put("chatId", chatId).put("receiverId", receiverId)
+            .put("chatId", chatId).put("messageId", messageId).put("receiverId", receiverId)
             .put("ciphertext", ciphertext).put("nonce", nonce)
             .put("senderUsername", senderUsername).put("replyToId", replyToId)
             .put("replyToText", replyToText).put("replyToSender", replyToSender)
