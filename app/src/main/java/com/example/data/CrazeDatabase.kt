@@ -106,7 +106,10 @@ data class MessageEntity(
     val replyToId: String = "",
     val replyToText: String = "",
     val replyToSender: String = ""
-)
+) {
+    /** Backward-compatible decrypted view; persisted plaintext is encrypted using Android Keystore. */
+    val plaintextValue: String get() = SecureVault.decrypt(plaintext).orEmpty()
+}
 
 @Dao
 interface MessageDao {
@@ -115,6 +118,9 @@ interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
+
+    @Query("SELECT * FROM messages")
+    suspend fun getAllMessagesForMigration(): List<MessageEntity>
 
     @Query("UPDATE messages SET status = :status WHERE messageId = :messageId")
     suspend fun updateMessageStatus(messageId: String, status: String)
