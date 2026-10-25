@@ -41,7 +41,7 @@ object CryptoManager {
         } finally {
             spec.clearPassword()
         }
-        return "CCPH2$$LOCAL_PASSWORD_ITERATIONS$${Base64.encodeToString(salt, Base64.NO_WRAP)}$${Base64.encodeToString(derived, Base64.NO_WRAP)}"
+        return "CCPH2\$LOCAL_PASSWORD_ITERATIONS\${Base64.encodeToString(salt, Base64.NO_WRAP)}\${Base64.encodeToString(derived, Base64.NO_WRAP)}"
     }
 
     /** Supports old SHA-256 and plaintext local profiles only for migration, then rehashes on login. */
