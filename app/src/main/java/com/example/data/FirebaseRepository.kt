@@ -240,11 +240,22 @@ class FirebaseRepository(private val context: Context? = null) {
     }
 
     suspend fun loginAccount(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
-        saveSessionFromAuth(rawRequest(
-            "POST", "/auth/login",
-            JSONObject().put("username", username).put("password", password),
-            null
-        ))
+        try {
+            saveSessionFromAuth(rawRequest(
+                "POST", "/auth/login",
+                JSONObject().put("username", username).put("password", password),
+                null
+            ))
+        } catch (error: ApiException) {
+            if (error.status != 401) throw error
+            // Existing installs stored a password-encrypted backup but did not have a server
+            // password hash. The backend verifies that backup before creating a modern account.
+            saveSessionFromAuth(rawRequest(
+                "POST", "/auth/migrate",
+                JSONObject().put("username", username).put("password", password),
+                null
+            ))
+        }
     }
 
     suspend fun changeAccountPassword(userId: String, currentPassword: String, newPassword: String): JSONObject =
