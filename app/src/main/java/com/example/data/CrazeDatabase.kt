@@ -107,8 +107,10 @@ data class MessageEntity(
     val replyToText: String = "",
     val replyToSender: String = ""
 ) {
-    /** Backward-compatible decrypted view; persisted plaintext is encrypted using Android Keystore. */
+    /** Decrypted only on demand; persisted plaintext uses Android Keystore AES-GCM. */
     val plaintextValue: String get() = SecureVault.decrypt(plaintext).orEmpty()
+    val replyToTextValue: String get() =
+        if (replyToText.startsWith("ENCv1|")) replyToText else SecureVault.decrypt(replyToText).orEmpty()
 }
 
 @Dao
@@ -125,8 +127,8 @@ interface MessageDao {
     @Query("UPDATE messages SET status = :status WHERE messageId = :messageId")
     suspend fun updateMessageStatus(messageId: String, status: String)
 
-    @Query("UPDATE messages SET ciphertext = :ciphertext, nonce = :nonce, isEdited = 1, editedAt = :editedAt WHERE messageId = :messageId")
-    suspend fun updateMessageContent(messageId: String, ciphertext: String, nonce: String, editedAt: Long)
+    @Query("UPDATE messages SET plaintext = :plaintext, ciphertext = :ciphertext, nonce = :nonce, isEdited = 1, editedAt = :editedAt WHERE messageId = :messageId")
+    suspend fun updateMessageContent(messageId: String, plaintext: String, ciphertext: String, nonce: String, editedAt: Long)
 
     @Query("UPDATE messages SET isPinned = :isPinned, pinnedAt = :pinnedAt WHERE messageId = :messageId")
     suspend fun updatePinStatus(messageId: String, isPinned: Boolean, pinnedAt: Long)
