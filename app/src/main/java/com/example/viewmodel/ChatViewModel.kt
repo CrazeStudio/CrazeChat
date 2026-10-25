@@ -265,7 +265,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                 if (existing == null) {
                                     try {
                                         val decryptedText = if (isGroup) {
-                                            CryptoManager.decryptGroupMessage(chatId, msgDto.ciphertext, msgDto.nonce)
+                                            decryptGroupPayload(msgDto.ciphertext, msgDto.nonce)
                                         } else {
                                             if (peerPublicKey.isBlank()) {
                                                 val senderUser = firebaseRepo.findUserById(msgDto.senderId)
@@ -407,12 +407,14 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
         isGroup: Boolean,
         chatId: String,
         privateKey: String,
-        peerPublicKey: String
+        peerPublicKey: String,
+        groupKey: String,
+        groupKeyVersion: Int
     ): String {
         if (preview.isBlank()) return ""
         return try {
             val payload = if (isGroup) {
-                CryptoManager.encryptGroupMessage(chatId, preview)
+                CryptoManager.encryptGroupMessage(groupKey, preview, groupKeyVersion)
             } else {
                 CryptoManager.encryptMessage(
                     myPrivateKeyBase64 = privateKey,
@@ -429,7 +431,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
         }
     }
 
-    private fun decryptReplyPreview(
+    private suspend fun decryptReplyPreview(
         encodedPreview: String,
         isGroup: Boolean,
         privateKey: String,
@@ -444,7 +446,10 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
             val parts = encodedPreview.split("|", limit = 3)
             if (parts.size != 3 || parts[1].isBlank() || parts[2].isBlank()) return ""
             if (isGroup) {
-                CryptoManager.decryptGroupMessage(chatId, parts[2], parts[1])
+                if (CryptoManager.groupMessageVersion(parts[2]) > 0) {
+                    val version = CryptoManager.groupMessageVersion(parts[2])
+                    CryptoManager.decryptGroupMessage(loadGroupKeyVersion(version).orEmpty(), parts[2], parts[1])
+                } else CryptoManager.decryptLegacyGroupMessage(chatId, parts[2], parts[1])
             } else {
                 CryptoManager.decryptMessage(
                     myPrivateKeyBase64 = privateKey,
@@ -468,6 +473,13 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
             val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
             val chatEntity = _chat.value ?: return@launch
             val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+            val currentGroupKey = if (isGroup) ensureCurrentGroupKey() else null
+            if (isGroup && currentGroupKey == null) {
+                Log.w("ChatViewModel", "Cannot send group message until its secure key is available")
+                return@launch
+            }
+            val groupKey = currentGroupKey?.first.orEmpty()
+            val groupKeyVersion = currentGroupKey?.second ?: 0
 
             val messageId = UUID.randomUUID().toString()
             val timestamp = System.currentTimeMillis()
@@ -475,7 +487,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
 
             try {
                 val encrypted = if (isGroup) {
-                    CryptoManager.encryptGroupMessage(chatId, plaintext)
+                    CryptoManager.encryptGroupMessage(groupKey, plaintext, groupKeyVersion)
                 } else {
                     CryptoManager.encryptMessage(
                         myPrivateKeyBase64 = privateKeyVal,
@@ -490,7 +502,9 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                     isGroup = isGroup,
                     chatId = chatId,
                     privateKey = privateKeyVal,
-                    peerPublicKey = chatEntity.peerPublicKey
+                    peerPublicKey = chatEntity.peerPublicKey,
+                    groupKey = groupKey,
+                    groupKeyVersion = groupKeyVersion
                 )
 
                 val localMsg = MessageEntity(
@@ -556,11 +570,15 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
             val chatEntity = _chat.value ?: return@launch
             val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
             val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+            val currentGroupKey = if (isGroup) ensureCurrentGroupKey() else null
+            if (isGroup && currentGroupKey == null) return@launch
+            val groupKey = currentGroupKey?.first.orEmpty()
+            val groupKeyVersion = currentGroupKey?.second ?: 0
 
             messageDao.updateMessageStatus(messageId, "SENDING")
             try {
                 val encryptedReplyPreview = encryptReplyPreview(
-                    preview = message.replyToText,
+                    preview = message.replyToTextValue,
                     isGroup = isGroup,
                     chatId = chatId,
                     privateKey = privateKeyVal,
@@ -601,6 +619,13 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
             val privateKeyVal = userPrefs.privateKeyFlow.first() ?: return@launch
             val chatEntity = _chat.value ?: return@launch
             val isGroup = chatEntity.isGroup || chatId.startsWith("group_")
+            val currentGroupKey = if (isGroup) ensureCurrentGroupKey() else null
+            if (isGroup && currentGroupKey == null) {
+                onResult(false, _groupKeyError.value ?: "Secure group key is unavailable")
+                return@launch
+            }
+            val groupKey = currentGroupKey?.first.orEmpty()
+            val groupKeyVersion = currentGroupKey?.second ?: 0
 
             val existing = messageDao.getMessageById(messageId)
             if (existing == null) {
@@ -622,7 +647,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
 
             try {
                 val encrypted = if (isGroup) {
-                    CryptoManager.encryptGroupMessage(chatId, newPlaintext)
+                    CryptoManager.encryptGroupMessage(groupKey, newPlaintext, groupKeyVersion)
                 } else {
                     CryptoManager.encryptMessage(
                         myPrivateKeyBase64 = privateKeyVal,
