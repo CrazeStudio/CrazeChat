@@ -354,6 +354,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 if (userId.isBlank() || username.isBlank()) throw IllegalStateException("No signed-in account.")
                 val oldProfile = profileDao.getProfileByUsername(username)
                     ?: throw IllegalStateException("Local encryption keys are missing.")
+                val privateKeyPlain = oldProfile.privateKeyPlain
+                if (privateKeyPlain.isBlank() || oldProfile.publicKey.isBlank()) {
+                    throw IllegalStateException("Your local encryption keys are unavailable. Password was not changed; recover the profile first.")
+                }
 
                 // Build the new backup before the request; the backend atomically updates
                 // the scrypt credential and this password-protected backup in one DB update.
@@ -363,9 +367,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     username = oldProfile.username,
                     password = newPasswordHash,
                     publicKey = oldProfile.publicKey,
-                    privateKey = SecureVault.encrypt(oldProfile.privateKeyPlain)
+                    privateKey = SecureVault.encrypt(privateKeyPlain)
                 )
-                val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${updated.privateKeyPlain}"
+                val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${privateKeyPlain}"
                 val encryptedBackup = withContext(Dispatchers.IO) {
                     CryptoManager.encryptProfile(newPassword, updated.username, backupPayload)
                 }
