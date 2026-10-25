@@ -444,6 +444,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             ownerId = myId,
             memberIds = allMembers
         )
+        if (!success) throw IllegalStateException("Could not create the group on the server.")
+
+        // Publish a random secret wrapped to each member. The server only stores envelopes.
+        try {
+            firebaseRepo.rotateGroupKey(chatId, myId)
+        } catch (e: Exception) {
+            Log.e("HomeViewModel", "Group was created but its encryption key could not be distributed: ${e.message}", e)
+            throw IllegalStateException("Group created but secure key setup failed. Open the group again while online to retry.", e)
+        }
 
         val newGroupChat = ChatEntity(
             ownerUserId = myId,
