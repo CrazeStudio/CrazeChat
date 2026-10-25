@@ -67,18 +67,8 @@ jobs:
             -dname "CN=Android Debug,O=Android,C=US" \
             -noprompt
 
-      - name: Validate API access key
-        env:
-          CRAZECHAT_API_ACCESS_KEY: ${{ secrets.CRAZECHAT_API_ACCESS_KEY }}
-        run: |
-          if [ -z "$CRAZECHAT_API_ACCESS_KEY" ]; then
-            echo "::error::Add CRAZECHAT_API_ACCESS_KEY in Settings > Secrets and variables > Actions. It must match Vercel ACCESS_KEY."
-            exit 1
-          fi
-
       - name: Build APK
         env:
-          CRAZECHAT_API_ACCESS_KEY: ${{ secrets.CRAZECHAT_API_ACCESS_KEY }}
           CRAZECHAT_API_BASE_URL: https://crazechat-api.vercel.app
         run: gradle --no-daemon :app:assembleDebug
 
