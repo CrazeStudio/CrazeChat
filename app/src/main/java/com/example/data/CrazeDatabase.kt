@@ -14,6 +14,7 @@ data class AccountProfileEntity(
     val privateKey: String,
     val createdAt: Long = System.currentTimeMillis()
 ) {
+    @get:Ignore
     val privateKeyPlain: String get() = SecureVault.decrypt(privateKey).orEmpty()
 }
 
@@ -61,6 +62,7 @@ data class ChatEntity(
     val pinnedMessageId: String = ""
 ) {
     /** Decrypt only when a UI surface needs the preview text. */
+    @get:Ignore
     val lastMessageValue: String get() = SecureVault.decrypt(lastMessage).orEmpty()
 }
 
@@ -114,7 +116,9 @@ data class MessageEntity(
     val replyToSender: String = ""
 ) {
     /** Decrypted only on demand; persisted plaintext uses Android Keystore AES-GCM. */
+    @get:Ignore
     val plaintextValue: String get() = SecureVault.decrypt(plaintext).orEmpty()
+    @get:Ignore
     val replyToTextValue: String get() =
         if (replyToText.startsWith("ENCv1|")) replyToText else SecureVault.decrypt(replyToText).orEmpty()
 }
