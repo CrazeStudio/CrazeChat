@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 
 val Context.dataStore by preferencesDataStore(name = "craze_chat_prefs")
 
@@ -30,7 +31,7 @@ class UserPreferences(private val context: Context) {
     val userIdFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_USER_ID] }
     val usernameFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_USERNAME] }
     val publicKeyFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_PUBLIC_KEY] }
-    val privateKeyFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_PRIVATE_KEY] }
+    val privateKeyFlow: Flow<String?> = context.dataStore.data.map { prefs -> SecureVault.decrypt(prefs[KEY_PRIVATE_KEY]) }
 
     suspend fun setSoundEffectsEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
@@ -50,7 +51,7 @@ class UserPreferences(private val context: Context) {
             prefs[KEY_USER_ID] = userId
             prefs[KEY_USERNAME] = username
             prefs[KEY_PUBLIC_KEY] = publicKey
-            prefs[KEY_PRIVATE_KEY] = privateKey
+            prefs[KEY_PRIVATE_KEY] = SecureVault.encrypt(privateKey)
         }
     }
 
@@ -61,6 +62,28 @@ class UserPreferences(private val context: Context) {
             publicKey = profile.publicKey,
             privateKey = profile.privateKey
         )
+    }
+
+    private fun apiTokenKey(userId: String) = stringPreferencesKey("api_token_$userId")
+
+    /** Stores account session tokens encrypted with a key held by Android Keystore. */
+    suspend fun saveApiToken(userId: String, token: String) {
+        if (userId.isBlank() || token.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs[apiTokenKey(userId)] = SecureVault.encrypt(token)
+        }
+    }
+
+    suspend fun getApiToken(userId: String): String? {
+        if (userId.isBlank()) return null
+        return context.dataStore.data.map { prefs ->
+            SecureVault.decrypt(prefs[apiTokenKey(userId)])
+        }.first()
+    }
+
+    suspend fun clearApiToken(userId: String) {
+        if (userId.isBlank()) return
+        context.dataStore.edit { prefs -> prefs.remove(apiTokenKey(userId)) }
     }
 
     suspend fun setThemeMode(mode: String) {
