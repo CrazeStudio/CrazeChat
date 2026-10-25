@@ -1,0 +1,15 @@
+{
+  "project_info": {
+    "project_number": "206259889431",
+    "firebase_url": "https://gothic-sylph-454303-k5-default-rtdb.firebaseio.com",
+    "project_id": "gothic-sylph-454303-k5",
+    "storage_bucket": "gothic-sylph-454303-k5.firebasestorage.app"
+  },
+  "client": [{
+    "client_info": {"mobilesdk_app_id": "1:206259889431:android:079fd01905950754614352", "android_client_info": {"package_name": "com.aistudio.crazechat.xqnzmw"}},
+    "oauth_client": [],
+    "api_key": [{"current_key": "AIzaSyAgHVscSKGnv9HbDteuBBOZae7LWlVnMHE"}],
+    "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+  }],
+  "configuration_version": "1"
+}
