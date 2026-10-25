@@ -8,25 +8,12 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
-// Local .env is ignored by Git. CI supplies CRAZECHAT_API_ACCESS_KEY from repository secrets.
-val localEnvValues = rootProject.file(".env").takeIf { it.isFile }?.readLines()
-    ?.mapNotNull { line ->
-        val clean = line.substringBefore("#").trim()
-        val split = clean.indexOf("=")
-        if (split <= 0) null else clean.substring(0, split).trim() to clean.substring(split + 1).trim().trim('"', '\'')
-    }?.toMap().orEmpty()
-val apiAccessKey = (
-    System.getenv("CRAZECHAT_API_ACCESS_KEY")
-        ?: (project.findProperty("CRAZECHAT_API_ACCESS_KEY") as? String)
-        ?: localEnvValues["CRAZECHAT_API_ACCESS_KEY"]
-        ?: ""
-    ).replace("\\", "\\\\").replace("\"", "\\\"")
+// Only a public HTTPS API base URL is compiled into the application. Authentication
+// secrets stay on the server; every user receives an individual expiring account token.
 val apiBaseUrl = (
     System.getenv("CRAZECHAT_API_BASE_URL")
-        ?: localEnvValues["CRAZECHAT_API_BASE_URL"]
         ?: "https://crazechat-api.vercel.app"
-    ).trimEnd('/')
-
+    ).trimEnd('/').replace("\\", "\\\\").replace("\"", "\\\"")
 
 android {
   namespace = "com.example"
@@ -44,7 +31,6 @@ android {
     // Use SecureConfig in the app code to hide the URL from decompilers.
     buildConfigField("String", "PROD_FIREBASE_DATABASE_URL", "\"REDACTED\"")
     buildConfigField("String", "CRAZECHAT_API_BASE_URL", "\"$apiBaseUrl\"")
-    buildConfigField("String", "CRAZECHAT_API_ACCESS_KEY", "\"$apiAccessKey\"")
   }
 
   signingConfigs {
