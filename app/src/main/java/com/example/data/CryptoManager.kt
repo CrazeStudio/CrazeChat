@@ -30,12 +30,46 @@ data class EncryptedPayload(
 
 object CryptoManager {
 
-    // Simple SHA-256 for basic non-cryptographic matching
+    private const val LOCAL_PASSWORD_ITERATIONS = 600_000
+
+    /** New local password verifier uses a unique random salt and PBKDF2-HMAC-SHA256. */
     fun hashPassword(password: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val salted = "CrazeChat_Salt_2026_$password"
-        val bytes = digest.digest(salted.toByteArray(Charsets.UTF_8))
-        return bytes.joinToString("") { "%02x".format(it) }
+        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
+        val spec = PBEKeySpec(password.toCharArray(), salt, LOCAL_PASSWORD_ITERATIONS, 256)
+        val derived = try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+        } finally {
+            spec.clearPassword()
+        }
+        return "CCPH2$$LOCAL_PASSWORD_ITERATIONS$${Base64.encodeToString(salt, Base64.NO_WRAP)}$${Base64.encodeToString(derived, Base64.NO_WRAP)}"
+    }
+
+    /** Supports old SHA-256 and plaintext local profiles only for migration, then rehashes on login. */
+    fun verifyPassword(password: String, stored: String): Boolean {
+        if (stored.startsWith("CCPH2$")) {
+            return try {
+                val parts = stored.split('$')
+                if (parts.size != 4) return false
+                val iterations = parts[1].toIntOrNull() ?: return false
+                if (iterations !in 100_000..1_000_000) return false
+                val salt = Base64.decode(parts[2], Base64.NO_WRAP)
+                val expected = Base64.decode(parts[3], Base64.NO_WRAP)
+                val spec = PBEKeySpec(password.toCharArray(), salt, iterations, expected.size * 8)
+                val actual = try {
+                    SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+                } finally {
+                    spec.clearPassword()
+                }
+                MessageDigest.isEqual(actual, expected)
+            } catch (_: Exception) { false }
+        }
+        val oldDigest = MessageDigest.getInstance("SHA-256")
+            .digest("CrazeChat_Salt_2026_$password".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        if (stored.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+            return MessageDigest.isEqual(stored.lowercase().toByteArray(Charsets.UTF_8), oldDigest.toByteArray(Charsets.UTF_8))
+        }
+        return stored == password
     }
 
     // Version 1 backups used a deterministic salt and 2,000 iterations.
