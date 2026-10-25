@@ -316,7 +316,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                                 pinnedAt = msgDto.pinnedAt,
                                                 isDeleted = msgDto.isDeleted,
                                                 replyToId = msgDto.replyToId,
-                                                replyToText = decryptedReplyText,
+                                                replyToText = if (decryptedReplyText.isBlank()) "" else SecureVault.encrypt(decryptedReplyText),
                                                 replyToSender = msgDto.replyToSender,
                                                 reactionsJson = msgDto.reactionsJson
                                             )
