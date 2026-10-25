@@ -61,11 +61,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val soundEffects = SoundEffectsManager.getInstance(application)
 
     init {
+        migrateLocalChatPreviews()
         observeCurrentUserPfp()
         observeRealtimeInbox()
         observeRealtimeGroups()
         syncPendingCloudMessages()
         observeLocalChatsForMessages()
+    }
+
+    private fun migrateLocalChatPreviews() {
+        viewModelScope.launch {
+            runCatching {
+                chatDao.getAllChatsForMigration().forEach { chat ->
+                    if (chat.lastMessage.isNotBlank() && !chat.lastMessage.startsWith("enc:")) {
+                        chatDao.insertChat(chat.copy(lastMessage = SecureVault.encrypt(chat.lastMessage)))
+                    }
+                }
+            }.onFailure { Log.w("HomeViewModel", "Local chat preview encryption migration failed: ${it.message}") }
+        }
     }
 
     private fun observeLocalChatsForMessages() {
@@ -118,7 +131,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                 peerUserId = senderId,
                                 peerUsername = peerName.ifBlank { "User" },
                                 peerPublicKey = peerKey,
-                                lastMessage = "New encrypted message",
+                                lastMessage = SecureVault.encrypt("New encrypted message"),
                                 lastTimestamp = timestamp,
                                 unreadCount = 0
                             )).copy(
@@ -163,7 +176,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                     peerUserId = "",
                                     peerUsername = groupName,
                                     peerPublicKey = "",
-                                    lastMessage = "Encrypted group chat",
+                                    lastMessage = SecureVault.encrypt("Encrypted group chat"),
                                     lastTimestamp = groupInfo?.createdAt ?: System.currentTimeMillis(),
                                     unreadCount = 0,
                                     isGroup = true,
@@ -248,7 +261,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                                             decryptedText
                                         }
                                         chatDao.insertChat(existingChat.copy(
-                                            lastMessage = displayMsg,
+                                            lastMessage = if (displayMsg.isBlank()) "" else SecureVault.encrypt(displayMsg),
                                             lastTimestamp = msgDto.timestamp,
                                             unreadCount = if (ChatViewModel.activeChatId == chatId) 0 else existingChat.unreadCount + 1
                                         ))
@@ -460,7 +473,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             peerUserId = "",
             peerUsername = groupName,
             peerPublicKey = "",
-            lastMessage = "Group created",
+            lastMessage = SecureVault.encrypt("Group created"),
             lastTimestamp = System.currentTimeMillis(),
             unreadCount = 0,
             isGroup = true,
@@ -514,7 +527,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 peerUserId = peerUser.userId,
                 peerUsername = peerUser.username,
                 peerPublicKey = peerUser.publicKey,
-                lastMessage = "End-to-end encrypted chat started",
+                lastMessage = SecureVault.encrypt("End-to-end encrypted chat started"),
                 lastTimestamp = System.currentTimeMillis(),
                 unreadCount = 0
             )
