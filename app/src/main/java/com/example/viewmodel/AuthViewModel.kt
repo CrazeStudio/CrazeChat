@@ -20,7 +20,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val db = CrazeDatabase.getDatabase(application)
     private val profileDao = db.profileDao()
     private val userPrefs = UserPreferences(application)
-    private val firebaseRepo = FirebaseRepository()
+    private val firebaseRepo = FirebaseRepository(application)
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
