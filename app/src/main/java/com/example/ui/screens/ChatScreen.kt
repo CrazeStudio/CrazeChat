@@ -1109,7 +1109,7 @@ fun MessageBubbleItem(
             CryptoManager.decryptGroupMessage(chatId, message.ciphertext, message.nonce)
         } else {
             if (message.ciphertext.isBlank() || privateKey.isBlank() || peerPublicKey.isBlank()) {
-                message.plaintext.ifBlank { "Encrypted Message" }
+                message.plaintextValue.ifBlank { "Encrypted Message" }
             } else {
                 CryptoManager.decryptMessage(
                     myPrivateKeyBase64 = privateKey,
@@ -1207,7 +1207,7 @@ fun MessageBubbleItem(
                                     color = if (isMe && !isHighlighted) Color.White else MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = message.replyToText.ifBlank { "Encrypted Message" },
+                                    text = message.replyToTextValue.ifBlank { "Encrypted Message" },
                                     fontSize = 11.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
