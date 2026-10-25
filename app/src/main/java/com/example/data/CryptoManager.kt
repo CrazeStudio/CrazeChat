@@ -221,15 +221,17 @@ object CryptoManager {
             Base64.encodeToString(iv, Base64.NO_WRAP))
     }
 
-    fun decryptGroupMessage(groupKeyBase64: String, ciphertext: String, nonceBase64: String): String = try {
-        val version = groupMessageVersion(ciphertext)
-        if (version <= 0 || !isValidGroupKey(groupKeyBase64) || nonceBase64.isBlank()) return ""
-        val key = SecretKeySpec(Base64.decode(groupKeyBase64, Base64.NO_WRAP), "AES")
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
-        cipher.updateAAD("CrazeChatGroupV2:$version".toByteArray(Charsets.UTF_8))
-        String(cipher.doFinal(Base64.decode(ciphertext.substringAfter(':'), Base64.NO_WRAP)), Charsets.UTF_8)
-    } catch (_: Exception) { "[Encrypted Group Message]" }
+    fun decryptGroupMessage(groupKeyBase64: String, ciphertext: String, nonceBase64: String): String {
+        return try {
+            val version = groupMessageVersion(ciphertext)
+            if (version <= 0 || !isValidGroupKey(groupKeyBase64) || nonceBase64.isBlank()) return ""
+            val key = SecretKeySpec(Base64.decode(groupKeyBase64, Base64.NO_WRAP), "AES")
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
+            cipher.updateAAD("CrazeChatGroupV2:$version".toByteArray(Charsets.UTF_8))
+            String(cipher.doFinal(Base64.decode(ciphertext.substringAfter(':'), Base64.NO_WRAP)), Charsets.UTF_8)
+        } catch (_: Exception) { "[Encrypted Group Message]" }
+    }
 
     // Compatibility only: previous versions derived this key from a constant bundled in the APK.
     // Old group messages are not confidential from someone who reverse-engineers that APK.
