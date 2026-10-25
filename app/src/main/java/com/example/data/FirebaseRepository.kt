@@ -305,6 +305,21 @@ class FirebaseRepository(private val context: Context? = null) {
         null
     }
 
+    suspend fun markMessageSeen(userId: String, messageId: String): Boolean = try {
+        api(userId, "POST", "/api/chat/messages/${segment(messageId)}/seen", JSONObject())
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "Read receipt was not saved: ${e.message}")
+        false
+    }
+
+    suspend fun isMessageSeen(userId: String, messageId: String): Boolean = try {
+        api(userId, "GET", "/api/chat/messages/${segment(messageId)}/seen").optBoolean("seen", false)
+    } catch (e: Exception) {
+        Log.w(TAG, "Read receipt status could not be loaded: ${e.message}")
+        false
+    }
+
     suspend fun getPrivacySettings(userId: String): JSONObject =
         api(userId, "GET", "/api/chat/privacy/me").optJSONObject("privacy") ?: JSONObject()
 
