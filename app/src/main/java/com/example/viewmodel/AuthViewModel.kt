@@ -65,7 +65,26 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        migrateLocalPrivateKeys()
         checkSession()
+    }
+
+    private fun migrateLocalPrivateKeys() {
+        viewModelScope.launch {
+            try {
+                profileDao.getAllProfiles().forEach { profile ->
+                    if (profile.privateKey.isNotBlank() && !profile.privateKey.startsWith("enc:")) {
+                        profileDao.insertProfile(profile.copy(privateKey = SecureVault.encrypt(profile.privateKey)))
+                    }
+                }
+                val activeId = userPrefs.userIdFlow.first().orEmpty()
+                if (activeId.isNotBlank()) {
+                    profileDao.getProfile(activeId)?.let { userPrefs.setActiveProfile(it) }
+                }
+            } catch (e: Exception) {
+                Log.w("AuthViewModel", "Secure local key migration could not complete: ${e.message}")
+            }
+        }
     }
 
     fun checkSession() {
@@ -128,7 +147,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         username = canonicalUsername,
                         password = CryptoManager.hashPassword(password),
                         publicKey = localProfile.publicKey,
-                        privateKey = localProfile.privateKey
+                        privateKey = SecureVault.encrypt(localProfile.privateKeyPlain)
                     )
                 } else {
                     val encryptedBackup = remoteProfile?.encryptedBackup.orEmpty()
@@ -147,7 +166,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         username = canonicalUsername,
                         password = CryptoManager.hashPassword(password),
                         publicKey = parts[3],
-                        privateKey = parts[4]
+                        privateKey = SecureVault.encrypt(parts[4])
                     )
                 }
 
@@ -158,7 +177,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 userPrefs.setActiveProfile(profile)
 
                 // Re-wrap the profile backup with the current password after successful sign-in.
-                val backupPayload = "${profile.userId}|${profile.username}|${profile.password}|${profile.publicKey}|${profile.privateKey}"
+                val backupPayload = "${profile.userId}|${profile.username}|${profile.password}|${profile.publicKey}|${profile.privateKeyPlain}"
                 val encryptedBackup = CryptoManager.encryptProfile(password, profile.username, backupPayload)
                 val uploaded = firebaseRepo.registerUser(accountUid, profile.username, profile.publicKey, encryptedBackup)
                 if (!uploaded) Log.w("AuthViewModel", "Signed in locally; profile backup refresh failed")
@@ -217,9 +236,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     username = canonicalUsername,
                     password = hashedPassword,
                     publicKey = keyPair.publicKeyBase64,
-                    privateKey = keyPair.privateKeyBase64
+                    privateKey = SecureVault.encrypt(keyPair.privateKeyBase64)
                 )
-                val backupPayload = "${newProfile.userId}|${newProfile.username}|${newProfile.password}|${newProfile.publicKey}|${newProfile.privateKey}"
+                val backupPayload = "${newProfile.userId}|${newProfile.username}|${newProfile.password}|${newProfile.publicKey}|${newProfile.privateKeyPlain}"
                 val encryptedBackup = CryptoManager.encryptProfile(password, canonicalUsername, backupPayload)
 
                 profileDao.insertProfile(newProfile)
@@ -259,10 +278,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     username = oldProfile.username,
                     password = CryptoManager.hashPassword(newPassword),
                     publicKey = oldProfile.publicKey,
-                    privateKey = oldProfile.privateKey
+                    privateKey = SecureVault.encrypt(oldProfile.privateKeyPlain)
                 )
                 profileDao.insertProfile(updated)
-                val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${updated.privateKey}"
+                val backupPayload = "${updated.userId}|${updated.username}|${updated.password}|${updated.publicKey}|${updated.privateKeyPlain}"
                 val encryptedBackup = CryptoManager.encryptProfile(newPassword, updated.username, backupPayload)
                 if (!firebaseRepo.registerUser(userId, updated.username, updated.publicKey, encryptedBackup)) {
                     throw IllegalStateException("Password changed, but encrypted key backup could not be updated. Keep a local copy of this device's keys.")
