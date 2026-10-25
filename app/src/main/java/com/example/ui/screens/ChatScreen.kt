@@ -658,7 +658,7 @@ fun ChatScreen(
                     if (isGroupChat && !groupKeyError.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Surface(
-                            modifier = Modifier.fillMaxWidth(0.95f).align(Alignment.CenterHorizontally),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                             shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.errorContainer
                         ) {
