@@ -1,23 +1,32 @@
 package com.example.data
 
-import org.json.JSONObject
-
+import android.content.Context
 import android.util.Log
 import com.example.BuildConfig
 import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
 
 data class FirebaseUserDto(
     val userId: String = "",
@@ -44,7 +53,7 @@ data class FirebaseMessageDto(
     val replyToId: String = "",
     val replyToText: String = "",
     val replyToSender: String = "",
-    val reactionsJson: String = ""
+    val reactionsJson: String = "{}"
 )
 
 data class FirebaseGroupDto(
@@ -56,664 +65,364 @@ data class FirebaseGroupDto(
     val createdAt: Long = 0L
 )
 
-class FirebaseRepository {
-    private val databaseUrl = SecureConfig.getDatabaseUrl()
-
-    private val httpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .writeTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .build()
+/**
+ * Compatibility adapter: the Android UI keeps its existing repository API, but all cloud
+ * reads/writes go through the CrazeChat HTTP API. Firebase SDK listeners are replaced by
+ * lightweight polling because the HTTP API does not provide Firebase realtime streams.
+ */
+class FirebaseRepository(private val context: Context? = null) {
+    companion object {
+        private const val TAG = "CrazeApiRepository"
+        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+        private const val POLL_MS = 2500L
+        private data class TokenEntry(val value: String, val expiresAt: Long)
+        private val tokenCache = ConcurrentHashMap<String, TokenEntry>()
     }
 
-    private val db: FirebaseDatabase? by lazy {
-        try {
-            FirebaseDatabase.getInstance(databaseUrl)
-        } catch (e: Exception) {
-            Log.e("FirebaseRepository", "FirebaseDatabase instance error: ${e.message}", e)
-            try {
-                FirebaseDatabase.getInstance()
-            } catch (e2: Exception) {
-                null
+    private val baseUrl = BuildConfig.CRAZECHAT_API_BASE_URL.trimEnd('/')
+    private val apiKey = BuildConfig.CRAZECHAT_API_ACCESS_KEY
+    private val preferences = context?.let { UserPreferences(it) }
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val listenerJobs = ConcurrentHashMap<ChildEventListener, Job>()
+
+    private class ApiException(val status: Int, message: String) : IOException(message)
+
+    private suspend fun activeUid(): String =
+        preferences?.userIdFlow?.first()?.takeIf { it.isNotBlank() } ?: "device"
+
+    private fun segment(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
+
+    private fun millis(value: String?): Long = try {
+        java.time.Instant.parse(value).toEpochMilli()
+    } catch (_: Exception) {
+        try { value?.toLong() ?: 0L } catch (_: Exception) { 0L }
+    }
+
+    private fun rawRequest(method: String, path: String, body: JSONObject?, bearer: String?): JSONObject {
+        if (baseUrl.isBlank()) throw IOException("CrazeChat API base URL is missing.")
+        val builder = Request.Builder().url(baseUrl + path)
+            .header("Accept", "application/json")
+        if (!bearer.isNullOrBlank()) builder.header("X-API-Token", bearer)
+        if (body != null) builder.header("Content-Type", "application/json")
+        val requestBody = body?.toString()?.toRequestBody(JSON_MEDIA)
+        builder.method(method, when {
+            method == "GET" || method == "HEAD" -> null
+            requestBody != null -> requestBody
+            method == "DELETE" -> ByteArray(0).toRequestBody(JSON_MEDIA)
+            else -> "{}".toRequestBody(JSON_MEDIA)
+        })
+        http.newCall(builder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            val json = try { if (text.isBlank()) JSONObject() else JSONObject(text) } catch (_: Exception) { JSONObject().put("message", text.take(300)) }
+            if (!response.isSuccessful) {
+                throw ApiException(response.code, json.optString("error", json.optString("message", "API request failed (HTTP ${response.code})")))
             }
+            return json
         }
     }
 
-    suspend fun registerUser(userId: String, username: String, publicKey: String, encryptedBackup: String = ""): Boolean {
-        val database = db
-        if (database == null) {
-            Log.e("FirebaseRepository", "registerUser: db is null")
-            return false
+    private fun tokenFor(uid: String): String {
+        if (apiKey.isBlank()) {
+            throw IOException("API access key is not configured in this APK. Add the same value as Vercel ACCESS_KEY to GitHub Actions secret CRAZECHAT_API_ACCESS_KEY, then rebuild.")
+        }
+        val cached = tokenCache[uid]
+        if (cached != null && cached.expiresAt > System.currentTimeMillis() + 30_000L) return cached.value
+        val response = rawRequest(
+            "POST", "/verify",
+            JSONObject().put("password", apiKey).put("uid", uid),
+            null
+        )
+        val value = response.optString("token")
+        if (value.isBlank()) throw IOException("API verification succeeded without returning a token.")
+        val ttl = response.optLong("expiresIn", 43_200L).coerceIn(60L, 86_400L)
+        tokenCache[uid] = TokenEntry(value, System.currentTimeMillis() + ttl * 1000L - 30_000L)
+        return value
+    }
+
+    private suspend fun api(uid: String, method: String, path: String, body: JSONObject? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            val firstToken = tokenFor(uid)
+            try {
+                rawRequest(method, path, body, firstToken)
+            } catch (error: ApiException) {
+                if (error.status != 401) throw error
+                tokenCache.remove(uid)
+                rawRequest(method, path, body, tokenFor(uid))
+            }
         }
 
-        val combinedPublicKey = if (encryptedBackup.isNotBlank()) {
-            "$publicKey::ENC::$encryptedBackup"
-        } else {
-            publicKey
+    private fun dto(value: JSONObject): FirebaseUserDto {
+        val rawKey = value.optString("publicKey")
+        return FirebaseUserDto(
+            userId = value.optString("userId", value.optString("uid")),
+            username = value.optString("username"),
+            publicKey = rawKey.substringBefore("::ENC::"),
+            encryptedBackup = if (rawKey.contains("::ENC::")) rawKey.substringAfter("::ENC::") else value.optString("encryptedBackup"),
+            pfpUrl = value.optString("pfpUrl")
+        )
+    }
+
+    private fun message(value: JSONObject): FirebaseMessageDto {
+        val reactions = value.optJSONObject("reactions") ?: JSONObject()
+        val edited = value.optString("editedAt")
+        return FirebaseMessageDto(
+            senderId = value.optString("senderUid", value.optString("senderId")),
+            receiverId = value.optString("receiverId"),
+            ciphertext = value.optString("ciphertext"),
+            nonce = value.optString("nonce"),
+            timestamp = millis(value.optString("createdAt").ifBlank { value.optString("timestamp") }),
+            senderUsername = value.optString("senderUsername"),
+            isEdited = edited.isNotBlank() && edited != "null",
+            editedAt = millis(edited),
+            isPinned = value.optBoolean("pinned", value.optBoolean("isPinned", false)),
+            pinnedAt = millis(value.optString("pinnedAt")),
+            isDeleted = value.optBoolean("isDeleted", false),
+            reactionTargetId = value.optString("reactionTargetId"),
+            reactionEmoji = value.optString("reactionEmoji"),
+            replyToId = value.optString("replyToId"),
+            replyToText = value.optString("replyToText"),
+            replyToSender = value.optString("replyToSender"),
+            reactionsJson = reactions.toString()
+        )
+    }
+
+    private suspend fun users(uid: String): List<FirebaseUserDto> {
+        val array = api(uid, "GET", "/api/chat/users").optJSONArray("users") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i ->
+            array.optJSONObject(i)?.let(::dto)?.takeIf { it.userId.isNotBlank() && it.username.isNotBlank() }
         }
-
-        return withTimeoutOrNull(10000L) {
-            try {
-                val userMap = mapOf(
-                    "userId" to userId,
-                    "username" to username,
-                    "publicKey" to combinedPublicKey
-                )
-                Log.d("FirebaseRepository", "Writing user to /users/$userId")
-                database.getReference("users").child(userId).setValue(userMap).await()
-                Log.d("FirebaseRepository", "User $username ($userId) successfully written to Firebase")
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "registerUser failed: ${e.message}", e)
-                false
-            }
-        } ?: false
     }
 
-    suspend fun getAllUsers(): List<FirebaseUserDto> {
-        val database = db ?: return emptyList()
-        return withTimeoutOrNull(8000L) {
-            suspendCancellableCoroutine<List<FirebaseUserDto>> { continuation ->
-                database.getReference("users").addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(snapshot: DataSnapshot) {
-                        val list = mutableListOf<FirebaseUserDto>()
-                        for (child in snapshot.children) {
-                            val uid = child.child("userId").getValue(String::class.java) ?: child.key ?: ""
-                            val name = child.child("username").getValue(String::class.java) ?: ""
-                            val rawKey = child.child("publicKey").getValue(String::class.java) ?: ""
-
-                             if (name.isNotBlank()) {
-                                val actualKey = rawKey.substringBefore("::ENC::")
-                                val backup = if (rawKey.contains("::ENC::")) rawKey.substringAfter("::ENC::") else ""
-                                val pUrl = child.child("pfpUrl").getValue(String::class.java) ?: ""
-                                list.add(FirebaseUserDto(userId = uid, username = name, publicKey = actualKey, encryptedBackup = backup, pfpUrl = pUrl))
-                            }
-                        }
-                        continuation.resume(list)
-                    }
-
-                    override fun onCancelled(error: DatabaseError) {
-                        Log.e("FirebaseRepository", "getAllUsers cancelled: ${error.message}")
-                        continuation.resume(emptyList())
-                    }
-                })
-            }
-        } ?: emptyList()
+    private suspend fun chats(uid: String): List<JSONObject> {
+        val array = api(uid, "GET", "/api/chat/chats").optJSONArray("chats") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { array.optJSONObject(it) }
     }
 
-    suspend fun updatePfpUrl(userId: String, encryptedPfpUrl: String): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(6000L) {
-            try {
-                database.getReference("users").child(userId).child("pfpUrl").setValue(encryptedPfpUrl).await()
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "updatePfpUrl failed: ${e.message}")
-                false
-            }
-        } ?: false
+    private suspend fun messages(uid: String, chatId: String): List<JSONObject> {
+        val response = api(uid, "GET", "/api/chat/messages?chatId=${segment(chatId)}&limit=100")
+        val array = response.optJSONArray("messages") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { array.optJSONObject(it) }
     }
+
+    private fun dummyListener(): ChildEventListener = object : ChildEventListener {
+        override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {}
+        override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {}
+        override fun onChildRemoved(snapshot: DataSnapshot) {}
+        override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+        override fun onCancelled(error: DatabaseError) { Log.w(TAG, "API polling listener cancelled: ${error.message}") }
+    }
+
+    private fun observe(listener: ChildEventListener, block: suspend () -> Unit): ChildEventListener {
+        listenerJobs[listener] = scope.launch {
+            while (isActive) {
+                try { block() } catch (e: Exception) { Log.w(TAG, "API polling failed: ${e.message}") }
+                delay(POLL_MS)
+            }
+        }
+        return listener
+    }
+
+    suspend fun registerUser(userId: String, username: String, publicKey: String, encryptedBackup: String = ""): Boolean = try {
+        val combinedKey = if (encryptedBackup.isNotBlank()) "$publicKey::ENC::$encryptedBackup" else publicKey
+        api(userId, "PUT", "/api/chat/users/me", JSONObject()
+            .put("username", username)
+            .put("publicKey", combinedKey))
+        true
+    } catch (e: Exception) { Log.e(TAG, "registerUser failed", e); false }
+
+    suspend fun getAllUsers(): List<FirebaseUserDto> = try { users(activeUid()) }
+    catch (e: Exception) { Log.e(TAG, "getAllUsers failed", e); emptyList() }
+
+    suspend fun updatePfpUrl(userId: String, encryptedPfpUrl: String): Boolean = try {
+        api(userId, "PATCH", "/api/chat/users/me", JSONObject().put("pfpUrl", encryptedPfpUrl))
+        true
+    } catch (e: Exception) { Log.e(TAG, "updatePfpUrl failed", e); false }
 
     suspend fun findUser(query: String): FirebaseUserDto? {
-        val cleanQuery = query.trim()
-        if (cleanQuery.isBlank()) return null
-
-        // Boost privacy & security: Only allow adding user by exact, complete User ID. No partial matching, no username lookup.
-        val database = db ?: return null
-        return withTimeoutOrNull(5000L) {
-            try {
-                val snapshot = database.getReference("users").child(cleanQuery).get().await()
-                if (snapshot.exists()) {
-                    val uid = snapshot.child("userId").getValue(String::class.java) ?: snapshot.key ?: ""
-                    val name = snapshot.child("username").getValue(String::class.java) ?: ""
-                    val rawKey = snapshot.child("publicKey").getValue(String::class.java) ?: ""
-                    val pUrl = snapshot.child("pfpUrl").getValue(String::class.java) ?: ""
-                    if (uid.isNotBlank() && name.isNotBlank()) {
-                        val actualKey = rawKey.substringBefore("::ENC::")
-                        val backup = if (rawKey.contains("::ENC::")) rawKey.substringAfter("::ENC::") else ""
-                        FirebaseUserDto(userId = uid, username = name, publicKey = actualKey, encryptedBackup = backup, pfpUrl = pUrl)
-                    } else null
-                } else null
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "findUser by ID failed: ${e.message}")
-                null
-            }
+        val clean = query.trim()
+        if (clean.isBlank()) return null
+        val uid = activeUid()
+        try {
+            val result = api(uid, "GET", "/api/chat/users/${segment(clean)}").optJSONObject("user")
+            if (result != null) return dto(result)
+        } catch (_: ApiException) {
+            // If this was a username, fall back to exact username lookup.
+        } catch (e: Exception) {
+            Log.w(TAG, "ID lookup failed; trying username lookup: ${e.message}")
         }
+        return try { users(uid).firstOrNull { it.username.equals(clean, ignoreCase = true) } }
+        catch (e: Exception) { Log.e(TAG, "findUser failed", e); null }
     }
 
-    suspend fun findUserByUsername(usernameQuery: String): FirebaseUserDto? {
-        val cleanQuery = usernameQuery.trim()
-        if (cleanQuery.isBlank()) return null
-        val allUsers = getAllUsers()
-        return allUsers.firstOrNull { it.username.equals(cleanQuery, ignoreCase = true) }
-    }
+    suspend fun findUserByUsername(usernameQuery: String): FirebaseUserDto? =
+        try { users(activeUid()).firstOrNull { it.username.equals(usernameQuery.trim(), ignoreCase = true) } }
+        catch (e: Exception) { Log.e(TAG, "findUserByUsername failed", e); null }
 
-    suspend fun findUserById(userId: String): FirebaseUserDto? {
-        return findUser(userId)
-    }
+    suspend fun findUserById(userId: String): FirebaseUserDto? = try {
+        dto(api(activeUid(), "GET", "/api/chat/users/${segment(userId)}").getJSONObject("user"))
+    } catch (e: Exception) { Log.w(TAG, "findUserById failed: ${e.message}"); null }
+
+    suspend fun createDirectChat(chatId: String, userId: String, peerUserId: String): Boolean = try {
+        api(userId, "GET", "/api/chat/chats/${segment(chatId)}")
+        true
+    } catch (e: ApiException) {
+        if (e.status != 404) {
+            Log.w(TAG, "Could not check direct chat: ${e.message}")
+            false
+        } else try {
+            api(userId, "POST", "/api/chat/chats", JSONObject()
+                .put("id", chatId)
+                .put("title", "")
+                .put("isGroup", false)
+                .put("memberIds", JSONArray().put(userId).put(peerUserId)))
+            true
+        } catch (createError: Exception) { Log.e(TAG, "createDirectChat failed", createError); false }
+    } catch (e: Exception) { Log.e(TAG, "createDirectChat failed", e); false }
 
     suspend fun sendMessage(
-        chatId: String,
-        messageId: String,
-        senderId: String,
-        receiverId: String,
-        ciphertext: String,
-        nonce: String,
-        timestamp: Long,
-        senderUsername: String = "",
-        replyToId: String = "",
-        replyToText: String = "",
-        replyToSender: String = ""
-    ): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(8000L) {
-            try {
-                val chatRef = database.getReference("chats").child(chatId)
-                val participants = mutableMapOf<String, Any>(
-                    senderId to true
-                )
-                if (receiverId.isNotBlank()) {
-                    participants[receiverId] = true
-                }
-                chatRef.child("participants").updateChildren(participants).await()
-
-                val messageMap = mapOf(
-                    "senderId" to senderId,
-                    "receiverId" to receiverId,
-                    "ciphertext" to ciphertext,
-                    "nonce" to nonce,
-                    "timestamp" to timestamp,
-                    "senderUsername" to senderUsername,
-                    "isEdited" to false,
-                    "isPinned" to false,
-                    "isDeleted" to false,
-                    "replyToId" to replyToId,
-                    "replyToText" to replyToText,
-                    "replyToSender" to replyToSender
-                )
-                chatRef.child("messages").child(messageId).setValue(messageMap).await()
-
-                // Notify receiver directly so incoming messages appear immediately without needing to add them first!
-                if (receiverId.isNotBlank()) {
-                    try {
-                        val inboxData = mapOf<String, Any>(
-                            "chatId" to chatId,
-                            "senderId" to senderId,
-                            "senderUsername" to senderUsername,
-                            "timestamp" to timestamp
-                        )
-                        database.getReference("users").child(receiverId).child("inbox").child(chatId).setValue(inboxData)
-                    } catch (eInbox: Exception) {
-                        Log.w("FirebaseRepository", "Inbox notification failed: ${eInbox.message}")
-                    }
-                }
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "sendMessage error: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
+        chatId: String, messageId: String, senderId: String, receiverId: String,
+        ciphertext: String, nonce: String, timestamp: Long, senderUsername: String = "",
+        replyToId: String = "", replyToText: String = "", replyToSender: String = ""
+    ): Boolean = try {
+        api(senderId, "POST", "/api/chat/messages", JSONObject()
+            .put("chatId", chatId).put("receiverId", receiverId)
+            .put("ciphertext", ciphertext).put("nonce", nonce)
+            .put("senderUsername", senderUsername).put("replyToId", replyToId)
+            .put("replyToText", replyToText).put("replyToSender", replyToSender)
+            .put("ttlMinutes", 1440))
+        true
+    } catch (e: Exception) { Log.e(TAG, "sendMessage failed", e); false }
 
     suspend fun sendReaction(
-        chatId: String,
-        reactionId: String,
-        senderId: String,
-        receiverId: String,
-        targetMessageId: String,
-        emoji: String,
-        timestamp: Long,
-        senderUsername: String = ""
-    ): Boolean {
-        val database = db ?: return false
-        if (chatId.isBlank() || targetMessageId.isBlank() || senderId.isBlank() || emoji.isBlank()) return false
-        return withTimeoutOrNull(8000L) {
-            try {
-                // Persist on the target message instead of creating transient message events.
-                // This avoids reaction-event/delete loops that can freeze the chat UI.
-                database.getReference("chats")
-                    .child(chatId)
-                    .child("reactions")
-                    .child(targetMessageId)
-                    .child(senderId)
-                    .setValue(emoji)
-                    .await()
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "sendReaction failed: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
+        chatId: String, reactionId: String, senderId: String, receiverId: String,
+        targetMessageId: String, emoji: String, timestamp: Long, senderUsername: String = ""
+    ): Boolean = try {
+        api(senderId, "POST", "/api/chat/messages/${segment(targetMessageId)}/reactions", JSONObject().put("emoji", emoji))
+        true
+    } catch (e: Exception) { Log.e(TAG, "sendReaction failed", e); false }
 
-    suspend fun editMessage(
-        chatId: String,
-        messageId: String,
-        newCiphertext: String,
-        newNonce: String
-    ): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(8000L) {
-            try {
-                val msgRef = database.getReference("chats").child(chatId).child("messages").child(messageId)
-                val updates = mapOf<String, Any>(
-                    "ciphertext" to newCiphertext,
-                    "nonce" to newNonce,
-                    "isEdited" to true,
-                    "editedAt" to System.currentTimeMillis()
-                )
-                msgRef.updateChildren(updates).await()
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "editMessage error: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
+    suspend fun editMessage(chatId: String, messageId: String, newCiphertext: String, newNonce: String): Boolean = try {
+        api(activeUid(), "PATCH", "/api/chat/messages/${segment(messageId)}", JSONObject()
+            .put("ciphertext", newCiphertext).put("nonce", newNonce))
+        true
+    } catch (e: Exception) { Log.e(TAG, "editMessage failed", e); false }
 
-    suspend fun pinMessage(
-        chatId: String,
-        messageId: String,
-        isPinned: Boolean
-    ): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(8000L) {
-            try {
-                val chatRef = database.getReference("chats").child(chatId)
-                val msgRef = chatRef.child("messages").child(messageId)
-                val msgUpdates = mapOf<String, Any>(
-                    "isPinned" to isPinned,
-                    "pinnedAt" to (if (isPinned) System.currentTimeMillis() else 0L)
-                )
-                msgRef.updateChildren(msgUpdates).await()
+    suspend fun pinMessage(chatId: String, messageId: String, isPinned: Boolean): Boolean = try {
+        api(activeUid(), "POST", "/api/chat/messages/${segment(messageId)}/pin", JSONObject().put("pinned", isPinned))
+        true
+    } catch (e: Exception) { Log.e(TAG, "pinMessage failed", e); false }
 
-                val infoUpdates = mapOf<String, Any>(
-                    "pinnedMessageId" to (if (isPinned) messageId else "")
-                )
-                chatRef.child("info").updateChildren(infoUpdates).await()
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "pinMessage error: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
+    suspend fun createGroup(chatId: String, groupName: String, ownerId: String, memberIds: List<String>): Boolean = try {
+        api(ownerId, "POST", "/api/chat/chats", JSONObject()
+            .put("id", chatId).put("title", groupName).put("isGroup", true)
+            .put("memberIds", JSONArray((memberIds + ownerId).distinct())))
+        true
+    } catch (e: Exception) { Log.e(TAG, "createGroup failed", e); false }
 
-    suspend fun createGroup(
-        chatId: String,
-        groupName: String,
-        ownerId: String,
-        memberIds: List<String>
-    ): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(10000L) {
-            try {
-                val allMemberIds = (memberIds + ownerId).distinct()
-                val chatRef = database.getReference("chats").child(chatId)
+    suspend fun addGroupMember(chatId: String, newMemberId: String): Boolean = try {
+        api(activeUid(), "POST", "/api/chat/chats/${segment(chatId)}/members", JSONObject().put("memberId", newMemberId))
+        true
+    } catch (e: Exception) { Log.e(TAG, "addGroupMember failed", e); false }
 
-                // Write info
-                val membersMap = allMemberIds.associateWith { true }
-                val infoMap = mapOf(
-                    "chatId" to chatId,
-                    "isGroup" to true,
-                    "groupName" to groupName,
-                    "groupOwnerId" to ownerId,
-                    "members" to membersMap,
-                    "pinnedMessageId" to "",
-                    "createdAt" to System.currentTimeMillis()
-                )
-                chatRef.child("info").setValue(infoMap).await()
+    suspend fun getGroupInfo(chatId: String): FirebaseGroupDto? = try {
+        val chat = api(activeUid(), "GET", "/api/chat/chats/${segment(chatId)}").optJSONObject("chat") ?: return null
+        val memberObject = chat.optJSONObject("members") ?: JSONObject()
+        val members = mutableMapOf<String, Boolean>()
+        val keys = memberObject.keys()
+        while (keys.hasNext()) members[keys.next()] = true
+        FirebaseGroupDto(chatId, chat.optString("title"), chat.optString("createdBy"), members,
+            chat.optString("pinnedMessageId"), millis(chat.optString("createdAt")))
+    } catch (e: Exception) { Log.w(TAG, "getGroupInfo failed: ${e.message}"); null }
 
-                // Write participants for fast lookup
-                chatRef.child("participants").setValue(membersMap).await()
-
-                // Also record in each member's user/groups node for synchronization
-                for (uid in allMemberIds) {
-                    database.getReference("users").child(uid).child("groups").child(chatId).setValue(groupName)
-                }
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "createGroup error: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
-
-    suspend fun addGroupMember(chatId: String, newMemberId: String): Boolean {
-        val database = db ?: return false
-        return withTimeoutOrNull(8000L) {
-            try {
-                val chatRef = database.getReference("chats").child(chatId)
-                chatRef.child("info").child("members").child(newMemberId).setValue(true).await()
-                chatRef.child("participants").child(newMemberId).setValue(true).await()
-                database.getReference("users").child(newMemberId).child("groups").child(chatId).setValue(true).await()
-                true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "addGroupMember error: ${e.message}", e)
-                false
-            }
-        } ?: false
-    }
-
-    suspend fun getGroupInfo(chatId: String): FirebaseGroupDto? {
-        val database = db ?: return null
-        return withTimeoutOrNull(6000L) {
-            try {
-                val snapshot = database.getReference("chats").child(chatId).child("info").get().await()
-                if (snapshot.exists()) {
-                    val name = snapshot.child("groupName").getValue(String::class.java) ?: ""
-                    val owner = snapshot.child("groupOwnerId").getValue(String::class.java) ?: ""
-                    val pinned = snapshot.child("pinnedMessageId").getValue(String::class.java) ?: ""
-                    val created = snapshot.child("createdAt").getValue(Long::class.java) ?: 0L
-                    val membersMap = mutableMapOf<String, Boolean>()
-                    for (memberSnap in snapshot.child("members").children) {
-                        memberSnap.key?.let { membersMap[it] = true }
-                    }
-                    FirebaseGroupDto(chatId, name, owner, membersMap, pinned, created)
-                } else null
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "getGroupInfo error: ${e.message}")
-                null
-            }
-        }
-    }
-
-    suspend fun getUserGroupIds(userId: String): List<String> {
-        val database = db ?: return emptyList()
-        return withTimeoutOrNull(6000L) {
-            try {
-                val snapshot = database.getReference("users").child(userId).child("groups").get().await()
-                snapshot.children.mapNotNull { it.key }
-            } catch (e: Exception) {
-                emptyList()
-            }
-        } ?: emptyList()
-    }
+    suspend fun getUserGroupIds(userId: String): List<String> = try {
+        chats(userId).filter { it.optBoolean("isGroup") }
+            .filter { it.optJSONObject("members")?.has(userId) == true }
+            .map { it.optString("id") }.filter { it.isNotBlank() }
+    } catch (e: Exception) { Log.e(TAG, "getUserGroupIds failed", e); emptyList() }
 
     fun observeUserInbox(
         userId: String,
         onInboxReceived: (chatId: String, senderId: String, senderUsername: String, timestamp: Long) -> Unit
-    ): ChildEventListener? {
-        val database = db ?: return null
-        val ref = database.getReference("users").child(userId).child("inbox")
-        val listener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                handleSnapshot(snapshot)
-            }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                handleSnapshot(snapshot)
-            }
-
-            private fun handleSnapshot(snapshot: DataSnapshot) {
-                val chatId = snapshot.child("chatId").getValue(String::class.java) ?: snapshot.key ?: return
-                val senderId = snapshot.child("senderId").getValue(String::class.java) ?: ""
-                val senderUsername = snapshot.child("senderUsername").getValue(String::class.java) ?: ""
-                val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: System.currentTimeMillis()
-                if (chatId.isNotBlank() && senderId.isNotBlank()) {
-                    onInboxReceived(chatId, senderId, senderUsername, timestamp)
+    ): ChildEventListener {
+        val listener = dummyListener()
+        val lastSeen = ConcurrentHashMap<String, Long>()
+        return observe(listener) {
+            for (chat in chats(userId).filterNot { it.optBoolean("isGroup") }) {
+                val chatId = chat.optString("id")
+                if (chatId.isBlank()) continue
+                val latest = messages(userId, chatId).maxByOrNull { millis(it.optString("createdAt")) } ?: continue
+                val sender = latest.optString("senderUid")
+                val stamp = millis(latest.optString("createdAt"))
+                if (sender.isNotBlank() && sender != userId && stamp > (lastSeen[chatId] ?: 0L)) {
+                    lastSeen[chatId] = stamp
+                    onInboxReceived(chatId, sender, latest.optString("senderUsername"), stamp)
                 }
             }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {}
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("FirebaseRepository", "observeUserInbox cancelled: ${error.message}")
-            }
-        }
-        ref.addChildEventListener(listener)
-        return listener
-    }
-
-    fun observeUserGroups(
-        userId: String,
-        onGroupAdded: (chatId: String, groupName: String) -> Unit
-    ): ChildEventListener? {
-        val database = db ?: return null
-        val ref = database.getReference("users").child(userId).child("groups")
-        val listener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val chatId = snapshot.key ?: return
-                val groupName = snapshot.getValue(String::class.java) ?: "Group"
-                onGroupAdded(chatId, groupName)
-            }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                val chatId = snapshot.key ?: return
-                val groupName = snapshot.getValue(String::class.java) ?: "Group"
-                onGroupAdded(chatId, groupName)
-            }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {}
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("FirebaseRepository", "observeUserGroups cancelled: ${error.message}")
-            }
-        }
-        ref.addChildEventListener(listener)
-        return listener
-    }
-
-    /**
-     * Deletes the message from the Firebase Realtime Database cloud server.
-     * Uses both direct HTTP REST DELETE (guaranteed instant removal) and SDK removeValue().
-     */
-    suspend fun deleteMessage(chatId: String, messageId: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            var isDeleted = false
-            try {
-                Log.d("FirebaseRepository", "Executing server delete on /chats/$chatId/messages/$messageId")
-                
-                // 1. Direct REST DELETE via OkHttp (guaranteed immediate cloud deletion on Google Cloud)
-                val url = "$databaseUrl/chats/$chatId/messages/$messageId.json"
-                val request = Request.Builder().url(url).delete().build()
-                httpClient.newCall(request).execute().use { response ->
-                    Log.d("FirebaseRepository", "REST delete result: ${response.code} (success=${response.isSuccessful})")
-                    if (response.isSuccessful) {
-                        isDeleted = true
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "REST delete error: ${e.message}", e)
-            }
-
-            try {
-                // 2. Firebase SDK removeValue to trigger onChildRemoved for active client sockets
-                db?.getReference("chats")?.child(chatId)?.child("messages")?.child(messageId)?.removeValue()
-                isDeleted = true
-            } catch (e: Exception) {
-                Log.e("FirebaseRepository", "SDK removeValue error: ${e.message}", e)
-            }
-            isDeleted
         }
     }
 
-    /**
-     * Converts reaction nodes to the JSON map consumed by Room and Compose.
-     * Ignore malformed Firebase values instead of letting a conversion exception escape
-     * a Realtime Database callback and terminate the app process.
-     */
-    private fun safeReactionsToJson(snapshot: DataSnapshot): String {
-        val json = JSONObject()
-        try {
-            snapshot.children.forEach { reaction ->
-                val uid = reaction.key
-                val emoji = try {
-                    reaction.getValue(String::class.java)
-                } catch (e: Exception) {
-                    Log.w("FirebaseRepository", "Ignoring malformed reaction value at ${reaction.key}: ${e.message}")
-                    null
-                }
-                if (!uid.isNullOrBlank() && !emoji.isNullOrBlank()) {
-                    json.put(uid, emoji)
-                }
+    fun observeUserGroups(userId: String, onGroupAdded: (chatId: String, groupName: String) -> Unit): ChildEventListener {
+        val listener = dummyListener()
+        val known = ConcurrentHashMap<String, String>()
+        return observe(listener) {
+            for (chat in chats(userId).filter { it.optBoolean("isGroup") }) {
+                val chatId = chat.optString("id")
+                val name = chat.optString("title", "Group")
+                if (chatId.isNotBlank() && known.put(chatId, name) != name) onGroupAdded(chatId, name.ifBlank { "Group" })
             }
-        } catch (e: Exception) {
-            Log.e("FirebaseRepository", "Failed to parse reaction snapshot: ${e.message}", e)
         }
-        return json.toString()
     }
+
+    suspend fun deleteMessage(chatId: String, messageId: String): Boolean = try {
+        api(activeUid(), "DELETE", "/api/chat/messages/${segment(messageId)}")
+        true
+    } catch (e: Exception) { Log.e(TAG, "deleteMessage failed", e); false }
 
     fun observeMessages(
         chatId: String,
         onMessageReceived: (String, FirebaseMessageDto) -> Unit,
         onMessageDeletedFromServer: (String) -> Unit,
         onMessageUpdated: ((String, FirebaseMessageDto) -> Unit)? = null
-    ): ChildEventListener? {
-        val database = db ?: return null
-        val ref = database.getReference("chats").child(chatId).child("messages")
-        val listener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val msgId = snapshot.key ?: return
-                val senderId = snapshot.child("senderId").getValue(String::class.java) ?: ""
-                val receiverId = snapshot.child("receiverId").getValue(String::class.java) ?: ""
-                val ciphertext = snapshot.child("ciphertext").getValue(String::class.java) ?: ""
-                val nonce = snapshot.child("nonce").getValue(String::class.java) ?: ""
-                val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
-                val senderUsername = snapshot.child("senderUsername").getValue(String::class.java) ?: ""
-                val isEdited = snapshot.child("isEdited").getValue(Boolean::class.java) ?: false
-                val editedAt = snapshot.child("editedAt").getValue(Long::class.java) ?: 0L
-                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
-                val pinnedAt = snapshot.child("pinnedAt").getValue(Long::class.java) ?: 0L
-                val isDeleted = snapshot.child("isDeleted").getValue(Boolean::class.java) ?: false
-                val reactionTargetId = snapshot.child("reactionTargetId").getValue(String::class.java) ?: ""
-                val reactionEmoji = snapshot.child("reactionEmoji").getValue(String::class.java) ?: ""
-                val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
-                val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
-                val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
-                val reactionsJson = safeReactionsToJson(snapshot.child("reactions"))
-
-                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
-                    onMessageReceived(
-                        msgId,
-                        FirebaseMessageDto(
-                            senderId,
-                            receiverId,
-                            ciphertext,
-                            nonce,
-                            timestamp,
-                            senderUsername,
-                            isEdited,
-                            editedAt,
-                            isPinned,
-                            pinnedAt,
-                            isDeleted,
-                            reactionTargetId,
-                            reactionEmoji,
-                            replyToId,
-                            replyToText,
-                            replyToSender,
-                            reactionsJson
-                        )
-                    )
-                }
+    ): ChildEventListener {
+        val listener = dummyListener()
+        val known = ConcurrentHashMap<String, FirebaseMessageDto>()
+        return observe(listener) {
+            val uid = activeUid()
+            val fresh = messages(uid, chatId).associate { it.optString("id") to message(it) }.filterKeys { it.isNotBlank() }
+            fresh.forEach { (messageId, dto) ->
+                val previous = known.put(messageId, dto)
+                if (previous == null) onMessageReceived(messageId, dto)
+                else if (previous != dto) onMessageUpdated?.invoke(messageId, dto)
             }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                val msgId = snapshot.key ?: return
-                val senderId = snapshot.child("senderId").getValue(String::class.java) ?: ""
-                val receiverId = snapshot.child("receiverId").getValue(String::class.java) ?: ""
-                val ciphertext = snapshot.child("ciphertext").getValue(String::class.java) ?: ""
-                val nonce = snapshot.child("nonce").getValue(String::class.java) ?: ""
-                val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
-                val senderUsername = snapshot.child("senderUsername").getValue(String::class.java) ?: ""
-                val isEdited = snapshot.child("isEdited").getValue(Boolean::class.java) ?: false
-                val editedAt = snapshot.child("editedAt").getValue(Long::class.java) ?: 0L
-                val isPinned = snapshot.child("isPinned").getValue(Boolean::class.java) ?: false
-                val pinnedAt = snapshot.child("pinnedAt").getValue(Long::class.java) ?: 0L
-                val isDeleted = snapshot.child("isDeleted").getValue(Boolean::class.java) ?: false
-                val reactionTargetId = snapshot.child("reactionTargetId").getValue(String::class.java) ?: ""
-                val reactionEmoji = snapshot.child("reactionEmoji").getValue(String::class.java) ?: ""
-                val replyToId = snapshot.child("replyToId").getValue(String::class.java) ?: ""
-                val replyToText = snapshot.child("replyToText").getValue(String::class.java) ?: ""
-                val replyToSender = snapshot.child("replyToSender").getValue(String::class.java) ?: ""
-                val reactionsJson = safeReactionsToJson(snapshot.child("reactions"))
-
-                if (ciphertext.isNotBlank() || reactionTargetId.isNotBlank() || snapshot.child("reactions").exists()) {
-                    val dto = FirebaseMessageDto(
-                        senderId,
-                        receiverId,
-                        ciphertext,
-                        nonce,
-                        timestamp,
-                        senderUsername,
-                        isEdited,
-                        editedAt,
-                        isPinned,
-                        pinnedAt,
-                        isDeleted,
-                        reactionTargetId,
-                        reactionEmoji,
-                        replyToId,
-                        replyToText,
-                        replyToSender,
-                        reactionsJson
-                    )
-                    onMessageUpdated?.invoke(msgId, dto)
-                }
-            }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                val msgId = snapshot.key ?: return
-                onMessageDeletedFromServer(msgId)
-            }
-
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("FirebaseRepository", "observeMessages cancelled: ${error.message}")
+            val removed = known.keys.filter { it !in fresh.keys }
+            removed.forEach { messageId ->
+                known.remove(messageId)
+                onMessageDeletedFromServer(messageId)
             }
         }
-        ref.addChildEventListener(listener)
-        return listener
     }
 
-    /**
-     * Observe reactions separately from message records. Direct-chat messages may be
-     * removed from the server after delivery, so reactions cannot live under /messages.
-     */
-    fun observeReactions(
-        chatId: String,
-        onReactionsUpdated: (targetMessageId: String, reactionsJson: String) -> Unit
-    ): ChildEventListener? {
-        val database = db ?: return null
-        val ref = database.getReference("chats").child(chatId).child("reactions")
-        val listener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) = publish(snapshot)
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                val targetMessageId = snapshot.key ?: return
-                try {
-                    onReactionsUpdated(targetMessageId, "{}")
-                } catch (e: Exception) {
-                    Log.e("FirebaseRepository", "Reaction removal callback failed for $targetMessageId: ${e.message}", e)
-                }
-            }
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
-
-            private fun publish(snapshot: DataSnapshot) {
-                val targetMessageId = snapshot.key ?: return
-                try {
-                    onReactionsUpdated(targetMessageId, safeReactionsToJson(snapshot))
-                } catch (e: Exception) {
-                    Log.e("FirebaseRepository", "Reaction callback failed for $targetMessageId: ${e.message}", e)
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.e("FirebaseRepository", "observeReactions cancelled: ${error.message}")
+    fun observeReactions(chatId: String, onReactionsUpdated: (targetMessageId: String, reactionsJson: String) -> Unit): ChildEventListener {
+        val listener = dummyListener()
+        val known = ConcurrentHashMap<String, String>()
+        return observe(listener) {
+            val uid = activeUid()
+            for (message in messages(uid, chatId)) {
+                val messageId = message.optString("id")
+                if (messageId.isBlank()) continue
+                val value = (message.optJSONObject("reactions") ?: JSONObject()).toString()
+                if (known.put(messageId, value) != value) onReactionsUpdated(messageId, value)
             }
         }
-        ref.addChildEventListener(listener)
-        return listener
     }
 
-    fun removeReactionListener(chatId: String, listener: ChildEventListener) {
-        db?.getReference("chats")?.child(chatId)?.child("reactions")?.removeEventListener(listener)
-    }
-
-    fun removeMessageListener(chatId: String, listener: ChildEventListener) {
-        db?.getReference("chats")?.child(chatId)?.child("messages")?.removeEventListener(listener)
-    }
+    fun removeReactionListener(chatId: String, listener: ChildEventListener) { listenerJobs.remove(listener)?.cancel() }
+    fun removeMessageListener(chatId: String, listener: ChildEventListener) { listenerJobs.remove(listener)?.cancel() }
 }
