@@ -1,5 +1,13 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
+plugins {
+  alias(libs.plugins.android.application)
+  alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.secrets)
+  alias(libs.plugins.google.services)
+}
+
 // Local .env is ignored by Git. CI supplies CRAZECHAT_API_ACCESS_KEY from repository secrets.
 val localEnvValues = rootProject.file(".env").takeIf { it.isFile }?.readLines()
     ?.mapNotNull { line ->
@@ -19,13 +27,6 @@ val apiBaseUrl = (
         ?: "https://crazechat-api.vercel.app"
     ).trimEnd('/')
 
-plugins {
-  alias(libs.plugins.android.application)
-  alias(libs.plugins.kotlin.compose)
-  alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.google.services)
-}
 
 android {
   namespace = "com.example"
@@ -42,6 +43,8 @@ android {
 
     // Use SecureConfig in the app code to hide the URL from decompilers.
     buildConfigField("String", "PROD_FIREBASE_DATABASE_URL", "\"REDACTED\"")
+    buildConfigField("String", "CRAZECHAT_API_BASE_URL", "\"$apiBaseUrl\"")
+    buildConfigField("String", "CRAZECHAT_API_ACCESS_KEY", "\"$apiAccessKey\"")
   }
 
   signingConfigs {
