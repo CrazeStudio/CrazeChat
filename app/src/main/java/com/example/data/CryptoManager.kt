@@ -38,12 +38,22 @@ object CryptoManager {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    // High-security PBKDF2 Key Derivation to protect profile backups from brute-force/GPU attacks
-    private fun deriveKeyPBKDF2(password: String, username: String): SecretKeySpec {
+    // Version 1 backups used a deterministic salt and 2,000 iterations.
+    // Retained solely for compatibility with old encrypted profile backups.
+    private fun deriveLegacyProfileKey(password: String, username: String): SecretKeySpec {
         val salt = "CrazeChat_PBKDF2_Salt_2026_${username.lowercase()}".toByteArray(Charsets.UTF_8)
         val spec = PBEKeySpec(password.toCharArray(), salt, 2000, 256)
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         val keyBytes = factory.generateSecret(spec).encoded
+        spec.clearPassword()
+        return SecretKeySpec(keyBytes, "AES")
+    }
+
+    private fun deriveProfileKeyV2(password: String, salt: ByteArray): SecretKeySpec {
+        val spec = PBEKeySpec(password.toCharArray(), salt, 600_000, 256)
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val keyBytes = factory.generateSecret(spec).encoded
+        spec.clearPassword()
         return SecretKeySpec(keyBytes, "AES")
     }
 
@@ -128,30 +138,43 @@ object CryptoManager {
         }
     }
 
+    /** V2 backup: random salt + PBKDF2-HMAC-SHA256 (600k iterations) + AES-GCM. */
     fun encryptProfile(password: String, username: String, profileJson: String): String {
-        val secretKey = deriveKeyPBKDF2(password, username)
+        val random = SecureRandom()
+        val salt = ByteArray(16).also(random::nextBytes)
+        val iv = ByteArray(12).also(random::nextBytes)
+        val secretKey = deriveProfileKeyV2(password, salt)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+        cipher.updateAAD("CrazeChatProfileV2".toByteArray(Charsets.UTF_8))
         val ciphertext = cipher.doFinal(profileJson.toByteArray(Charsets.UTF_8))
-        return Base64.encodeToString(iv + ciphertext, Base64.NO_WRAP)
+        return "CCP2:" + Base64.encodeToString(salt + iv + ciphertext, Base64.NO_WRAP)
     }
 
     fun decryptProfile(password: String, username: String, encryptedProfileBase64: String): String? {
-        try {
+        return try {
             if (encryptedProfileBase64.isBlank()) return null
-            val secretKey = deriveKeyPBKDF2(password, username)
-            val data = Base64.decode(encryptedProfileBase64, Base64.NO_WRAP) ?: return null
-            if (data.size < 13) return null
-            val iv = data.sliceArray(0 until 12)
-            val ciphertext = data.sliceArray(12 until data.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
-            return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
-        } catch (e: Exception) {
-            return null
-        }
+            if (encryptedProfileBase64.startsWith("CCP2:")) {
+                val packed = Base64.decode(encryptedProfileBase64.removePrefix("CCP2:"), Base64.NO_WRAP)
+                if (packed.size < 16 + 12 + 16) return null
+                val salt = packed.copyOfRange(0, 16)
+                val iv = packed.copyOfRange(16, 28)
+                val ciphertext = packed.copyOfRange(28, packed.size)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, deriveProfileKeyV2(password, salt), GCMParameterSpec(128, iv))
+                cipher.updateAAD("CrazeChatProfileV2".toByteArray(Charsets.UTF_8))
+                String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+            } else {
+                // V1 is intentionally supported only so that existing users can migrate.
+                val data = Base64.decode(encryptedProfileBase64, Base64.NO_WRAP)
+                if (data.size < 12 + 16) return null
+                val iv = data.copyOfRange(0, 12)
+                val ciphertext = data.copyOfRange(12, data.size)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, deriveLegacyProfileKey(password, username), GCMParameterSpec(128, iv))
+                String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+            }
+        } catch (_: Exception) { null }
     }
 
     fun computePublicKeyFingerprint(publicKeyBase64: String): String {
@@ -174,40 +197,65 @@ object CryptoManager {
         return SecretKeySpec(keyBytes, "AES")
     }
 
-    // Group Chat Symmetric Key derivation for multi-participant encrypted groups
-    private fun deriveGroupKey(chatId: String): SecretKeySpec {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val keyBytes = digest.digest("CrazeChat_Group_Secret_Key_2026_$chatId".toByteArray(Charsets.UTF_8))
-        return SecretKeySpec(keyBytes, "AES")
-    }
+    /** New groups use random secret keys wrapped individually for every member. */
+    fun generateGroupKey(): String =
+        Base64.encodeToString(ByteArray(32).also(SecureRandom()::nextBytes), Base64.NO_WRAP)
 
-    fun encryptGroupMessage(chatId: String, plaintext: String): EncryptedPayload {
-        val secretKey = deriveGroupKey(chatId)
+    fun isValidGroupKey(groupKeyBase64: String): Boolean = try {
+        Base64.decode(groupKeyBase64, Base64.NO_WRAP).size == 32
+    } catch (_: Exception) { false }
+
+    fun groupMessageVersion(ciphertext: String): Int =
+        Regex("^G2v([1-9][0-9]{0,8}):").find(ciphertext)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+
+    fun encryptGroupMessage(groupKeyBase64: String, plaintext: String, version: Int): EncryptedPayload {
+        require(isValidGroupKey(groupKeyBase64)) { "A valid group key is required." }
+        require(version > 0) { "Group key version must be positive." }
+        val key = SecretKeySpec(Base64.decode(groupKeyBase64, Base64.NO_WRAP), "AES")
+        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
-        val ciphertextBytes = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
-        return EncryptedPayload(
-            ciphertext = Base64.encodeToString(ciphertextBytes, Base64.NO_WRAP),
-            nonce = Base64.encodeToString(iv, Base64.NO_WRAP)
-        )
+        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
+        cipher.updateAAD("CrazeChatGroupV2:$version".toByteArray(Charsets.UTF_8))
+        val encrypted = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        return EncryptedPayload("G2v$version:" + Base64.encodeToString(encrypted, Base64.NO_WRAP),
+            Base64.encodeToString(iv, Base64.NO_WRAP))
     }
 
-    fun decryptGroupMessage(chatId: String, ciphertextBase64: String, nonceBase64: String): String {
-        return try {
-            if (ciphertextBase64.isBlank() || nonceBase64.isBlank()) return ""
-            val secretKey = deriveGroupKey(chatId)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            val iv = Base64.decode(nonceBase64, Base64.NO_WRAP)
-            val ciphertextBytes = Base64.decode(ciphertextBase64, Base64.NO_WRAP)
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
-            val decryptedBytes = cipher.doFinal(ciphertextBytes)
-            String(decryptedBytes, Charsets.UTF_8)
-        } catch (e: Exception) {
-            "[Encrypted Group Message]"
-        }
+    fun decryptGroupMessage(groupKeyBase64: String, ciphertext: String, nonceBase64: String): String = try {
+        val version = groupMessageVersion(ciphertext)
+        if (version <= 0 || !isValidGroupKey(groupKeyBase64) || nonceBase64.isBlank()) return ""
+        val key = SecretKeySpec(Base64.decode(groupKeyBase64, Base64.NO_WRAP), "AES")
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
+        cipher.updateAAD("CrazeChatGroupV2:$version".toByteArray(Charsets.UTF_8))
+        String(cipher.doFinal(Base64.decode(ciphertext.substringAfter(':'), Base64.NO_WRAP)), Charsets.UTF_8)
+    } catch (_: Exception) { "[Encrypted Group Message]" }
+
+    // Compatibility only: previous versions derived this key from a constant bundled in the APK.
+    // Old group messages are not confidential from someone who reverse-engineers that APK.
+    private fun deriveLegacyGroupKey(chatId: String): SecretKeySpec {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return SecretKeySpec(digest.digest("CrazeChat_Group_Secret_Key_2026_$chatId".toByteArray(Charsets.UTF_8)), "AES")
     }
+
+    fun encryptLegacyGroupMessage(chatId: String, plaintext: String): EncryptedPayload {
+        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, deriveLegacyGroupKey(chatId), GCMParameterSpec(128, iv))
+        return EncryptedPayload(Base64.encodeToString(cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP),
+            Base64.encodeToString(iv, Base64.NO_WRAP))
+    }
+
+    fun decryptLegacyGroupMessage(chatId: String, ciphertextBase64: String, nonceBase64: String): String = try {
+        if (ciphertextBase64.isBlank() || nonceBase64.isBlank()) return ""
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, deriveLegacyGroupKey(chatId), GCMParameterSpec(128, Base64.decode(nonceBase64, Base64.NO_WRAP)))
+        String(cipher.doFinal(Base64.decode(ciphertextBase64, Base64.NO_WRAP)), Charsets.UTF_8)
+    } catch (_: Exception) { "[Legacy Encrypted Group Message]" }
+
+    fun decryptGroupMessageCompat(chatId: String, groupKeyBase64: String, ciphertext: String, nonceBase64: String): String =
+        if (groupMessageVersion(ciphertext) > 0) decryptGroupMessage(groupKeyBase64, ciphertext, nonceBase64)
+        else decryptLegacyGroupMessage(chatId, ciphertext, nonceBase64)
 
     fun encryptPfpUrl(url: String): String {
         if (url.isBlank()) return ""
