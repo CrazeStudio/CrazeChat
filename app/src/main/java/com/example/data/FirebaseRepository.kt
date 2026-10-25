@@ -15,6 +15,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -91,6 +93,7 @@ class FirebaseRepository(private val context: Context? = null) {
         .build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val listenerJobs = ConcurrentHashMap<ChildEventListener, Job>()
+    private val refreshLocks = ConcurrentHashMap<String, Mutex>()
 
     private class ApiException(val status: Int, message: String) : IOException(message)
 
@@ -146,19 +149,49 @@ class FirebaseRepository(private val context: Context? = null) {
             .takeIf { it > 0L }?.times(1000L)
     } catch (_: Exception) { null }
 
+    private suspend fun refreshSession(uid: String, force: Boolean = false): String {
+        val lock = refreshLocks.computeIfAbsent(uid) { Mutex() }
+        return lock.withLock {
+            val now = System.currentTimeMillis()
+            val cached = tokenCache[uid]
+            if (!force && cached != null && cached.expiresAt > now + 30_000L) return@withLock cached.value
+
+            val storedAccess = preferences?.getApiToken(uid)
+            val storedExpiry = storedAccess?.let(::tokenExpiry)
+            if (!force && !storedAccess.isNullOrBlank() && storedExpiry != null && storedExpiry > now + 30_000L) {
+                tokenCache[uid] = TokenEntry(storedAccess, storedExpiry - 30_000L)
+                return@withLock storedAccess
+            }
+
+            val refreshToken = preferences?.getApiRefreshToken(uid)
+            if (refreshToken.isNullOrBlank()) {
+                tokenCache.remove(uid)
+                preferences?.clearApiSession(uid)
+                throw IOException("Your CrazeChat session expired. Please sign in again.")
+            }
+            try {
+                val response = rawRequest(
+                    "POST", "/auth/refresh",
+                    JSONObject().put("refreshToken", refreshToken),
+                    null
+                )
+                saveSessionFromAuth(response)
+                response.optString("token").takeIf { it.isNotBlank() }
+                    ?: throw IOException("Session refresh returned no access token.")
+            } catch (error: ApiException) {
+                if (error.status == 401) {
+                    tokenCache.remove(uid)
+                    preferences?.clearApiSession(uid)
+                }
+                throw error
+            }
+        }
+    }
+
     private suspend fun tokenFor(uid: String): String {
         val cached = tokenCache[uid]
         if (cached != null && cached.expiresAt > System.currentTimeMillis() + 30_000L) return cached.value
-        val stored = preferences?.getApiToken(uid)
-        if (stored.isNullOrBlank()) throw IOException("No signed-in session for this account. Please sign in again.")
-        val expiry = tokenExpiry(stored) ?: throw IOException("Stored session token is invalid. Please sign in again.")
-        if (expiry <= System.currentTimeMillis() + 30_000L) {
-            tokenCache.remove(uid)
-            preferences?.clearApiToken(uid)
-            throw IOException("Your session expired. Please sign in again.")
-        }
-        tokenCache[uid] = TokenEntry(stored, expiry - 30_000L)
-        return stored
+        return refreshSession(uid)
     }
 
     private suspend fun api(uid: String, method: String, path: String, body: JSONObject? = null): JSONObject =
@@ -167,11 +200,18 @@ class FirebaseRepository(private val context: Context? = null) {
             try {
                 rawRequest(method, path, body, token)
             } catch (error: ApiException) {
-                if (error.status == 401) {
-                    tokenCache.remove(uid)
-                    preferences?.clearApiToken(uid)
+                if (error.status != 401) throw error
+                tokenCache.remove(uid)
+                preferences?.clearApiToken(uid)
+                try {
+                    rawRequest(method, path, body, refreshSession(uid, force = true))
+                } catch (retryError: ApiException) {
+                    if (retryError.status == 401) {
+                        tokenCache.remove(uid)
+                        preferences?.clearApiSession(uid)
+                    }
+                    throw retryError
                 }
-                throw error
             }
         }
 
@@ -179,8 +219,13 @@ class FirebaseRepository(private val context: Context? = null) {
         val user = response.optJSONObject("user") ?: throw IOException("Authentication response did not include an account.")
         val uid = user.optString("userId")
         val token = response.optString("token")
-        if (uid.isBlank() || token.isBlank()) throw IOException("Authentication response is incomplete.")
-        preferences?.saveApiToken(uid, token) ?: throw IOException("Secure session storage is unavailable.")
+        val refreshToken = response.optString("refreshToken")
+        if (uid.isBlank() || token.isBlank() || refreshToken.isBlank()) {
+            throw IOException("Authentication response is incomplete.")
+        }
+        val store = preferences ?: throw IOException("Secure session storage is unavailable.")
+        store.saveApiToken(uid, token)
+        store.saveApiRefreshToken(uid, refreshToken)
         val expiry = tokenExpiry(token) ?: (System.currentTimeMillis() + 3_600_000L)
         tokenCache[uid] = TokenEntry(token, expiry - 30_000L)
         return response
@@ -207,15 +252,29 @@ class FirebaseRepository(private val context: Context? = null) {
             val result = api(userId, "POST", "/auth/change-password",
                 JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword))
             tokenCache.remove(userId)
-            preferences?.clearApiToken(userId)
+            preferences?.clearApiSession(userId)
             result
         }
 
     suspend fun deleteRemoteAccount(userId: String, password: String): Boolean = withContext(Dispatchers.IO) {
         api(userId, "DELETE", "/auth/account", JSONObject().put("password", password))
         tokenCache.remove(userId)
-        preferences?.clearApiToken(userId)
+        preferences?.clearApiSession(userId)
         true
+    }
+
+    suspend fun logoutAccount(userId: String) = withContext(Dispatchers.IO) {
+        val refreshToken = preferences?.getApiRefreshToken(userId)
+        try {
+            if (!refreshToken.isNullOrBlank()) {
+                rawRequest("POST", "/auth/logout", JSONObject().put("refreshToken", refreshToken), null)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Remote sign-out could not reach the server: ${e.message}")
+        } finally {
+            tokenCache.remove(userId)
+            preferences?.clearApiSession(userId)
+        }
     }
 
     suspend fun getAccountProfile(authUid: String): FirebaseUserDto? = try {
