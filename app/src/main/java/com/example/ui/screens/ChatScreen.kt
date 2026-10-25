@@ -58,6 +58,8 @@ fun ChatScreen(
     val pinnedMessages by viewModel.pinnedMessages.collectAsState()
     val chat by viewModel.chat.collectAsState()
     val groupInfo by viewModel.groupInfo.collectAsState()
+    val groupKeys by viewModel.groupKeys.collectAsState()
+    val groupKeyError by viewModel.groupKeyError.collectAsState()
     val privateKey by viewModel.privateKey.collectAsState()
     val currentUserId by viewModel.currentUserId.collectAsState()
     val replyTarget by viewModel.replyTargetMessage.collectAsState()
@@ -94,6 +96,13 @@ fun ChatScreen(
 
     val isGroupChat = chat?.isGroup == true || viewModel.chatId.startsWith("group_")
     val peerPublicKey = chat?.peerPublicKey ?: ""
+    fun decryptGroupText(ciphertext: String, nonce: String): String =
+        CryptoManager.decryptGroupMessageCompat(
+            viewModel.chatId,
+            groupKeys[CryptoManager.groupMessageVersion(ciphertext)].orEmpty(),
+            ciphertext,
+            nonce
+        )
 
     // Auto-scroll on new messages
     LaunchedEffect(messages.size) {
@@ -280,7 +289,7 @@ fun ChatScreen(
                     if (activePinnedMessage != null) {
                         val pinnedText = remember(activePinnedMessage.messageId) {
                             if (isGroupChat) {
-                                CryptoManager.decryptGroupMessage(viewModel.chatId, activePinnedMessage.ciphertext, activePinnedMessage.nonce)
+                                decryptGroupText(activePinnedMessage.ciphertext, activePinnedMessage.nonce)
                             } else {
                                 CryptoManager.decryptMessage(
                                     myPrivateKeyBase64 = privateKey,
@@ -422,7 +431,7 @@ fun ChatScreen(
                     val target = replyTarget!!
                     val replyPreviewText = remember(target.messageId) {
                         if (isGroupChat) {
-                            CryptoManager.decryptGroupMessage(viewModel.chatId, target.ciphertext, target.nonce)
+                            decryptGroupText(target.ciphertext, target.nonce)
                         } else {
                             CryptoManager.decryptMessage(
                                 myPrivateKeyBase64 = privateKey,
@@ -551,7 +560,7 @@ fun ChatScreen(
                                         val rt = replyTarget
                                         val rtPreview = if (rt != null) {
                                             if (isGroupChat) {
-                                                CryptoManager.decryptGroupMessage(viewModel.chatId, rt.ciphertext, rt.nonce)
+                                                decryptGroupText(rt.ciphertext, rt.nonce)
                                             } else {
                                                 CryptoManager.decryptMessage(
                                                     myPrivateKeyBase64 = privateKey,
@@ -633,7 +642,7 @@ fun ChatScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = if (isGroupChat) {
-                                        "Encrypted Group Chat: All messages are authenticated and private to members."
+                                        "New group messages use random, versioned keys encrypted separately for each member. Earlier messages may use legacy encryption."
                                     } else {
                                         "End-to-End Encrypted: Cloud copies are permanently deleted immediately after delivery."
                                     },
@@ -661,6 +670,7 @@ fun ChatScreen(
                         privateKey = privateKey,
                         peerPublicKey = peerPublicKey,
                         chatId = viewModel.chatId,
+                        groupKeys = groupKeys,
                         onLongClick = { selectedMessageForAction = message },
                         onRetry = { viewModel.retryMessage(message.messageId) }
                     )
@@ -681,7 +691,7 @@ fun ChatScreen(
 
         val decryptedText = remember(selected.messageId) {
             if (isGroupChat) {
-                CryptoManager.decryptGroupMessage(viewModel.chatId, selected.ciphertext, selected.nonce)
+                decryptGroupText(selected.ciphertext, selected.nonce)
             } else {
                 CryptoManager.decryptMessage(
                     myPrivateKeyBase64 = privateKey,
@@ -1101,12 +1111,13 @@ fun MessageBubbleItem(
     privateKey: String,
     peerPublicKey: String,
     chatId: String,
+    groupKeys: Map<Int, String>,
     onLongClick: () -> Unit,
     onRetry: () -> Unit
 ) {
-    val decryptedText = remember(message.messageId, message.ciphertext, privateKey, peerPublicKey) {
+    val decryptedText = remember(message.messageId, message.ciphertext, message.nonce, privateKey, peerPublicKey, groupKeys) {
         if (isGroup) {
-            CryptoManager.decryptGroupMessage(chatId, message.ciphertext, message.nonce)
+            CryptoManager.decryptGroupMessageCompat(chatId, groupKeys[CryptoManager.groupMessageVersion(message.ciphertext)].orEmpty(), message.ciphertext, message.nonce)
         } else {
             if (message.ciphertext.isBlank() || privateKey.isBlank() || peerPublicKey.isBlank()) {
                 message.plaintextValue.ifBlank { "Encrypted Message" }
