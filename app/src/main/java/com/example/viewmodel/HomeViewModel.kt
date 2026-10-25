@@ -202,7 +202,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             val existingMsg = messageDao.getMessageById(msgId)
                             if (existingMsg == null) {
                                 val decryptedText = if (isGroup) {
-                                    CryptoManager.decryptGroupMessage(chatId, msgDto.ciphertext, msgDto.nonce)
+                                    firebaseRepo.decryptGroupMessageForUser(chatId, myId, msgDto.ciphertext, msgDto.nonce)
                                 } else {
                                     val keyToUse = peerPublicKey.ifBlank {
                                         firebaseRepo.findUserById(msgDto.senderId)?.publicKey ?: ""
