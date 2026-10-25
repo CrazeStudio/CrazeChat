@@ -10,7 +10,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -106,9 +105,10 @@ class FirebaseRepository(private val context: Context? = null) {
         if (value.isNullOrBlank() || value == "null") return 0L
         for (pattern in listOf("yyyy-MM-dd'T'HH:mm:ss.SSSX", "yyyy-MM-dd'T'HH:mm:ssX")) {
             try {
-                return SimpleDateFormat(pattern, Locale.US).apply {
+                val parsed = SimpleDateFormat(pattern, Locale.US).apply {
                     timeZone = TimeZone.getTimeZone("UTC")
-                }.parse(value)?.time ?: continue
+                }.parse(value)
+                if (parsed != null) return parsed.time
             } catch (_: Exception) { }
         }
         return value.toLongOrNull() ?: 0L
