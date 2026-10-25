@@ -21,7 +21,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     private val messageDao = db.messageDao()
     private val chatDao = db.chatDao()
     private val userPrefs = UserPreferences(application)
-    private val firebaseRepo = FirebaseRepository()
+    private val firebaseRepo = FirebaseRepository(application)
     private val soundEffects = SoundEffectsManager.getInstance(application)
 
     val messages: StateFlow<List<MessageEntity>> = messageDao.getMessagesForChat(chatId)
