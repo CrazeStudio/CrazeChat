@@ -198,9 +198,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val canFallbackOffline = e !is FirebaseRepository.ApiException || e.status >= 500
                 val local = if (canFallbackOffline) profileDao.getProfileByUsername(username.trim()) else null
                 if (local != null && local.privateKeyPlain.isNotBlank()) {
-                    val hashedPassword = CryptoManager.hashPassword(password)
-                    if (local.password == hashedPassword || local.password == password) {
-                        userPrefs.setActiveProfile(local)
+                    val validLocalPassword = withContext(Dispatchers.IO) {
+                        CryptoManager.verifyPassword(password, local.password)
+                    }
+                    if (validLocalPassword) {
+                        val strongHash = withContext(Dispatchers.IO) { CryptoManager.hashPassword(password) }
+                        val securedProfile = local.copy(
+                            password = strongHash,
+                            privateKey = SecureVault.encrypt(local.privateKeyPlain)
+                        )
+                        profileDao.insertProfile(securedProfile)
+                        userPrefs.setActiveProfile(securedProfile)
                         _authState.value = AuthState.Authenticated
                         onComplete(true)
                         return@launch
