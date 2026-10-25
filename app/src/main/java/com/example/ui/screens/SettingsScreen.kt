@@ -25,6 +25,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.example.R
 import com.example.data.AccountProfileEntity
 import com.example.ui.theme.*
@@ -40,12 +41,21 @@ fun SettingsScreen(
     val profiles by authViewModel.profiles.collectAsState()
     val canAddProfile by authViewModel.canAddProfile.collectAsState()
     val currentUserId by authViewModel.userIdFlow.collectAsState(initial = "")
+    val currentUsername by authViewModel.usernameFlow.collectAsState(initial = "")
     val themeMode by authViewModel.themeMode.collectAsState()
     val soundEffectsEnabled by authViewModel.soundEffectsEnabled.collectAsState()
     val hapticFeedbackEnabled by authViewModel.hapticFeedbackEnabled.collectAsState()
 
     var profileToDelete by remember { mutableStateOf<AccountProfileEntity?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var showRemoteDeleteDialog by remember { mutableStateOf(false) }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmNewPassword by remember { mutableStateOf("") }
+    var deletionPassword by remember { mutableStateOf("") }
+    var securityError by remember { mutableStateOf<String?>(null) }
+    var securityWorking by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Scaffold(
@@ -384,6 +394,57 @@ fun SettingsScreen(
                 }
             }
 
+            // Account security: remote account lifecycle actions require password confirmation.
+            Text(
+                text = "Account Security",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            securityError = null
+                            currentPassword = ""
+                            newPassword = ""
+                            confirmNewPassword = ""
+                            showPasswordDialog = true
+                        }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Password, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Change account password", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Text("Changes the server password and refreshes the encrypted profile backup", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            securityError = null
+                            deletionPassword = ""
+                            showRemoteDeleteDialog = true
+                        }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(26.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Delete cloud account", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                            Text("Permanently removes your account and account-owned cloud records", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
             // Danger Zone
             Text(
                 text = "Danger Zone",
@@ -432,6 +493,113 @@ fun SettingsScreen(
                     TextButton(onClick = { profileToDelete = null }) {
                         Text("Cancel")
                     }
+                }
+            )
+        }
+
+        if (showPasswordDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!securityWorking) showPasswordDialog = false },
+                title = { Text("Change account password") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = currentPassword,
+                            onValueChange = { currentPassword = it },
+                            label = { Text("Current password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !securityWorking
+                        )
+                        OutlinedTextField(
+                            value = newPassword,
+                            onValueChange = { newPassword = it },
+                            label = { Text("New password (10+ characters)") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !securityWorking
+                        )
+                        OutlinedTextField(
+                            value = confirmNewPassword,
+                            onValueChange = { confirmNewPassword = it },
+                            label = { Text("Confirm new password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !securityWorking
+                        )
+                        if (securityError != null) Text(securityError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !securityWorking && currentPassword.isNotBlank() && newPassword.length >= 10,
+                        onClick = {
+                            if (newPassword != confirmNewPassword) {
+                                securityError = "The new passwords do not match."
+                            } else {
+                                securityWorking = true
+                                securityError = null
+                                authViewModel.changeAccountPassword(currentPassword, newPassword) { success, error ->
+                                    securityWorking = false
+                                    if (success) {
+                                        showPasswordDialog = false
+                                        currentPassword = ""
+                                        newPassword = ""
+                                        confirmNewPassword = ""
+                                        Toast.makeText(context, "Account password changed.", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        securityError = error ?: "Password change failed."
+                                    }
+                                }
+                            }
+                        }
+                    ) { if (securityWorking) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Update password") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !securityWorking, onClick = { showPasswordDialog = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        if (showRemoteDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!securityWorking) showRemoteDeleteDialog = false },
+                title = { Text("Delete cloud account?") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("This is permanent. Your account, encrypted backup, public profile, presence, and account-owned records will be removed. Messages or copies already stored by other chat participants may remain.")
+                        OutlinedTextField(
+                            value = deletionPassword,
+                            onValueChange = { deletionPassword = it },
+                            label = { Text("Confirm with password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !securityWorking
+                        )
+                        if (securityError != null) Text(securityError!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !securityWorking && deletionPassword.isNotBlank() && !currentUserId.isNullOrBlank(),
+                        onClick = {
+                            securityWorking = true
+                            securityError = null
+                            authViewModel.deleteAccount(currentUserId.orEmpty(), deletionPassword) { success, error ->
+                                securityWorking = false
+                                if (success) {
+                                    showRemoteDeleteDialog = false
+                                    deletionPassword = ""
+                                    Toast.makeText(context, "Cloud account deleted.", Toast.LENGTH_LONG).show()
+                                } else {
+                                    securityError = error ?: "Account deletion failed."
+                                }
+                            }
+                        }
+                    ) { if (securityWorking) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Delete permanently", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(enabled = !securityWorking, onClick = { showRemoteDeleteDialog = false }) { Text("Cancel") }
                 }
             )
         }
