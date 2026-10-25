@@ -82,7 +82,6 @@ class FirebaseRepository(private val context: Context? = null) {
     }
 
     private val baseUrl = BuildConfig.CRAZECHAT_API_BASE_URL.trimEnd('/')
-    private val apiKey = BuildConfig.CRAZECHAT_API_ACCESS_KEY
     private val preferences = context?.let { UserPreferences(it) }
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -137,35 +136,94 @@ class FirebaseRepository(private val context: Context? = null) {
         }
     }
 
-    private fun tokenFor(uid: String): String {
-        if (apiKey.isBlank()) {
-            throw IOException("API access key is not configured in this APK. Add the same value as Vercel ACCESS_KEY to GitHub Actions secret CRAZECHAT_API_ACCESS_KEY, then rebuild.")
-        }
+    private fun tokenExpiry(token: String): Long? = try {
+        val payload = token.substringBefore('.')
+        val decoded = android.util.Base64.decode(
+            payload,
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+        )
+        JSONObject(String(decoded, StandardCharsets.UTF_8)).optLong("exp", 0L)
+            .takeIf { it > 0L }?.times(1000L)
+    } catch (_: Exception) { null }
+
+    private suspend fun tokenFor(uid: String): String {
         val cached = tokenCache[uid]
         if (cached != null && cached.expiresAt > System.currentTimeMillis() + 30_000L) return cached.value
-        val response = rawRequest(
-            "POST", "/verify",
-            JSONObject().put("password", apiKey).put("uid", uid),
-            null
-        )
-        val value = response.optString("token")
-        if (value.isBlank()) throw IOException("API verification succeeded without returning a token.")
-        val ttl = response.optLong("expiresIn", 43_200L).coerceIn(60L, 86_400L)
-        tokenCache[uid] = TokenEntry(value, System.currentTimeMillis() + ttl * 1000L - 30_000L)
-        return value
+        val stored = preferences?.getApiToken(uid)
+        if (stored.isNullOrBlank()) throw IOException("No signed-in session for this account. Please sign in again.")
+        val expiry = tokenExpiry(stored) ?: throw IOException("Stored session token is invalid. Please sign in again.")
+        if (expiry <= System.currentTimeMillis() + 30_000L) {
+            tokenCache.remove(uid)
+            preferences?.clearApiToken(uid)
+            throw IOException("Your session expired. Please sign in again.")
+        }
+        tokenCache[uid] = TokenEntry(stored, expiry - 30_000L)
+        return stored
     }
 
     private suspend fun api(uid: String, method: String, path: String, body: JSONObject? = null): JSONObject =
         withContext(Dispatchers.IO) {
-            val firstToken = tokenFor(uid)
+            val token = tokenFor(uid)
             try {
-                rawRequest(method, path, body, firstToken)
+                rawRequest(method, path, body, token)
             } catch (error: ApiException) {
-                if (error.status != 401) throw error
-                tokenCache.remove(uid)
-                rawRequest(method, path, body, tokenFor(uid))
+                if (error.status == 401) {
+                    tokenCache.remove(uid)
+                    preferences?.clearApiToken(uid)
+                }
+                throw error
             }
         }
+
+    private suspend fun saveSessionFromAuth(response: JSONObject): JSONObject {
+        val user = response.optJSONObject("user") ?: throw IOException("Authentication response did not include an account.")
+        val uid = user.optString("userId")
+        val token = response.optString("token")
+        if (uid.isBlank() || token.isBlank()) throw IOException("Authentication response is incomplete.")
+        preferences?.saveApiToken(uid, token) ?: throw IOException("Secure session storage is unavailable.")
+        val expiry = tokenExpiry(token) ?: (System.currentTimeMillis() + 3_600_000L)
+        tokenCache[uid] = TokenEntry(token, expiry - 30_000L)
+        return response
+    }
+
+    suspend fun registerAccount(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
+        saveSessionFromAuth(rawRequest(
+            "POST", "/auth/register",
+            JSONObject().put("username", username).put("password", password),
+            null
+        ))
+    }
+
+    suspend fun loginAccount(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
+        saveSessionFromAuth(rawRequest(
+            "POST", "/auth/login",
+            JSONObject().put("username", username).put("password", password),
+            null
+        ))
+    }
+
+    suspend fun changeAccountPassword(userId: String, currentPassword: String, newPassword: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val result = api(userId, "POST", "/auth/change-password",
+                JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword))
+            tokenCache.remove(userId)
+            preferences?.clearApiToken(userId)
+            result
+        }
+
+    suspend fun deleteRemoteAccount(userId: String, password: String): Boolean = withContext(Dispatchers.IO) {
+        api(userId, "DELETE", "/auth/account", JSONObject().put("password", password))
+        tokenCache.remove(userId)
+        preferences?.clearApiToken(userId)
+        true
+    }
+
+    suspend fun getAccountProfile(authUid: String): FirebaseUserDto? = try {
+        dto(api(authUid, "GET", "/api/chat/users/${segment(authUid)}").getJSONObject("user"))
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not load encrypted account backup: ${e.message}")
+        null
+    }
 
     private fun dto(value: JSONObject): FirebaseUserDto {
         val rawKey = value.optString("publicKey")
