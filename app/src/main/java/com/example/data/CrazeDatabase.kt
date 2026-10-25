@@ -10,9 +10,12 @@ data class AccountProfileEntity(
     val username: String,
     val password: String,
     val publicKey: String,
+    /** AES-GCM ciphertext at rest; decrypt only when the app needs the key. */
     val privateKey: String,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    val privateKeyPlain: String get() = SecureVault.decrypt(privateKey).orEmpty()
+}
 
 @Dao
 interface ProfileDao {
