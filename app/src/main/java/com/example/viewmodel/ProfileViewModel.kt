@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 class ProfileViewModel(application: Application) : AndroidViewModel(application) {
     private val userPrefs = UserPreferences(application)
     private val pfpManager = ProfileImageManager.getInstance(application)
-    private val firebaseRepo = FirebaseRepository()
+    private val firebaseRepo = FirebaseRepository(application)
 
     val userId: StateFlow<String> = userPrefs.userIdFlow
         .map { it ?: "" }
