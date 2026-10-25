@@ -2,29 +2,16 @@ package com.example
 
 import android.app.Application
 import android.util.Log
-import com.google.firebase.FirebaseApp
 
 class CrazeChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        try {
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                FirebaseApp.initializeApp(this)
-            }
-
-            val dbConfigured = try {
-                val url = com.example.data.SecureConfig.getDatabaseUrl()
-                url.isNotBlank() && !url.contains("REDACTED")
-            } catch (e: Exception) {
-                false
-            }
-
-            Log.i("CrazeChatApp", "Firebase configuration loaded: YES")
-            Log.i("CrazeChatApp", "Database URL configured: ${if (dbConfigured) "YES" else "NO"}")
-            Log.i("CrazeChatApp", "Firebase initialization: SUCCESS")
-
-        } catch (e: Exception) {
-            Log.e("CrazeChatApp", "Firebase initialization: FAILED (${e.message})")
+        val apiConfigured = BuildConfig.CRAZECHAT_API_BASE_URL.startsWith("https://") &&
+            BuildConfig.CRAZECHAT_API_ACCESS_KEY.isNotBlank()
+        Log.i("CrazeChatApp", "CrazeChat API base configured: ${BuildConfig.CRAZECHAT_API_BASE_URL.startsWith("https://")}")
+        Log.i("CrazeChatApp", "CrazeChat API access key configured: ${if (apiConfigured) "YES" else "NO"}")
+        if (!apiConfigured) {
+            Log.w("CrazeChatApp", "Set CRAZECHAT_API_ACCESS_KEY and rebuild the APK before using cloud features.")
         }
     }
 }
