@@ -80,6 +80,11 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                         messageDao.insertMessage(message.copy(plaintext = securePlaintext, replyToText = secureReply))
                     }
                 }
+                chatDao.getAllChatsForMigration().forEach { localChat ->
+                    if (localChat.lastMessage.isNotBlank() && !localChat.lastMessage.startsWith("enc:")) {
+                        chatDao.insertChat(localChat.copy(lastMessage = SecureVault.encrypt(localChat.lastMessage)))
+                    }
+                }
             }.onFailure { Log.w("ChatViewModel", "Local message encryption migration failed: ${it.message}") }
         }
     }
@@ -333,7 +338,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                                                 unreadCount = 0,
                                                 isGroup = isGroup
                                             )).copy(
-                                                lastMessage = displayMsg,
+                                                lastMessage = if (displayMsg.isBlank()) "" else SecureVault.encrypt(displayMsg),
                                                 lastTimestamp = msgDto.timestamp,
                                                 unreadCount = 0
                                             )
@@ -549,7 +554,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 )
 
                 chatDao.insertChat(chatEntity.copy(
-                    lastMessage = "You: $plaintext",
+                    lastMessage = SecureVault.encrypt("You: $plaintext"),
                     lastTimestamp = timestamp
                 ))
             } catch (e: Exception) {
@@ -663,7 +668,7 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 firebaseRepo.editMessage(chatId, messageId, encrypted.ciphertext, encrypted.nonce)
 
                 chatDao.insertChat(chatEntity.copy(
-                    lastMessage = "You: $newPlaintext (edited)",
+                    lastMessage = SecureVault.encrypt("You: $newPlaintext (edited)"),
                     lastTimestamp = now
                 ))
 
