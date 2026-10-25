@@ -251,7 +251,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
                 _authState.value = AuthState.Loading
                 val keyPair = CryptoManager.generateKeyPair()
-                val hashedPassword = CryptoManager.hashPassword(password)
+                val hashedPassword = withContext(Dispatchers.IO) { CryptoManager.hashPassword(password) }
 
                 // The server generates the canonical account ID and stores only a scrypt hash.
                 val response = firebaseRepo.registerAccount(cleanUsername, password)
