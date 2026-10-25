@@ -22,6 +22,10 @@ class UserPreferences(private val context: Context) {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
         val KEY_HAPTIC_FEEDBACK = booleanPreferencesKey("haptic_feedback_enabled")
+        val KEY_PRIVACY_SHOW_ONLINE = booleanPreferencesKey("privacy_show_online_status")
+        val KEY_PRIVACY_READ_RECEIPTS = booleanPreferencesKey("privacy_read_receipts")
+        val KEY_PRIVACY_ALLOW_DISCOVERY = booleanPreferencesKey("privacy_allow_discovery")
+        val KEY_PRIVACY_ALLOW_GROUP_INVITES = booleanPreferencesKey("privacy_allow_group_invites")
     }
 
     val themeModeFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_THEME_MODE] ?: "light" }
@@ -32,6 +36,35 @@ class UserPreferences(private val context: Context) {
     val usernameFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_USERNAME] }
     val publicKeyFlow: Flow<String?> = context.dataStore.data.map { prefs -> prefs[KEY_PUBLIC_KEY] }
     val privateKeyFlow: Flow<String?> = context.dataStore.data.map { prefs -> SecureVault.decrypt(prefs[KEY_PRIVATE_KEY]) }
+    val showOnlineStatusFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_PRIVACY_SHOW_ONLINE] ?: true }
+    val readReceiptsFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_PRIVACY_READ_RECEIPTS] ?: true }
+    val allowDiscoveryFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_PRIVACY_ALLOW_DISCOVERY] ?: true }
+    val allowGroupInvitesFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_PRIVACY_ALLOW_GROUP_INVITES] ?: true }
+
+    suspend fun setPrivacyPreference(name: String, enabled: Boolean) {
+        val key = when (name) {
+            "showOnlineStatus" -> KEY_PRIVACY_SHOW_ONLINE
+            "readReceipts" -> KEY_PRIVACY_READ_RECEIPTS
+            "allowDiscovery" -> KEY_PRIVACY_ALLOW_DISCOVERY
+            "allowGroupInvites" -> KEY_PRIVACY_ALLOW_GROUP_INVITES
+            else -> return
+        }
+        context.dataStore.edit { prefs -> prefs[key] = enabled }
+    }
+
+    suspend fun savePrivacySettings(
+        showOnlineStatus: Boolean,
+        readReceipts: Boolean,
+        allowDiscovery: Boolean,
+        allowGroupInvites: Boolean
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PRIVACY_SHOW_ONLINE] = showOnlineStatus
+            prefs[KEY_PRIVACY_READ_RECEIPTS] = readReceipts
+            prefs[KEY_PRIVACY_ALLOW_DISCOVERY] = allowDiscovery
+            prefs[KEY_PRIVACY_ALLOW_GROUP_INVITES] = allowGroupInvites
+        }
+    }
 
     suspend fun setSoundEffectsEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
