@@ -533,7 +533,7 @@ fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = currentPassword,
-                            onValueChange = { currentPassword = it },
+                            onValueChange = { currentPassword = it.take(128); securityError = null },
                             label = { Text("Current password") },
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
@@ -541,15 +541,15 @@ fun SettingsScreen(
                         )
                         OutlinedTextField(
                             value = newPassword,
-                            onValueChange = { newPassword = it },
-                            label = { Text("New password (10+ characters)") },
+                            onValueChange = { newPassword = it.take(128); securityError = null },
+                            label = { Text("New password (10–128 characters)") },
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
                             enabled = !securityWorking
                         )
                         OutlinedTextField(
                             value = confirmNewPassword,
-                            onValueChange = { confirmNewPassword = it },
+                            onValueChange = { confirmNewPassword = it.take(128); securityError = null },
                             label = { Text("Confirm new password") },
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
@@ -562,7 +562,9 @@ fun SettingsScreen(
                     TextButton(
                         enabled = !securityWorking && currentPassword.isNotBlank() && newPassword.length >= 10,
                         onClick = {
-                            if (newPassword != confirmNewPassword) {
+                            if (newPassword.length !in 10..128) {
+                                securityError = "New password must be 10–128 characters."
+                            } else if (newPassword != confirmNewPassword) {
                                 securityError = "The new passwords do not match."
                             } else {
                                 securityWorking = true
