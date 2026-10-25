@@ -81,6 +81,27 @@ class UserPreferences(private val context: Context) {
         }.first()
     }
 
+    suspend fun saveApiRefreshToken(userId: String, token: String) {
+        if (userId.isBlank() || token.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("api_refresh_token_$userId")] = SecureVault.encrypt(token)
+        }
+    }
+
+    suspend fun getApiRefreshToken(userId: String): String? {
+        if (userId.isBlank()) return null
+        val key = stringPreferencesKey("api_refresh_token_$userId")
+        return context.dataStore.data.map { prefs -> SecureVault.decrypt(prefs[key]) }.first()
+    }
+
+    suspend fun clearApiSession(userId: String) {
+        if (userId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs.remove(apiTokenKey(userId))
+            prefs.remove(stringPreferencesKey("api_refresh_token_$userId"))
+        }
+    }
+
     suspend fun clearApiToken(userId: String) {
         if (userId.isBlank()) return
         context.dataStore.edit { prefs -> prefs.remove(apiTokenKey(userId)) }
