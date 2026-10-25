@@ -51,6 +51,12 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
     private val _groupInfo = MutableStateFlow<FirebaseGroupDto?>(null)
     val groupInfo: StateFlow<FirebaseGroupDto?> = _groupInfo.asStateFlow()
 
+    private val _groupKeys = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val groupKeys: StateFlow<Map<Int, String>> = _groupKeys.asStateFlow()
+    private val loadingGroupKeyVersions = mutableSetOf<Int>()
+    private val _groupKeyError = MutableStateFlow<String?>(null)
+    val groupKeyError: StateFlow<String?> = _groupKeyError.asStateFlow()
+
     private var firebaseMessageListener: ChildEventListener? = null
     private var firebaseReactionListener: ChildEventListener? = null
     private var observationJob: Job? = null
@@ -118,27 +124,87 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
         }
     }
 
+    private suspend fun loadGroupKeyVersion(version: Int): String? {
+        if (version <= 0) return null
+        _groupKeys.value[version]?.let { return it }
+        if (!loadingGroupKeyVersions.add(version)) return _groupKeys.value[version]
+        return try {
+            val uid = userPrefs.userIdFlow.first().orEmpty()
+            if (uid.isBlank()) return null
+            val key = firebaseRepo.loadGroupKey(chatId, uid, version)
+            _groupKeys.update { it + (version to key) }
+            _groupKeyError.value = null
+            key
+        } catch (e: Exception) {
+            _groupKeyError.value = e.message ?: "Group encryption key could not be loaded."
+            Log.w("ChatViewModel", "Could not load group key version $version: ${e.message}")
+            null
+        } finally {
+            loadingGroupKeyVersions.remove(version)
+        }
+    }
+
+    private suspend fun ensureCurrentGroupKey(): Pair<String, Int>? {
+        val uid = userPrefs.userIdFlow.first().orEmpty()
+        if (uid.isBlank()) return null
+        var info = firebaseRepo.getGroupInfo(chatId) ?: return null
+        if (info.groupKeyVersion <= 0 && info.groupOwnerId == uid) {
+            try {
+                firebaseRepo.rotateGroupKey(chatId, uid)
+                info = firebaseRepo.getGroupInfo(chatId) ?: return null
+            } catch (e: Exception) {
+                _groupKeyError.value = "Secure group key setup failed: ${e.message}"
+                return null
+            }
+        }
+        _groupInfo.value = info
+        if (info.groupKeyVersion <= 0) {
+            _groupKeyError.value = "Waiting for the group owner to set up secure encryption."
+            return null
+        }
+        val key = loadGroupKeyVersion(info.groupKeyVersion) ?: return null
+        return key to info.groupKeyVersion
+    }
+
+    private suspend fun decryptGroupPayload(ciphertext: String, nonce: String): String {
+        val version = CryptoManager.groupMessageVersion(ciphertext)
+        return if (version > 0) {
+            val key = loadGroupKeyVersion(version).orEmpty()
+            CryptoManager.decryptGroupMessage(key, ciphertext, nonce)
+        } else {
+            // Read-only compatibility for previously stored messages written with the legacy key.
+            CryptoManager.decryptLegacyGroupMessage(chatId, ciphertext, nonce)
+        }
+    }
+
     private fun loadGroupDetailsIfGroup() {
         viewModelScope.launch {
-            if (chatId.startsWith("group_")) {
-                val info = firebaseRepo.getGroupInfo(chatId)
-                if (info != null) {
-                    _groupInfo.value = info
-                    val myId = userPrefs.userIdFlow.first() ?: return@launch
-                    val current = _chat.value
-                    if (current != null) {
-                        val updated = current.copy(
-                            isGroup = true,
-                            groupName = info.groupName,
-                            groupOwnerId = info.groupOwnerId,
-                            pinnedMessageId = info.pinnedMessageId,
-                            memberIdsJson = info.members.keys.joinToString(",")
-                        )
-                        chatDao.insertChat(updated)
-                        _chat.value = updated
-                    }
+            if (!chatId.startsWith("group_")) return@launch
+            var info = firebaseRepo.getGroupInfo(chatId) ?: return@launch
+            val myId = userPrefs.userIdFlow.first().orEmpty()
+            if (info.groupKeyVersion <= 0 && info.groupOwnerId == myId) {
+                try {
+                    firebaseRepo.rotateGroupKey(chatId, myId)
+                    info = firebaseRepo.getGroupInfo(chatId) ?: return@launch
+                } catch (e: Exception) {
+                    _groupKeyError.value = "Secure group key setup failed: ${e.message}"
+                    Log.w("ChatViewModel", "Could not initialize group key: ${e.message}")
                 }
             }
+            _groupInfo.value = info
+            val current = _chat.value
+            if (current != null) {
+                val updated = current.copy(
+                    isGroup = true,
+                    groupName = info.groupName,
+                    groupOwnerId = info.groupOwnerId,
+                    pinnedMessageId = info.pinnedMessageId,
+                    memberIdsJson = info.members.keys.joinToString(",")
+                )
+                chatDao.insertChat(updated)
+                _chat.value = updated
+            }
+            if (info.groupKeyVersion > 0) loadGroupKeyVersion(info.groupKeyVersion)
         }
     }
 
