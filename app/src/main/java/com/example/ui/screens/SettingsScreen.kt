@@ -44,6 +44,11 @@ fun SettingsScreen(
     val themeMode by authViewModel.themeMode.collectAsState()
     val soundEffectsEnabled by authViewModel.soundEffectsEnabled.collectAsState()
     val hapticFeedbackEnabled by authViewModel.hapticFeedbackEnabled.collectAsState()
+    val showOnlineStatus by authViewModel.showOnlineStatus.collectAsState()
+    val readReceiptsEnabled by authViewModel.readReceiptsEnabled.collectAsState()
+    val allowDiscovery by authViewModel.allowDiscovery.collectAsState()
+    val allowGroupInvites by authViewModel.allowGroupInvites.collectAsState()
+    val privacySyncError by authViewModel.privacySyncError.collectAsState()
 
     var profileToDelete by remember { mutableStateOf<AccountProfileEntity?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
