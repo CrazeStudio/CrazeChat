@@ -765,10 +765,10 @@ fun ChatItemRow(
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(5.dp))
-                    val subtitle = if (chat.lastMessage.isBlank() || chat.lastMessage == "End-to-end encrypted chat started") {
+                    val subtitle = if (chat.lastMessageValue.isBlank() || chat.lastMessageValue == "End-to-end encrypted chat started") {
                         "Encrypted chat started"
                     } else {
-                        chat.lastMessage
+                        chat.lastMessageValue
                     }
                     Text(
                         text = subtitle,
