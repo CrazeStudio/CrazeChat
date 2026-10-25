@@ -418,27 +418,30 @@ class FirebaseRepository(private val context: Context? = null) {
     suspend fun findUser(query: String): FirebaseUserDto? {
         val clean = query.trim()
         if (clean.isBlank()) return null
-        val uid = activeUid()
-        try {
-            val result = api(uid, "GET", "/api/chat/users/${segment(clean)}").optJSONObject("user")
-            if (result != null) return dto(result)
-        } catch (e: Exception) {
-            Log.w(TAG, "Direct user lookup failed; trying directory fallback: ${e.message}")
-        }
-        return try {
-            users(uid).firstOrNull {
-                it.userId.equals(clean, ignoreCase = true) ||
-                    it.username.equals(clean, ignoreCase = true)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "findUser failed", e)
-            null
+        // Route usernames through the explicit username lookup API; route IDs through
+        // the canonical profile resolver. Directory fallback is only a fallback.
+        return if (clean.matches(Regex("^[A-Za-z0-9_]{3,24}$"))) {
+            findUserByUsername(clean) ?: findUserById(clean)
+        } else {
+            findUserById(clean) ?: findUserByUsername(clean)
         }
     }
 
-    suspend fun findUserByUsername(usernameQuery: String): FirebaseUserDto? =
-        try { users(activeUid()).firstOrNull { it.username.equals(usernameQuery.trim(), ignoreCase = true) } }
-        catch (e: Exception) { Log.e(TAG, "findUserByUsername failed", e); null }
+    suspend fun findUserByUsername(usernameQuery: String): FirebaseUserDto? {
+        val clean = usernameQuery.trim()
+        if (clean.isBlank()) return null
+        return try {
+            val result = api(activeUid(), "GET", "/api/chat/users/by-username/${segment(clean)}")
+                .optJSONObject("user")
+            result?.let(::dto)
+        } catch (e: ApiException) {
+            if (e.status != 404) Log.w(TAG, "Canonical username lookup failed: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "findUserByUsername failed", e)
+            null
+        }
+    }
 
     suspend fun findUserById(userId: String): FirebaseUserDto? {
         val cleanId = userId.trim()
@@ -446,13 +449,16 @@ class FirebaseRepository(private val context: Context? = null) {
         return try {
             val result = api(activeUid(), "GET", "/api/chat/users/${segment(cleanId)}").optJSONObject("user")
             result?.let(::dto)
-        } catch (e: Exception) {
-            Log.w(TAG, "findUserById direct lookup failed: ${e.message}")
+        } catch (e: ApiException) {
+            if (e.status != 404) Log.w(TAG, "Canonical user ID lookup failed: ${e.message}")
             try { users(activeUid()).firstOrNull { it.userId.equals(cleanId, ignoreCase = true) } }
             catch (fallback: Exception) {
-                Log.w(TAG, "findUserById fallback failed: ${fallback.message}")
+                Log.w(TAG, "findUserById directory fallback failed: ${fallback.message}")
                 null
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "findUserById failed: ${e.message}")
+            null
         }
     }
 
