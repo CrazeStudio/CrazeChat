@@ -79,7 +79,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val activeId = userPrefs.userIdFlow.first().orEmpty()
                 if (activeId.isNotBlank()) {
-                    profileDao.getProfile(activeId)?.let { userPrefs.setActiveProfile(it) }
+                    val activeProfile = profileDao.getProfile(activeId)
+                    if (activeProfile != null && activeProfile.privateKeyPlain.isNotBlank()) {
+                        userPrefs.setActiveProfile(activeProfile)
+                    } else if (activeId.isNotBlank()) {
+                        // Android Keystore keys are device-bound. If a restored DB cannot be
+                        // decrypted, require password-based cloud recovery rather than using a blank key.
+                        userPrefs.clearSession()
+                    }
                 }
             } catch (e: Exception) {
                 Log.w("AuthViewModel", "Secure local key migration could not complete: ${e.message}")
@@ -139,7 +146,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     ?: profileDao.getProfileByUsername(canonicalUsername)
 
                 val profile: AccountProfileEntity = if (
-                    localProfile != null &&
+                    localProfile != null && localProfile.privateKeyPlain.isNotBlank() &&
                     (remoteProfile?.publicKey.isNullOrBlank() || localProfile.publicKey == remoteProfile?.publicKey)
                 ) {
                     AccountProfileEntity(
