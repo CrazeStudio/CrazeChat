@@ -778,13 +778,26 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 return@launch
             }
 
+            val myId = userPrefs.userIdFlow.first().orEmpty()
             val success = firebaseRepo.addGroupMember(chatId, cleanId)
-            if (success) {
+            if (!success) {
+                onResult(false, "Failed to add user to group")
+                return@launch
+            }
+            try {
+                // A newly added member gets only the new version; existing members keep prior
+                // versions locally so old messages remain readable to them.
+                val newVersion = firebaseRepo.rotateGroupKey(chatId, myId)
+                val key = firebaseRepo.loadGroupKey(chatId, myId, newVersion)
+                _groupKeys.update { it + (newVersion to key) }
+                _groupInfo.value = firebaseRepo.getGroupInfo(chatId)
                 loadGroupDetailsIfGroup()
                 soundEffects.playClick()
-                onResult(true, "Added ${user.username} to group")
-            } else {
-                onResult(false, "Failed to add user to group")
+                onResult(true, "Added ${user.username}; group encryption key rotated")
+            } catch (e: Exception) {
+                Log.e("ChatViewModel", "Member added but group key rotation failed: ${e.message}", e)
+                _groupKeyError.value = "Member was added, but key rotation failed. Do not send sensitive group messages until the group key is fixed."
+                onResult(false, "Member added but secure key rotation failed: ${e.message}")
             }
         }
     }
