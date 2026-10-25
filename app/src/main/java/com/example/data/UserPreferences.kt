@@ -60,7 +60,7 @@ class UserPreferences(private val context: Context) {
             userId = profile.userId,
             username = profile.username,
             publicKey = profile.publicKey,
-            privateKey = profile.privateKey
+            privateKey = profile.privateKeyPlain
         )
     }
 
