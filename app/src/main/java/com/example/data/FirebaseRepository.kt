@@ -66,7 +66,8 @@ data class FirebaseGroupDto(
     val groupOwnerId: String = "",
     val members: Map<String, Boolean> = emptyMap(),
     val pinnedMessageId: String = "",
-    val createdAt: Long = 0L
+    val createdAt: Long = 0L,
+    val groupKeyVersion: Int = 0
 )
 
 /**
@@ -475,8 +476,63 @@ class FirebaseRepository(private val context: Context? = null) {
         val keys = memberObject.keys()
         while (keys.hasNext()) members[keys.next()] = true
         FirebaseGroupDto(chatId, chat.optString("title"), chat.optString("createdBy"), members,
-            chat.optString("pinnedMessageId"), millis(chat.optString("createdAt")))
+            chat.optString("pinnedMessageId"), millis(chat.optString("createdAt")), chat.optInt("groupKeyVersion", 0))
     } catch (e: Exception) { Log.w(TAG, "getGroupInfo failed: ${e.message}"); null }
+
+    /**
+     * Rotate the current group key. The group secret is random and encrypted separately to
+     * every member using ECDH; the server receives only encrypted envelopes.
+     */
+    suspend fun rotateGroupKey(chatId: String, ownerUid: String): Int {
+        val info = getGroupInfo(chatId) ?: throw IOException("Could not load group membership.")
+        if (info.groupOwnerId != ownerUid) throw IOException("Only the group owner can rotate this group's key.")
+        val store = preferences ?: throw IOException("Secure local storage is unavailable.")
+        val privateKey = store.privateKeyFlow.first().orEmpty()
+        val ownerPublicKey = store.publicKeyFlow.first().orEmpty().substringBefore("::ENC::")
+        if (privateKey.isBlank() || ownerPublicKey.isBlank()) throw IOException("Your local cryptographic keys are missing.")
+
+        val groupKey = CryptoManager.generateGroupKey()
+        val envelopes = JSONObject()
+        for (memberId in info.members.keys) {
+            val recipientPublicKey = if (memberId == ownerUid) {
+                ownerPublicKey
+            } else {
+                findUserById(memberId)?.publicKey.orEmpty()
+            }
+            if (recipientPublicKey.isBlank()) throw IOException("Could not find a public key for group member $memberId.")
+            val wrapped = CryptoManager.encryptMessage(privateKey, recipientPublicKey, groupKey)
+            envelopes.put(memberId, JSONObject()
+                .put("ciphertext", wrapped.ciphertext)
+                .put("nonce", wrapped.nonce))
+        }
+
+        val response = api(ownerUid, "PUT", "/api/chat/chats/${segment(chatId)}/group-keys",
+            JSONObject().put("ownerPublicKey", ownerPublicKey).put("envelopes", envelopes))
+        val version = response.optInt("version", 0)
+        if (version <= 0) throw IOException("Server did not return a valid group key version.")
+        store.saveGroupKey(ownerUid, chatId, version, groupKey)
+        return version
+    }
+
+    suspend fun loadGroupKey(chatId: String, userId: String, version: Int): String {
+        val store = preferences ?: throw IOException("Secure local storage is unavailable.")
+        store.getGroupKey(userId, chatId, version)?.let { return it }
+        val response = api(userId, "GET",
+            "/api/chat/chats/${segment(chatId)}/group-key/me?version=$version")
+        val envelope = response.optJSONObject("envelope") ?: throw IOException("Group key envelope is missing.")
+        val privateKey = store.privateKeyFlow.first().orEmpty()
+        val ownerPublicKey = envelope.optString("ownerPublicKey").substringBefore("::ENC::")
+        if (privateKey.isBlank() || ownerPublicKey.isBlank()) throw IOException("Local or owner public key is missing.")
+        val groupKey = CryptoManager.decryptMessage(
+            myPrivateKeyBase64 = privateKey,
+            theirPublicKeyBase64 = ownerPublicKey,
+            ciphertextBase64 = envelope.optString("ciphertext"),
+            nonceBase64 = envelope.optString("nonce")
+        )
+        if (!CryptoManager.isValidGroupKey(groupKey)) throw IOException("Unable to decrypt the group key envelope.")
+        store.saveGroupKey(userId, chatId, version, groupKey)
+        return groupKey
+    }
 
     suspend fun getUserGroupIds(userId: String): List<String> = try {
         chats(userId).filter { it.optBoolean("isGroup") }
