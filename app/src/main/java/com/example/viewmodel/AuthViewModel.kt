@@ -191,6 +191,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 _authState.value = AuthState.Authenticated
                 onComplete(true)
             } catch (e: Exception) {
+                // Preserve access to this device's locally encrypted chats during network outages.
+                // Never use local fallback after the backend explicitly rejects a password.
+                val canFallbackOffline = e !is FirebaseRepository.ApiException || e.status >= 500
+                val local = if (canFallbackOffline) profileDao.getProfileByUsername(username.trim()) else null
+                if (local != null && local.privateKeyPlain.isNotBlank()) {
+                    val hashedPassword = CryptoManager.hashPassword(password)
+                    if (local.password == hashedPassword || local.password == password) {
+                        userPrefs.setActiveProfile(local)
+                        _authState.value = AuthState.Authenticated
+                        onComplete(true)
+                        return@launch
+                    }
+                }
                 val message = e.message?.takeIf { it.isNotBlank() } ?: "Login failed"
                 _authState.value = AuthState.Error(message)
                 onComplete(false)
