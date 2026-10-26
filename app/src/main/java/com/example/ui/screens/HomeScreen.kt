@@ -934,7 +934,7 @@ fun NewChatDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Chat, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Add User by ID", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onBackground)
+                Text("Find User",  fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onBackground)
             }
         },
         text = {
@@ -974,7 +974,7 @@ fun NewChatDialog(
                 }
 
                 Text(
-                    text = "For maximum privacy, other users on the server are not listed. Enter the exact User ID to start a chat.",
+                    text = "For privacy, users are not listed publicly. Enter a username or user ID to find the account and start a chat.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 17.sp,
@@ -984,7 +984,7 @@ fun NewChatDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Enter exact User ID...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp) },
+                    placeholder = { Text("Username or user ID...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp) },
                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                     shape = RoundedCornerShape(24.dp),
                     singleLine = true,
@@ -1013,7 +1013,7 @@ fun NewChatDialog(
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Search User ID", fontWeight = FontWeight.Bold)
+                    Text("Find User",  fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1146,7 +1146,7 @@ fun NewGroupChatDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Add Members by User ID:",
+                    text = "Add Members by username or user ID:", 
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
                 )
@@ -1156,7 +1156,7 @@ fun NewGroupChatDialog(
                     OutlinedTextField(
                         value = memberIdInput,
                         onValueChange = { memberIdInput = it.trim() },
-                        placeholder = { Text("User ID (e.g. user_84f93a1c)", fontSize = 12.sp) },
+                        placeholder = { Text("Username or user ID", fontSize = 12.sp) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
