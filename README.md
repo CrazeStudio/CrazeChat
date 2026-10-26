@@ -8,7 +8,7 @@ The application embeds only the public HTTPS API base URL. It does **not** requi
 
 For a local build, optionally set `CRAZECHAT_API_BASE_URL` to your deployed API URL. The default in `app/build.gradle.kts` is `https://crazechat-api.vercel.app`. GitHub Actions uses the same public endpoint unless the workflow is changed.
 
-The app authenticates individual accounts using `POST /auth/register`, `POST /auth/login`, and the legacy-account migration endpoint `POST /auth/migrate`. Access tokens expire after one hour; rotating refresh tokens are stored encrypted with Android Keystore-backed AES-GCM. The backend supports password changes, logout/session revocation, and confirmed cloud-account deletion.
+The app authenticates individual accounts using `POST /auth/register`, `POST /api/user/login` (JSON body with `username` and `password`), and the legacy-account migration endpoint `POST /auth/migrate`. `POST /auth/login` remains as a backward-compatible alias. Credentials are sent in the HTTPS request body, never in URL path segments; the server stores a salted scrypt password hash. Access tokens expire after one hour; rotating refresh tokens are stored encrypted with Android Keystore-backed AES-GCM. The backend supports password changes, logout/session revocation, and confirmed cloud-account deletion.
 
 ## Backend deployment requirements
 
