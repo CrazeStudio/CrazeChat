@@ -1,43 +1,46 @@
-# CrazeChat — Flutter rebuild
+# CrazeChat — Flutter Android app
 
-CrazeChat is being rebuilt as a Flutter Android-first messaging app. The source is organized as a standard Flutter project and uses the existing CrazeChat Vercel HTTP API rather than exposing Firebase database access from the mobile client.
+CrazeChat is an Android-first Flutter messaging app. It connects to the CrazeChat API on Vercel, backed by Firebase Realtime Database; Firebase service credentials are never included in the APK.
 
 ## Design
 
-The app keeps the previous CrazeChat visual direction: clean blue-and-white surfaces, deep navy in dark mode, rounded input fields and message bubbles, the forum mark, simple hierarchy, and Android-responsive layouts. Theme can follow the system or be selected manually.
+Clean blue-and-white surfaces, deep navy in dark mode, rounded inputs and message bubbles, responsive Android layouts, and system/manual theme selection.
 
-## Build
+## Build and install
 
-Requirements: Flutter stable (Dart 3.4 or newer), Android SDK, and Java 17.
+The default API base URL is `https://crazechat-api.vercel.app`.
+
+Requirements for a local build: Flutter stable, Android SDK, and Java 17.
 
 ```sh
-flutter create --platforms=android --org com.crazestudio --project-name crazechat .
 flutter pub get
 flutter analyze
 flutter test
-flutter run --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app --dart-define=CRAZECHAT_INSTALLATION_ID=YOUR_INSTALLATION_ID
+flutter build apk --release \
+  --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app
 ```
 
-The GitHub Actions workflow creates the Android platform scaffold if it is missing, analyzes and tests the Dart project, builds a release APK, and uploads the APK as a workflow artifact. A successful source commit is not the same as a successful build or live backend deployment; check the workflow and the Vercel health endpoint.
+The **CrazeChat Android CI** workflow runs Dart analysis and regression tests, creates Android platform files if they are absent, builds a release APK on pushes to `main`, and uploads the `crazechat-android-release` artifact. Open **Actions → CrazeChat Android CI**, select a successful run, and download that artifact. The app version is `2.0.1+3).
 
-To use another API deployment, set the compile-time define `CRAZECHAT_API_BASE_URL` to its public HTTPS URL. Never put Firebase service credentials, signing secrets, API tokens, or other server secrets in Flutter source or APK build arguments.
+You may change `CRAZECHAT_API_BASE_URL` to another public HTTPS API base URL at build time. This version does not need a shared installation ID in the APK.
 
 ## API contract
 
-The API does not use Firebase Authentication or per-user auth sessions. On first use, the Flutter client calls `POST /verify` with `CRAZECHAT_INSTALLATION_ID` to obtain a web-issued, signed 24-hour `X-API-Token`. The client stores that app-access token plus the current user ID and username in platform secure storage; when the API token expires, it requests another through `/verify`. No refresh-token/session records are stored in Firebase.
+New installs register and log in through `POST /auth/register` and `POST /auth/login` without sending an app-wide password. The API returns a signed, user-scoped `X-API-Token` and a rotating refresh token. The client stores these tokens in Android secure storage and refreshes using `POST /auth/refresh`. The API derives the user ID from the signed token and rejects a mismatching `X-User-ID`. Legacy `POST /verify` is not part of the current sign-in flow.
 
-Configure these server-side Vercel environment variables:
+Required Vercel environment variables:
 
-- `API_VERIFY_KEY`: the installation ID accepted by `/verify`.
-- `API_TOKEN_SIGNING_SECRET`: long random secret used to sign web API tokens (legacy `TOKEN_SIGNING_SECRET` is accepted as fallback).
-- `DATABASE_URL` and `FIREBASE_SERVICE_ACCOUNT_JSON`: server-only Firebase Realtime Database access.
-- `CRON_SECRET`: server-only scheduled cleanup authorization.
+- `DATABASE_URL`: Firebase Realtime Database URL (not PostgreSQL).
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: server-only Firebase service-account JSON.
+- `API_TOKEN_SIGNING_SECRET`: long, random server-only secret for signing access tokens.
+- `CRON_SECRET`: long, random secret for the cleanup endpoint.
+- `API_VERIFY_KEY`: optional, for legacy clients that still use `POST /verify`.
 
-The Flutter build must receive the matching installation ID using the compile-time define `CRAZECHAT_INSTALLATION_ID`. Never commit the value. Values compiled into an APK can be extracted, so this shared token is API access control, not strong per-user authentication.
+After changing Vercel environment variables, redeploy the API. Verify `GET https://crazechat-api.vercel.app/api/health` returns `ok: true` and `database: "connected"`. A source-code commit or a passing APK build does not prove that live Vercel/Firebase is healthy.
 
 | Feature | HTTP routes used |
 | --- | --- |
-| API token and health | `POST /verify`, `GET /api/health`, `GET /api/docs` |
+| Authentication and health | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /api/health`, `GET /api/docs` (`POST /verify` is legacy-only) |
 | Registration and login | `POST /api/newuser`, `POST /auth/register`, `POST /api/user/login`, `POST /auth/login`, `POST /auth/migrate` |
 | Account and password | `POST /auth/change-password`, `DELETE /auth/account`, `DELETE /api/deleteuser` |
 | Compact direct chat | `GET/POST /api/chat` with `useridof1`, `useridof2`, optional `message`, `useridsendby`, and `touser` |
@@ -63,7 +66,7 @@ The compact `/api/chat` and `/api/groupchat` routes store their `message` input 
 - Private keys and session tokens are stored through Flutter secure storage, not SharedPreferences or the database.
 - Old unversioned group messages may be readable using the legacy compatibility key, but that previous format used a constant embedded in the old app and must not be treated as confidential.
 
-Security depends on the deployed API, Firebase database rules, server environment variables, user passwords, and actual client/device behavior. Use a test Firebase project first. Keep Firebase rules closed to unauthenticated clients and configure the companion API with server-side `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `TOKEN_SIGNING_SECRET`, and `CRON_SECRET`.
+Security depends on the deployed API, Firebase database rules, server environment variables, user passwords, and actual client/device behavior. Use a test Firebase project first. Keep Firebase rules closed to unauthenticated clients and configure the API with `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `API_TOKEN_SIGNING_SECRET`, and `CRON_SECRET` on Vercel. `API_VERIFY_KEY` is only for legacy clients using `/verify`.
 
 ## Test scope and limitations
 
