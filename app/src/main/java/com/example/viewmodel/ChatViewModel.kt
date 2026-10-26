@@ -796,6 +796,10 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 onResult(false, "You are already the group owner.")
                 return@launch
             }
+            if (user.publicKey.isBlank()) {
+                onResult(false, "Account found, but its encryption key has not synced. Ask the user to sign in on their original device.")
+                return@launch
+            }
             val success = firebaseRepo.addGroupMember(chatId, user.userId)
             if (!success) {
                 onResult(false, "Failed to add user to group")
