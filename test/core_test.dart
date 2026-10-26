@@ -2,6 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:crazechat/core.dart';
 
 void main() {
+  group('API build configuration', () {
+    test('defaults to the Vercel CrazeChat API', () {
+      expect(defaultApiBaseUrl, 'https://crazechat-api.vercel.app');
+    });
+  });
+
+
   group('P-256 coordinate normalization', () {
     test('removes an old leading sign-padding zero from 33-byte coordinates', () {
       final coordinate = <int>[0, ...List<int>.generate(32, (index) => index)];
