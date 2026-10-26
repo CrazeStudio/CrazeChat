@@ -20,7 +20,7 @@ flutter build apk --release \
   --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app
 ```
 
-The **CrazeChat Android CI** workflow runs Dart analysis and regression tests, creates Android platform files if they are absent, builds a release APK on pushes to `main`, and uploads the `crazechat-android-release` artifact. Open **Actions → CrazeChat Android CI**, select a successful run, and download that artifact. The app version is `2.0.1+3).
+The **CrazeChat Android CI** workflow runs Dart analysis and regression tests, creates Android platform files if they are absent, builds a release APK on pushes to `main`, and uploads the `crazechat-android-release` artifact. Open **Actions → CrazeChat Android CI**, select a successful run, and download that artifact. The app version is `2.0.1+3`.
 
 You may change `CRAZECHAT_API_BASE_URL` to another public HTTPS API base URL at build time. This version does not need a shared installation ID in the APK.
 
