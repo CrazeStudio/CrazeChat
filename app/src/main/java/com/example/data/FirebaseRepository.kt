@@ -243,7 +243,7 @@ class FirebaseRepository(private val context: Context? = null) {
     suspend fun loginAccount(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
         try {
             saveSessionFromAuth(rawRequest(
-                "POST", "/auth/login",
+                "POST", "/api/user/login",
                 JSONObject().put("username", username).put("password", password),
                 null
             ))
