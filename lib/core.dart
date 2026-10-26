@@ -504,7 +504,7 @@ class CryptoService {
   CryptoService({FlutterSecureStorage? storage}) : storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage storage;
-  final Ecdh _ecdh = Ecdh.p256();
+  final Ecdh _ecdh = Ecdh.p256(length: 32);
   final AesGcm _aes = AesGcm.with256bits();
   final Sha256 _sha256 = Sha256();
 

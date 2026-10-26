@@ -631,7 +631,7 @@ class _ChatsTabState extends State<_ChatsTab> {
         ]),
         actions: [
           IconButton(tooltip: 'Refresh conversations', onPressed: () => _refresh(), icon: const Icon(Icons.refresh_rounded)),
-          IconButton(tooltip: 'New chat', onPressed: _newChat, icon: const Icon(Icons.edit_square_rounded)),
+          IconButton(tooltip: 'New chat', onPressed: _newChat, icon: const Icon(Icons.edit_outlined)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
