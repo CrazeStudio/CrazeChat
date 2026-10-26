@@ -334,6 +334,9 @@ class ApiClient {
           retryAfterRefresh: false,
         );
       }
+    } catch (_) {
+      // Logout must still finish locally when the access token is from an
+      // older build or the API is unreachable. Server revocation is best-effort.
     } finally {
       await clearSession();
     }
