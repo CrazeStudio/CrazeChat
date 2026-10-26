@@ -1,9 +1,7 @@
 name: CrazeChat Flutter Android
 on:
-  push:
-    branches: [main, feature/flutter-crazechat-client]
-  pull_request:
-    branches: [main, feature/flutter-crazechat-client]
+  # The path-filtered crazechat-android.yml now owns automatic validation/builds.
+  # Keep this workflow only as a manually triggered fallback.
   workflow_dispatch:
 
 permissions:
