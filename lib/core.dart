@@ -224,13 +224,13 @@ class ApiClient {
       result = await request('POST', '/api/user/login', body: {
         'username': username.trim(),
         'password': password,
-      }, authenticated: false);
+      }, authenticated: true);
     } on ApiException catch (error) {
       if (error.status == 404) {
         result = await request('POST', '/auth/login', body: {
           'username': username.trim(),
           'password': password,
-        }, authenticated: false);
+        }, authenticated: true);
       } else if (error.status == 401) {
         try {
           result = await request('POST', '/auth/migrate', body: {
