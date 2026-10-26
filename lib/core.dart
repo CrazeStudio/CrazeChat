@@ -432,6 +432,8 @@ class ChatMessage {
         receiverId = stringValue(json['receiverId']),
         ciphertext = stringValue(json['ciphertext']),
         nonce = stringValue(json['nonce']),
+        text = stringValue(json['text']),
+        encrypted = json['encrypted'] != false,
         replyToId = stringValue(json['replyToId']),
         replyToText = stringValue(json['replyToText']),
         replyToSender = stringValue(json['replyToSender']),
@@ -451,6 +453,8 @@ class ChatMessage {
   final String receiverId;
   final String ciphertext;
   final String nonce;
+  final String text;
+  final bool encrypted;
   final String replyToId;
   final String replyToText;
   final String replyToSender;
