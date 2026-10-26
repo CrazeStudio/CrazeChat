@@ -25,6 +25,23 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Normalizes a P-256 coordinate to the 32-byte unsigned big-endian form
+/// required by package:cryptography. Some older stored keys contain a leading
+/// sign-padding zero (33 bytes); preserve valid coordinates and reject overflow.
+Uint8List normalizeP256Coordinate(List<int> bytes) {
+  var coordinate = List<int>.from(bytes);
+  while (coordinate.length > 32 && coordinate.first == 0) {
+    coordinate.removeAt(0);
+  }
+  if (coordinate.length > 32) {
+    throw const FormatException('P-256 coordinate exceeds 32 bytes.');
+  }
+  if (coordinate.length < 32) {
+    coordinate = <int>[...List<int>.filled(32 - coordinate.length, 0), ...coordinate];
+  }
+  return Uint8List.fromList(coordinate);
+}
+
 Map<String, dynamic> asJsonMap(Object? value) {
   if (value is Map<String, dynamic>) return value;
   if (value is Map) return value.map((key, value) => MapEntry(key.toString(), value));
@@ -587,9 +604,9 @@ class CryptoService {
     final y = await storage.read(key: _yName(uid));
     if (d == null || x == null || y == null) return null;
     return EcKeyPairData(
-      d: _decode64(d),
-      x: _decode64(x),
-      y: _decode64(y),
+      d: normalizeP256Coordinate(_decode64(d)),
+      x: normalizeP256Coordinate(_decode64(x)),
+      y: normalizeP256Coordinate(_decode64(y)),
       type: KeyPairType.p256,
     );
   }
