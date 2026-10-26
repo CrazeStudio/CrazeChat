@@ -14,6 +14,23 @@ void main() {
       ]);
     });
 
+    test('normalizes legacy uncompressed points with 33-byte padded coordinates', () {
+      final x = <int>[0, ...List<int>.generate(32, (index) => index + 1)];
+      final y = <int>[0, ...List<int>.generate(32, (index) => 255 - index)];
+      final point = normalizeP256PublicPointBytes([0x04, ...x, ...y]);
+      expect(point, [...x.sublist(1), ...y.sublist(1)]);
+      expect(point, hasLength(64));
+    });
+
+    test('normalizes the public point inside standard SPKI DER', () {
+      final x = List<int>.generate(32, (index) => index + 1);
+      final y = List<int>.generate(32, (index) => 255 - index);
+      final spkiLike = <int>[0x30, 0x03, 0x03, 0x01, 0x00, 0x04, ...x, ...y];
+      final point = normalizeP256PublicPointBytes(spkiLike);
+      expect(point, [...x, ...y]);
+      expect(point, hasLength(64));
+    });
+
     test('rejects a coordinate that cannot fit in 32 bytes', () {
       expect(
         () => normalizeP256Coordinate([1, ...List<int>.filled(32, 2)]),
