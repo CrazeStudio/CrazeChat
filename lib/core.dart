@@ -158,8 +158,9 @@ class ApiClient {
         );
         await _persistAuth(response);
         return true;
-      } on ApiException {
-        await clearSession();
+      } on ApiException catch (error) {
+        // Preserve refresh credentials during temporary backend outages or rate limits.
+        if (error.status == 401) await clearSession();
         return false;
       } catch (_) {
         return false;
