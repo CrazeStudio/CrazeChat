@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cryptography_flutter/cryptography_flutter.dart';
 import 'package:intl/intl.dart';
 
 import 'core.dart';
@@ -15,6 +16,8 @@ const _lightBorder = Color(0xFFE2E8F0);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Register native cryptographic implementations before identity creation or login.
+  FlutterCryptography.enable();
   runApp(CrazeChatApp(api: ApiClient(), crypto: CryptoService()));
 }
 
