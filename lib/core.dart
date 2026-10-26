@@ -184,6 +184,17 @@ class ApiClient {
     try {
       return await _send(method, path, body: body, authenticated: authenticated);
     } on ApiException catch (error) {
+      // Some Vercel configurations mount api/index.js with the /api prefix
+      // removed from req.path. Retry the equivalent route once so the same
+      // app build works with either supported function-path shape.
+      if (error.status == 404 && path.startsWith('/api/')) {
+        final alternatePath = path.substring(4);
+        try {
+          return await _send(method, alternatePath, body: body, authenticated: authenticated);
+        } on ApiException catch (alternateError) {
+          if (alternateError.status != 404) rethrow;
+        }
+      }
       if (error.status == 401 &&
           authenticated &&
           retryAfterRefresh &&
