@@ -495,7 +495,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val user = firebaseRepo.findUser(query)
                 if (user == null) {
-                    _searchError.value = "User not found"
+                    _searchError.value = "User not found. Check the exact username or user ID."
+                } else if (user.publicKey.isBlank()) {
+                    _searchError.value = "Account found, but its encryption key has not synced. Ask the user to open CrazeChat on their original device and sign in."
                 } else {
                     val myId = userPrefs.userIdFlow.first()
                     if (user.userId == myId) {
