@@ -498,6 +498,7 @@ class _ChatsTabState extends State<_ChatsTab> {
   }
 
   Future<String> _messagePreview(ChatMessage message, ChatRecord chat) async {
+    if (!message.encrypted) return message.text;
     if (message.nonce.isEmpty) return message.ciphertext.isEmpty ? 'Message' : message.ciphertext;
     try {
       if (chat.isGroup) {
@@ -1418,6 +1419,7 @@ class _ChatScreenState extends State<_ChatScreen> {
   }
 
   Future<String> _decrypt(ChatMessage message, ChatRecord chat) async {
+    if (!message.encrypted) return message.text;
     if (message.nonce.isEmpty) {
       // Some older prototypes stored unencrypted text in this field; keep it visible as legacy data.
       return message.ciphertext;
