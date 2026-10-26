@@ -1072,7 +1072,7 @@ fun ChatScreen(
             text = {
                 Column {
                     Text(
-                        text = "Enter the exact User ID of the person you want to add to this group:",
+                        text = "Enter the person's username or user ID. The app resolves it to their account ID:",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1080,7 +1080,7 @@ fun ChatScreen(
                     OutlinedTextField(
                         value = newMemberIdInput,
                         onValueChange = { newMemberIdInput = it.trim() },
-                        placeholder = { Text("e.g. user_84f93a1c") },
+                        placeholder = { Text("Username or user ID") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
