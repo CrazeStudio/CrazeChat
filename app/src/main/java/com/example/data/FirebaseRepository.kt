@@ -403,20 +403,37 @@ class FirebaseRepository(private val context: Context? = null) {
         return listener
     }
 
-    suspend fun registerUser(userId: String, username: String, publicKey: String, encryptedBackup: String = ""): Boolean = try {
-        val combinedKey = if (encryptedBackup.isNotBlank()) "$publicKey::ENC::$encryptedBackup" else publicKey
-        api(userId, "PUT", "/api/chat/users/me", JSONObject()
-            .put("username", username)
-            .put("publicKey", combinedKey))
-        if (encryptedBackup.startsWith("CCP2:")) {
-            // Keep a second password-encrypted copy so profile-record damage does not immediately
-            // destroy account recovery. This contains no plaintext private key.
-            api(userId, "PUT", "/api/chat/backups/me", JSONObject()
-                .put("ciphertext", encryptedBackup)
-                .put("nonce", "CrazeChatProfileBackupCCP2"))
+    suspend fun registerUser(userId: String, username: String, publicKey: String, encryptedBackup: String = ""): Boolean {
+        val hasEncryptedBackup = encryptedBackup.startsWith("CCP2:")
+        var mirrorSaved = false
+
+        // Upload the password-encrypted recovery copy first. If the profile update then fails,
+        // the recovery endpoint can still restore the key instead of leaving the account with no backup.
+        if (hasEncryptedBackup) {
+            try {
+                api(userId, "PUT", "/api/chat/backups/me", JSONObject()
+                    .put("ciphertext", encryptedBackup)
+                    .put("nonce", "CrazeChatProfileBackupCCP2"))
+                mirrorSaved = true
+            } catch (e: Exception) {
+                Log.w(TAG, "Mirrored recovery backup upload failed; the profile copy will still be attempted: ${e.message}")
+            }
         }
-        true
-    } catch (e: Exception) { Log.e(TAG, "registerUser failed", e); false }
+
+        return try {
+            val combinedKey = if (encryptedBackup.isNotBlank()) "$publicKey::ENC::$encryptedBackup" else publicKey
+            api(userId, "PUT", "/api/chat/users/me", JSONObject()
+                .put("username", username)
+                .put("publicKey", combinedKey))
+            if (hasEncryptedBackup && !mirrorSaved) {
+                Log.w(TAG, "Mirrored recovery backup could not be saved; encrypted profile copy was saved instead.")
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "registerUser profile sync failed", e)
+            false
+        }
+    }
 
     suspend fun getRecoveryBackupCandidates(userId: String): List<String> = withContext(Dispatchers.IO) {
         val candidates = linkedSetOf<String>()
