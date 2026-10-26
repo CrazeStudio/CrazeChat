@@ -42,6 +42,15 @@ jobs:
           fi
       - name: Resolve dependencies
         run: flutter pub get
+      - name: Probe configured API health (non-blocking)
+        env:
+          CRAZECHAT_API_BASE_URL: ${{ vars.CRAZECHAT_API_BASE_URL }}
+        run: |
+          API_BASE_URL="${CRAZECHAT_API_BASE_URL:-https://crazechat-api.vercel.app}"
+          echo "Checking ${API_BASE_URL}/api/health"
+          if ! curl --fail --silent --show-error --connect-timeout 10 --max-time 20 "${API_BASE_URL}/api/health"; then
+            echo "::warning::The API health endpoint did not return HTTP 200. Check the Vercel deployment and required environment variables."
+          fi
       - name: Analyze Dart
         # dart analyze exits successfully for the informational legacy lints
         # already present elsewhere in this UI, while still failing on errors.
