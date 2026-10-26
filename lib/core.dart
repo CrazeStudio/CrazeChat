@@ -83,7 +83,6 @@ class ApiClient {
 
   Future<void> clearSession() async {
     await storage.delete(key: _accessKey);
-    await storage.delete(key: _refreshKey);
     await storage.delete(key: _uidKey);
     await storage.delete(key: _usernameKey);
   }
