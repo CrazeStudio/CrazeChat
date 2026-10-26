@@ -52,7 +52,7 @@ jobs:
               end = content.find(">", start)
               if start < 0 or end < 0:
                   raise SystemExit("Could not locate the manifest opening tag.")
-              content = content[:end + 1] + "\\n" + permission + content[end + 1:]
+              content = content[:end + 1] + "\n" + permission + content[end + 1:]
               manifest.write_text(content)
           print("INTERNET permission present in main Android manifest.")
           PY
