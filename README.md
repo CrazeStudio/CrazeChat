@@ -57,3 +57,5 @@ Security depends on the deployed API, Firebase database rules, server environmen
 ## Test scope and limitations
 
 The repository includes model parsing tests and a CI build. Features that require a real API/Firebase deployment (registering accounts, sending between devices, restore, group rotation, expiry cleanup, account deletion) must be integration-tested against a test backend; local source review alone cannot prove production behavior. Keep the original device and app data if an account's only private key may exist there.
+
+<!-- CI validation marker: temporary pull-request build verification. -->
