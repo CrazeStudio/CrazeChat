@@ -227,7 +227,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             CryptoManager.decryptProfile(password, backupUsername, candidate)
                         } ?: continue
                         val parts = decrypted.split("|")
-                        if (parts.size >= 5 && parts[3].isNotBlank() && parts[4].isNotBlank()) {
+                        val registeredPublicKey = remoteProfile?.publicKey.orEmpty()
+                        val keyMatchesProfile = registeredPublicKey.isBlank() || (parts.size >= 4 && parts[3] == registeredPublicKey)
+                        if (parts.size >= 5 && parts[3].isNotBlank() && parts[4].isNotBlank() && keyMatchesProfile) {
                             recoveredParts = parts
                             break
                         }
