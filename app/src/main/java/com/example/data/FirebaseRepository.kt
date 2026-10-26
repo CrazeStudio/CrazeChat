@@ -330,11 +330,15 @@ class FirebaseRepository(private val context: Context? = null) {
 
     private fun dto(value: JSONObject): FirebaseUserDto {
         val rawKey = value.optString("publicKey")
+        val embeddedBackup = if (rawKey.contains("::ENC::")) rawKey.substringAfter("::ENC::") else ""
+        // Prefer the separately stored backup when both representations exist; older embedded
+        // copies may be stale after a password change or a partial migration.
+        val separateBackup = value.optString("encryptedBackup").takeIf { it.isNotBlank() }.orEmpty()
         return FirebaseUserDto(
             userId = value.optString("userId", value.optString("uid")),
             username = value.optString("username"),
             publicKey = rawKey.substringBefore("::ENC::"),
-            encryptedBackup = if (rawKey.contains("::ENC::")) rawKey.substringAfter("::ENC::") else value.optString("encryptedBackup"),
+            encryptedBackup = separateBackup.ifBlank { embeddedBackup },
             pfpUrl = value.optString("pfpUrl")
         )
     }
@@ -404,8 +408,37 @@ class FirebaseRepository(private val context: Context? = null) {
         api(userId, "PUT", "/api/chat/users/me", JSONObject()
             .put("username", username)
             .put("publicKey", combinedKey))
+        if (encryptedBackup.startsWith("CCP2:")) {
+            // Keep a second password-encrypted copy so profile-record damage does not immediately
+            // destroy account recovery. This contains no plaintext private key.
+            api(userId, "PUT", "/api/chat/backups/me", JSONObject()
+                .put("ciphertext", encryptedBackup)
+                .put("nonce", "CrazeChatProfileBackupCCP2"))
+        }
         true
     } catch (e: Exception) { Log.e(TAG, "registerUser failed", e); false }
+
+    suspend fun getRecoveryBackupCandidates(userId: String): List<String> = withContext(Dispatchers.IO) {
+        val candidates = linkedSetOf<String>()
+        try {
+            val profile = api(userId, "GET", "/api/chat/users/me").optJSONObject("user")
+            if (profile != null) {
+                profile.optString("encryptedBackup").takeIf { it.startsWith("CCP2:") || it.isNotBlank() }?.let(candidates::add)
+                val rawKey = profile.optString("publicKey")
+                if (rawKey.contains("::ENC::")) candidates.add(rawKey.substringAfter("::ENC::"))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read profile recovery backup: ${e.message}")
+        }
+        try {
+            val backup = api(userId, "GET", "/api/chat/backups/me").optJSONObject("backup")
+            val ciphertext = backup?.optString("ciphertext").orEmpty()
+            if (ciphertext.startsWith("CCP2:")) candidates.add(ciphertext)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read mirrored recovery backup: ${e.message}")
+        }
+        candidates.filter { it.isNotBlank() }
+    }
 
     suspend fun getAllUsers(): List<FirebaseUserDto> = try { users(activeUid()) }
     catch (e: Exception) { Log.e(TAG, "getAllUsers failed", e); emptyList() }
