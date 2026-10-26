@@ -10,6 +10,10 @@ const defaultApiBaseUrl = String.fromEnvironment(
   'CRAZECHAT_API_BASE_URL',
   defaultValue: 'https://crazechat-api.vercel.app',
 );
+const crazechatInstallationId = String.fromEnvironment(
+  'CRAZECHAT_INSTALLATION_ID',
+  defaultValue: '',
+);
 
 class ApiException implements Exception {
   const ApiException(this.status, this.message, {this.requestId = ''});
@@ -53,13 +57,11 @@ class ApiClient {
   Future<Map<String, String>?> readSession() async {
     final uid = await storage.read(key: _uidKey);
     final username = await storage.read(key: _usernameKey);
-    final refresh = await storage.read(key: _refreshKey);
-    if (uid == null || username == null || refresh == null) return null;
+    if (uid == null || username == null) return null;
     return {
       'uid': uid,
       'username': username,
       'accessToken': await storage.read(key: _accessKey) ?? '',
-      'refreshToken': refresh,
     };
   }
 
@@ -68,16 +70,15 @@ class ApiClient {
   Future<void> setThemeMode(String mode) => storage.write(key: _themeKey, value: mode);
 
   Future<void> _persistAuth(Map<String, dynamic> response) async {
-    final token = stringValue(response['token']);
-    final refresh = stringValue(response['refreshToken']);
+    final token = stringValue(response['token'], await storage.read(key: _accessKey) ?? '');
     final user = asJsonMap(response['user']);
     final uid = stringValue(user['userId']);
     final username = stringValue(user['username']);
-    if (token.isEmpty || refresh.isEmpty || uid.isEmpty || username.isEmpty) {
-      throw const ApiException(502, 'The API returned an incomplete sign-in session.');
+    if (token.isEmpty || uid.isEmpty || username.isEmpty) {
+      throw const ApiException(502, 'The API returned incomplete account details or an API token.');
     }
     await storage.write(key: _accessKey, value: token);
-    await storage.write(key: _refreshKey, value: refresh);
+    await storage.delete(key: _refreshKey);
     await storage.write(key: _uidKey, value: uid);
     await storage.write(key: _usernameKey, value: username);
   }
@@ -90,6 +91,25 @@ class ApiClient {
   }
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  Future<String> _acquireApiToken() async {
+    if (crazechatInstallationId.trim().isEmpty) {
+      throw const ApiException(
+        503,
+        'CrazeChat installation ID is not configured in this build. Set CRAZECHAT_INSTALLATION_ID.',
+      );
+    }
+    final response = await _send(
+      'POST',
+      '/verify',
+      body: {'installationId': crazechatInstallationId},
+      authenticated: false,
+    );
+    final token = stringValue(response['token']);
+    if (token.isEmpty) throw const ApiException(502, 'The API did not issue an access token.');
+    await storage.write(key: _accessKey, value: token);
+    return token;
+  }
 
   Future<Map<String, dynamic>> _send(
     String method,
@@ -105,11 +125,12 @@ class ApiClient {
       request.body = jsonEncode(body);
     }
     if (authenticated) {
-      final token = await storage.read(key: _accessKey);
-      if (token == null || token.isEmpty) {
-        throw const ApiException(401, 'Your session has expired. Please sign in again.');
-      }
+      final token = await storage.read(key: _accessKey) ?? await _acquireApiToken();
       request.headers['X-API-Token'] = token;
+      final uid = await storage.read(key: _uidKey);
+      final username = await storage.read(key: _usernameKey);
+      if (uid != null && uid.isNotEmpty) request.headers['X-User-ID'] = uid;
+      if (username != null && username.isNotEmpty) request.headers['X-User-Name'] = username;
     }
     final streamed = await _http.send(request).timeout(const Duration(seconds: 25));
     final response = await http.Response.fromStream(streamed);
@@ -147,21 +168,9 @@ class ApiClient {
   Future<bool> _refreshSession() async {
     if (_refreshFuture != null) return _refreshFuture!;
     _refreshFuture = () async {
-      final refresh = await storage.read(key: _refreshKey);
-      if (refresh == null || refresh.isEmpty) return false;
       try {
-        final response = await _send(
-          'POST',
-          '/auth/refresh',
-          body: {'refreshToken': refresh},
-          authenticated: false,
-        );
-        await _persistAuth(response);
+        await _acquireApiToken();
         return true;
-      } on ApiException catch (error) {
-        // Preserve refresh credentials during temporary backend outages or rate limits.
-        if (error.status == 401) await clearSession();
-        return false;
       } catch (_) {
         return false;
       }
@@ -204,7 +213,7 @@ class ApiClient {
     final result = await request('POST', '/auth/register', body: {
       'username': username.trim(),
       'password': password,
-    }, authenticated: false);
+    }, authenticated: true);
     await _persistAuth(result);
     return result;
   }
@@ -227,7 +236,7 @@ class ApiClient {
           result = await request('POST', '/auth/migrate', body: {
             'username': username.trim(),
             'password': password,
-          }, authenticated: false);
+          }, authenticated: true);
         } on ApiException catch (migrationError) {
           if (migrationError.status == 404 || migrationError.status == 401) {
             throw const ApiException(401, 'Could not sign in. Check your username and password. Older accounts may need their original encrypted profile backup.');
@@ -243,9 +252,8 @@ class ApiClient {
   }
 
   Future<void> logout() async {
-    final refresh = await storage.read(key: _refreshKey);
     try {
-      await request('POST', '/auth/logout', body: {'refreshToken': refresh ?? ''}, authenticated: false);
+      await request('POST', '/auth/logout', body: const {}, authenticated: true);
     } finally {
       await clearSession();
     }
