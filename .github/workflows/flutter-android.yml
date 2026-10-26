@@ -36,6 +36,30 @@ jobs:
       - name: Generate Android platform scaffold if needed
         run: flutter create --platforms=android --org com.crazestudio --project-name crazechat .
 
+      - name: Ensure Android internet permission
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          if not manifest.exists():
+              raise SystemExit(f"Android manifest was not generated: {manifest}")
+
+          content = manifest.read_text()
+          permission = '    <uses-permission android:name="android.permission.INTERNET"/>'
+          if 'android.permission.INTERNET' not in content:
+              content = re.sub(
+                  r'(<manifest\\b[^>]*>)',
+                  r'\\1\\n' + permission,
+                  content,
+                  count=1,
+              )
+              manifest.write_text(content)
+          print("INTERNET permission present in main Android manifest.")
+          PY
+
       - name: Resolve dependencies
         run: flutter pub get
 
