@@ -152,12 +152,7 @@ class ApiClient {
 
   bool _canRefreshPath(String path) {
     const noRefresh = {
-      '/auth/register',
-      '/auth/migrate',
-      '/auth/login',
-      '/api/user/login',
-      '/auth/refresh',
-      '/auth/logout',
+      '/verify',
       '/api/health',
       '/api/docs',
       '/',
