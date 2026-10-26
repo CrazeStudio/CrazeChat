@@ -1,43 +1,58 @@
-# CrazeChat
+# CrazeChat — Rebuild Reference
 
-CrazeChat is an Android messaging application built with Kotlin, Jetpack Compose, Room, and a Vercel-hosted HTTP API. Its feature set includes direct and group conversations, reactions, replies, message edits/deletions, pins, read receipts, presence, profile/key discovery, local profiles, and encrypted profile recovery backups.
+CrazeChat is being restarted from a clean repository. This README is intentionally retained as the product, design, and architecture reference for the next implementation.
 
-## Android API configuration
+## Design direction
 
-The application embeds only the public HTTPS API base URL. It does **not** require a shared API password in the APK, Gradle properties, or GitHub Actions secrets.
+- Keep the CrazeChat identity and the existing app’s purpose: a polished Android-first private messaging app.
+- Use a premium, modern, carefully spaced interface; rounded surfaces and message bubbles; clear visual hierarchy; readable typography; consistent icons; and responsive layouts for different Android screen sizes and orientations.
+- Preserve the established CrazeStudio design sensibility: futuristic but practical, clean surfaces, restrained silver/neutral tones with orange as an accent, and system-following light/dark themes where appropriate.
+- Keep chat UI focused on conversations: clear chat list, recognizable avatars, readable timestamps and delivery/read states, straightforward message composition, and accessible actions for replies, reactions, edits, deletes, and pins.
+- Avoid an unrequested redesign that discards the app’s established visual identity. Before rebuilding, inspect any screenshots or surviving app build available to the owner and use them as the visual source of truth. This text is a design brief, not a pixel-perfect screenshot specification.
 
-For a local build, optionally set `CRAZECHAT_API_BASE_URL` to your deployed API URL. The default in `app/build.gradle.kts` is `https://crazechat-api.vercel.app`. GitHub Actions uses the same public endpoint unless the workflow is changed.
+## Product scope to restore
 
-The app authenticates individual accounts using `POST /auth/register`, `POST /api/user/login` (JSON body with `username` and `password`), and the legacy-account migration endpoint `POST /auth/migrate`. `POST /auth/login` remains as a backward-compatible alias. Credentials are sent in the HTTPS request body, never in URL path segments; the server stores a salted scrypt password hash. Access tokens expire after one hour; rotating refresh tokens are stored encrypted with Android Keystore-backed AES-GCM. The backend supports password changes, logout/session revocation, and confirmed cloud-account deletion.
+- Android messaging client.
+- Direct and group conversations.
+- Account registration, login, migration, password changes, logout/session revocation, and account deletion.
+- Message replies, reactions, edits/deletions, pins, read receipts, and presence.
+- Profile and public-key discovery.
+- Client-side message encryption and secure key handling.
+- Password-encrypted profile/key recovery backups.
+- Expiring server-side message ciphertext and scheduled cleanup.
 
-## Backend deployment requirements
+## Architecture notes
 
-The API source is in the companion repository [CrazeStudio-Web](https://github.com/CrazeStudio/CrazeStudio-Web), file `api/index.js`. Before a private deployment, configure these Vercel environment variables:
+The previous implementation used Kotlin, Jetpack Compose, Room, Android Keystore-backed AES-GCM storage, and a Vercel-hosted HTTP API. The companion API repository was `CrazeStudio/CrazeStudio-Web`; its API used Firebase Realtime Database through Firebase Admin SDK.
 
-- `DATABASE_URL`: the Firebase Realtime Database URL.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: the service-account JSON, stored only as a server-side secret.
-- `TOKEN_SIGNING_SECRET`: a strong randomly generated token-signing secret, used only on the server.
-- `CRON_SECRET`: a separate random secret for expired-message cleanup.
+Previous API environment variables (server-side only):
+- `DATABASE_URL`
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+- `TOKEN_SIGNING_SECRET`
+- `CRON_SECRET`
 
-Do not commit service-account JSON, tokens, or passwords. Do not put any of these values in `public/`, Android `BuildConfig`, or the APK. Keep Firebase Realtime Database rules closed to unauthenticated clients; the backend uses Firebase Admin SDK server credentials.
+The previous Android API base URL was configurable using `CRAZECHAT_API_BASE_URL`; its default was `https://crazechat-api.vercel.app`.
 
-The old shared-password `POST /verify` flow has been retired by this API version. If an older deployed API is still live, it must be redeployed before this Android source can sign in.
+Previous account routes included `POST /auth/register`, `POST /api/user/login` (with `POST /auth/login` as a backward-compatible alias), and `POST /auth/migrate`. Login credentials belong in an HTTPS JSON request body, never URL path segments. Do not add a shared database password or embed server secrets in the APK.
 
-## Account migration and backup safety
+## Security and recovery requirements
 
-Accounts created by older app versions may migrate if their old encrypted profile backup is available and can be verified with the original password. Migration preserves the prior user ID. If the old backup is missing, invalid, or not decryptable, keep the original device and keys; do not uninstall or clear the old app data until recovery is resolved.
+- Keep Firebase rules closed to unauthenticated clients; access the database through server-side Firebase Admin credentials.
+- Never commit service-account JSON, tokens, passwords, private keys, or production environment values.
+- Protect local private keys, tokens, and message data with Android Keystore-backed encryption.
+- Encrypt recovery backups with a password-based scheme using an appropriate work factor.
+- Do not claim end-to-end encryption guarantees beyond what the implementation actually provides. A future rebuild must review key rotation, historical-message compatibility, and forward-secrecy limitations explicitly.
+- Message expiry must be enforced server-side with reliable cleanup, not merely hidden in the UI.
+- Do not clear existing app data on a device that may contain the only recoverable private key.
 
-The app retains local profile/message data during sign-in failures where local verification can be completed. Local private keys, message text, chat-list preview text, access tokens, refresh tokens, and stored group keys are now protected using AES-GCM with an Android Keystore key. The migration logic attempts to encrypt legacy local plaintext values when the app opens.
+## Rebuild checklist
 
-## Cryptography and privacy limits
+1. Recreate the Android app and backend integration from a clean, documented structure.
+2. Rebuild the UI against the design direction above and any original screenshots still available.
+3. Add tests for registration, login, account migration, backup restore, refresh, logout, password changes, account deletion, direct/group messaging, membership changes, key rotation, and expiry cleanup.
+4. Verify the Android build in CI and deploy/test the Vercel API independently before calling either one complete.
+5. Keep this README as the persistent product and design reference; update it when architecture or design decisions change.
 
-Direct messages use client-side ECDH-derived AES-GCM encryption. New group messages use random group secrets, versioned AES-GCM payloads, and member-specific encrypted key envelopes. When a member is added, the group owner is expected to rotate to a new key version; older members retain previous keys locally while new members receive only the new key version. Historical group messages may have used an older key derived from a constant embedded in prior APKs; those legacy messages must not be treated as confidential from a person who reverse-engineers that old APK.
+## Reset status
 
-The server retains ciphertext until expiry/cleanup and processes message metadata such as timestamps, chat membership, sender IDs, and delivery state. This code does not yet implement a Signal-style ratchet or forward secrecy. Profile backups remain password-encrypted, but anyone with a weak password may be exposed to offline guessing if they obtain a backup. Use a unique, strong password.
-
-Account deletion removes the account credentials and account-owned profile/key/backup/presence/session records. Shared conversation copies may remain for other participants; deletion is not a promise that every recipient's device will erase previously downloaded content.
-
-## Build and validation
-
-The Android APK workflow lives at `.github/workflows/export-apk.yml`. Check GitHub Actions for the current build status. Source changes alone do not mean that an APK compiled or the Vercel service is deployed. Test registration, login, migration, refresh, logout, password change, account deletion, group-key rotation, and messaging against a separate test Firebase project before using production accounts.
-
+The source tree is intentionally being reduced to this README so the implementation can be rebuilt from a clean starting point. The repository itself is retained.
