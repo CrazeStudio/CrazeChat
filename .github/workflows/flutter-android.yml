@@ -69,19 +69,8 @@ jobs:
       - name: Run tests
         run: flutter test --no-pub
 
-      - name: Validate API installation configuration
-        env:
-          CRAZECHAT_INSTALLATION_ID: ${{ secrets.CRAZECHAT_INSTALLATION_ID }}
-        run: |
-          if [ -z "$CRAZECHAT_INSTALLATION_ID" ]; then
-            echo "::error::Add CRAZECHAT_INSTALLATION_ID in GitHub Actions secrets. It must match the Vercel API_VERIFY_KEY."
-            exit 1
-          fi
-
       - name: Build release APK
-        env:
-          CRAZECHAT_INSTALLATION_ID: ${{ secrets.CRAZECHAT_INSTALLATION_ID }}
-        run: flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app --dart-define=CRAZECHAT_INSTALLATION_ID="$CRAZECHAT_INSTALLATION_ID"
+        run: flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
