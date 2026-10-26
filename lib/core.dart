@@ -42,6 +42,34 @@ Uint8List normalizeP256Coordinate(List<int> bytes) {
   return Uint8List.fromList(coordinate);
 }
 
+/// Extracts an uncompressed P-256 public point from either standard X9.63/SPKI
+/// bytes or the legacy 67-byte point format with ASN.1 sign-padding zeros on
+/// both 33-byte coordinates. Always returns exactly 64 coordinate bytes.
+List<int> normalizeP256PublicPointBytes(List<int> encoded) {
+  // Some older serialized keys stored each coordinate as a 33-byte signed
+  // integer. Detect that representation before looking for a standard point.
+  if (encoded.length >= 67) {
+    final legacyOffset = encoded.length - 67;
+    if (encoded[legacyOffset] == 0x04) {
+      final x = normalizeP256Coordinate(encoded.sublist(legacyOffset + 1, legacyOffset + 34));
+      final y = normalizeP256Coordinate(encoded.sublist(legacyOffset + 34, legacyOffset + 67));
+      return <int>[...x, ...y];
+    }
+  }
+
+  // Standard uncompressed point: 0x04 || X(32) || Y(32). For SPKI DER the
+  // point is the final 65 bytes, following the BIT STRING header.
+  if (encoded.length >= 65) {
+    final pointOffset = encoded.length - 65;
+    if (encoded[pointOffset] == 0x04) {
+      final x = normalizeP256Coordinate(encoded.sublist(pointOffset + 1, pointOffset + 33));
+      final y = normalizeP256Coordinate(encoded.sublist(pointOffset + 33, pointOffset + 65));
+      return <int>[...x, ...y];
+    }
+  }
+  throw const FormatException('Unsupported P-256 public-key encoding.');
+}
+
 Map<String, dynamic> asJsonMap(Object? value) {
   if (value is Map<String, dynamic>) return value;
   if (value is Map) return value.map((key, value) => MapEntry(key.toString(), value));
@@ -557,13 +585,8 @@ class CryptoService {
 
   String _b64(List<int> bytes) => base64Encode(bytes);
 
-  List<int> _parsePublicPoint(String publicKeyBase64) {
-    final der = _decode64(publicKeyBase64);
-    if (der.length < 65) throw const FormatException('Public key is too short.');
-    final offset = der.length - 65;
-    if (der[offset] != 0x04) throw const FormatException('Public key is not an uncompressed P-256 point.');
-    return der.sublist(offset + 1);
-  }
+  List<int> _parsePublicPoint(String publicKeyBase64) =>
+      normalizeP256PublicPointBytes(_decode64(publicKeyBase64));
 
   List<int> _parsePrivateScalar(String privateKeyBase64) {
     final der = _decode64(privateKeyBase64);
@@ -833,9 +856,12 @@ class CryptoService {
   Future<String> _deriveAesKey(String uid, String remotePublicKey) async {
     final pair = await _requirePair(uid);
     final remote = _parsePublicPoint(remotePublicKey);
+    if (remote.length != 64) {
+      throw const FormatException('P-256 public key must normalize to 64 coordinate bytes.');
+    }
     final remotePublic = EcPublicKey(
-      x: remote.sublist(0, 32),
-      y: remote.sublist(32, 64),
+      x: normalizeP256Coordinate(remote.sublist(0, 32)),
+      y: normalizeP256Coordinate(remote.sublist(32, 64)),
       type: KeyPairType.p256,
     );
     final secret = await _ecdh.sharedSecretKey(keyPair: pair, remotePublicKey: remotePublic);
