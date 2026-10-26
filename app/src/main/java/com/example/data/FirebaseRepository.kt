@@ -241,21 +241,23 @@ class FirebaseRepository(private val context: Context? = null) {
     }
 
     suspend fun loginAccount(username: String, password: String): JSONObject = withContext(Dispatchers.IO) {
+        val credentials = JSONObject().put("username", username).put("password", password)
         try {
-            saveSessionFromAuth(rawRequest(
-                "POST", "/api/user/login",
-                JSONObject().put("username", username).put("password", password),
-                null
-            ))
+            saveSessionFromAuth(rawRequest("POST", "/api/user/login", credentials, null))
         } catch (error: ApiException) {
-            if (error.status != 401) throw error
+            if (error.status == 404) {
+                // Keep older deployments working while Vercel finishes deploying the new route alias.
+                try {
+                    return@withContext saveSessionFromAuth(rawRequest("POST", "/auth/login", credentials, null))
+                } catch (legacyError: ApiException) {
+                    if (legacyError.status != 401) throw legacyError
+                }
+            } else if (error.status != 401) {
+                throw error
+            }
             // Existing installs stored a password-encrypted backup but did not have a server
             // password hash. The backend verifies that backup before creating a modern account.
-            saveSessionFromAuth(rawRequest(
-                "POST", "/auth/migrate",
-                JSONObject().put("username", username).put("password", password),
-                null
-            ))
+            saveSessionFromAuth(rawRequest("POST", "/auth/migrate", credentials, null))
         }
     }
 
