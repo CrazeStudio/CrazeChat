@@ -784,14 +784,19 @@ class ChatViewModel(application: Application, val chatId: String) : AndroidViewM
                 return@launch
             }
 
-            val user = firebaseRepo.findUserById(cleanId)
+            // Accept both usernames and user IDs, then always submit the canonical UID returned by the API.
+            val user = firebaseRepo.findUser(cleanId)
             if (user == null) {
-                onResult(false, "User not found with this ID")
+                onResult(false, "User not found. Check the exact username or user ID and make sure their profile is synced.")
                 return@launch
             }
 
             val myId = userPrefs.userIdFlow.first().orEmpty()
-            val success = firebaseRepo.addGroupMember(chatId, cleanId)
+            if (user.userId == myId) {
+                onResult(false, "You are already the group owner.")
+                return@launch
+            }
+            val success = firebaseRepo.addGroupMember(chatId, user.userId)
             if (!success) {
                 onResult(false, "Failed to add user to group")
                 return@launch
