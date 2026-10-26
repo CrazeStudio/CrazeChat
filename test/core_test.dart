@@ -2,6 +2,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:crazechat/core.dart';
 
 void main() {
+  group('P-256 coordinate normalization', () {
+    test('removes an old leading sign-padding zero from 33-byte coordinates', () {
+      final coordinate = <int>[0, ...List<int>.generate(32, (index) => index)];
+      expect(normalizeP256Coordinate(coordinate), List<int>.generate(32, (index) => index));
+    });
+
+    test('left-pads short unsigned coordinates to exactly 32 bytes', () {
+      expect(normalizeP256Coordinate([1, 2, 3]), [
+        ...List<int>.filled(29, 0), 1, 2, 3,
+      ]);
+    });
+
+    test('rejects a coordinate that cannot fit in 32 bytes', () {
+      expect(
+        () => normalizeP256Coordinate([1, ...List<int>.filled(32, 2)]),
+        throwsFormatException,
+      );
+    });
+  });
+
+
   group('CrazeChat API DTO parsing', () {
     test('parses indexed API messages and delivery metadata', () {
       final message = ChatMessage.fromJson({
