@@ -46,10 +46,9 @@ class ApiClient {
   final String baseUrl;
   final FlutterSecureStorage storage;
   final http.Client _http;
-  Future<bool>? _refreshFuture;
+  Future<bool>? _tokenRenewFuture;
 
   static const _accessKey = 'crazechat.session.access';
-  static const _refreshKey = 'crazechat.session.refresh';
   static const _uidKey = 'crazechat.session.uid';
   static const _usernameKey = 'crazechat.session.username';
   static const _themeKey = 'crazechat.ui.theme';
@@ -78,7 +77,6 @@ class ApiClient {
       throw const ApiException(502, 'The API returned incomplete account details or an API token.');
     }
     await storage.write(key: _accessKey, value: token);
-    await storage.delete(key: _refreshKey);
     await storage.write(key: _uidKey, value: uid);
     await storage.write(key: _usernameKey, value: username);
   }
@@ -160,9 +158,9 @@ class ApiClient {
     return !noRefresh.contains(path);
   }
 
-  Future<bool> _refreshSession() async {
-    if (_refreshFuture != null) return _refreshFuture!;
-    _refreshFuture = () async {
+  Future<bool> _renewApiToken() async {
+    if (_tokenRenewFuture != null) return _tokenRenewFuture!;
+    _tokenRenewFuture = () async {
       try {
         await _acquireApiToken();
         return true;
@@ -171,9 +169,9 @@ class ApiClient {
       }
     }();
     try {
-      return await _refreshFuture!;
+      return await _tokenRenewFuture!;
     } finally {
-      _refreshFuture = null;
+      _tokenRenewFuture = null;
     }
   }
 
@@ -191,7 +189,7 @@ class ApiClient {
           authenticated &&
           retryAfterRefresh &&
           _canRefreshPath(path)) {
-        final refreshed = await _refreshSession();
+        final refreshed = await _renewApiToken();
         if (refreshed) {
           return request(method, path, body: body, authenticated: true, retryAfterRefresh: false);
         }
