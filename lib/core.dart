@@ -622,16 +622,31 @@ class CryptoService {
   }
 
   Future<EcKeyPairData?> _localPair(String uid) async {
-    final d = await storage.read(key: _privateName(uid));
-    final x = await storage.read(key: _xName(uid));
-    final y = await storage.read(key: _yName(uid));
-    if (d == null || x == null || y == null) return null;
-    return EcKeyPairData(
-      d: normalizeP256Coordinate(_decode64(d)),
-      x: normalizeP256Coordinate(_decode64(x)),
-      y: normalizeP256Coordinate(_decode64(y)),
-      type: KeyPairType.p256,
-    );
+    final storedD = await storage.read(key: _privateName(uid));
+    final storedX = await storage.read(key: _xName(uid));
+    final storedY = await storage.read(key: _yName(uid));
+    if (storedD == null || storedX == null || storedY == null) return null;
+
+    // Migrate older versions that persisted ASN.1-style sign padding (a leading
+    // 0x00, making a coordinate 33 bytes) into the 32-byte P-256 representation.
+    // Rewrite the repaired values so every later crypto operation reads canonical bytes.
+    final d = normalizeP256Coordinate(_decode64(storedD));
+    final x = normalizeP256Coordinate(_decode64(storedX));
+    final y = normalizeP256Coordinate(_decode64(storedY));
+    final encodedD = base64Encode(d);
+    final encodedX = base64Encode(x);
+    final encodedY = base64Encode(y);
+    if (storedD != encodedD) {
+      await storage.write(key: _privateName(uid), value: encodedD);
+    }
+    if (storedX != encodedX) {
+      await storage.write(key: _xName(uid), value: encodedX);
+    }
+    if (storedY != encodedY) {
+      await storage.write(key: _yName(uid), value: encodedY);
+    }
+
+    return EcKeyPairData(d: d, x: x, y: y, type: KeyPairType.p256);
   }
 
   Future<String?> localPublicKey(String uid) => storage.read(key: _publicName(uid));
