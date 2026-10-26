@@ -644,7 +644,7 @@ class CryptoService {
     }
 
     final generated = await _ecdh.newKeyPair();
-    final data = await generated.extract() as EcKeyPairData;
+    final data = await generated.extract();
     final publicKey = _b64(data.publicKey.toDer());
     final privateKey = _b64(_pkcs8(data.d));
     await _saveKeyMaterial(uid, publicKey, privateKey);
