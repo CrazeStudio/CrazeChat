@@ -29,6 +29,21 @@ void main() {
       expect(message.expiresAt, isNotNull);
     });
 
+    test('parses compact API plaintext messages without marking them encrypted', () {
+      final message = ChatMessage.fromJson({
+        'id': 'plain-message',
+        'chatId': 'chat-plain',
+        'senderUid': 'user-a',
+        'text': 'Hello from compact route',
+        'encrypted': false,
+        'createdAt': '2026-10-26T12:30:00.000Z',
+      });
+
+      expect(message.text, 'Hello from compact route');
+      expect(message.encrypted, isFalse);
+      expect(message.ciphertext, isEmpty);
+    });
+
     test('parses group chat membership and key version', () {
       final chat = ChatRecord.fromJson({
         'id': 'group-1',
