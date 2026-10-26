@@ -49,7 +49,9 @@ jobs:
         run: flutter test --no-pub
 
       - name: Build release APK
-        run: flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app --dart-define=CRAZECHAT_INSTALLATION_ID=${{ secrets.CRAZECHAT_INSTALLATION_ID }}
+        env:
+          CRAZECHAT_INSTALLATION_ID: ${{ secrets.CRAZECHAT_INSTALLATION_ID }}
+        run: flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app --dart-define=CRAZECHAT_INSTALLATION_ID="$CRAZECHAT_INSTALLATION_ID"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
