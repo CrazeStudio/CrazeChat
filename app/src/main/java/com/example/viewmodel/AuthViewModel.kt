@@ -213,17 +213,28 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         privateKey = SecureVault.encrypt(localProfile.privateKeyPlain)
                     )
                 } else {
-                    val encryptedBackup = remoteProfile?.encryptedBackup.orEmpty()
-                    if (encryptedBackup.isBlank()) {
-                        throw IllegalStateException("Account signed in, but no compatible encrypted key backup exists on this device or server.")
-                    }
+                    // Try every password-encrypted recovery copy. Old profile migrations could leave
+                    // the embedded backup stale while the separate/mirrored copy remained valid.
                     val backupUsername = remoteProfile?.username?.ifBlank { canonicalUsername } ?: canonicalUsername
-                    val decrypted = withContext(Dispatchers.IO) { CryptoManager.decryptProfile(password, backupUsername, encryptedBackup) }
-                        ?: throw IllegalStateException("Password accepted, but the encrypted key backup could not be opened. Keep the old device until recovery is fixed.")
-                    val parts = decrypted.split("|")
-                    if (parts.size < 5 || parts[3].isBlank() || parts[4].isBlank()) {
-                        throw IllegalStateException("The encrypted profile backup is incomplete.")
+                    val backupCandidates = (listOf(remoteProfile?.encryptedBackup.orEmpty()) +
+                        firebaseRepo.getRecoveryBackupCandidates(accountUid)).filter { it.isNotBlank() }.distinct()
+                    if (backupCandidates.isEmpty()) {
+                        throw IllegalStateException("Account sign-in succeeded, but no encrypted profile-key backup exists on the server. Keep the original device and its app data; the private key cannot be recreated from the password alone.")
                     }
+                    var recoveredParts: List<String>? = null
+                    for (candidate in backupCandidates) {
+                        val decrypted = withContext(Dispatchers.IO) {
+                            CryptoManager.decryptProfile(password, backupUsername, candidate)
+                        } ?: continue
+                        val parts = decrypted.split("|")
+                        if (parts.size >= 5 && parts[3].isNotBlank() && parts[4].isNotBlank()) {
+                            recoveredParts = parts
+                            break
+                        }
+                    }
+                    val parts = recoveredParts ?: throw IllegalStateException(
+                        "Password accepted, but none of the stored encrypted key backups could be opened. Keep the original device and its app data; do not reset the account."
+                    )
                     AccountProfileEntity(
                         userId = accountUid,
                         username = canonicalUsername,
@@ -384,6 +395,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 // Password change revokes existing sessions. Establish a fresh session with
                 // the new password before declaring the operation complete.
                 firebaseRepo.loginAccount(username, newPassword)
+                // Refresh both the canonical profile and mirrored recovery copy using the new password.
+                val backupSynced = firebaseRepo.registerUser(userId, updated.username, updated.publicKey, encryptedBackup)
+                if (!backupSynced) Log.w("AuthViewModel", "Password changed, but a recovery-backup mirror could not be refreshed")
                 profileDao.insertProfile(updated)
                 userPrefs.setActiveProfile(updated)
                 onComplete(true, null)
