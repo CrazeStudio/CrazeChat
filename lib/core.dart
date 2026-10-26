@@ -306,11 +306,34 @@ class ApiClient {
   }
 
   Future<void> logout() async {
-    final refreshToken = await storage.read(key: _refreshKey);
     try {
-      await request('POST', '/auth/logout', body: {
-        if (refreshToken != null && refreshToken.isNotEmpty) 'refreshToken': refreshToken,
-      }, authenticated: true);
+      final refreshToken = await storage.read(key: _refreshKey);
+      try {
+        await request(
+          'POST',
+          '/auth/logout',
+          body: {
+            if (refreshToken != null && refreshToken.isNotEmpty) 'refreshToken': refreshToken,
+          },
+          authenticated: true,
+          retryAfterRefresh: false,
+        );
+      } on ApiException catch (error) {
+        // If the access token expired, refresh first, then revoke the rotated
+        // refresh token. Retrying with the pre-rotation token would leave the
+        // new server-side refresh session alive after a local logout.
+        if (error.status != 401 || !await _renewApiToken()) rethrow;
+        final rotatedRefresh = await storage.read(key: _refreshKey);
+        await request(
+          'POST',
+          '/auth/logout',
+          body: {
+            if (rotatedRefresh != null && rotatedRefresh.isNotEmpty) 'refreshToken': rotatedRefresh,
+          },
+          authenticated: true,
+          retryAfterRefresh: false,
+        );
+      }
     } finally {
       await clearSession();
     }
