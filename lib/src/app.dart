@@ -392,7 +392,7 @@ class _ChatScreenState extends State<ChatScreen> {
   SecretKey? chatKey;
   String? peerName, error;
   bool loading = true, sending = false, syncing = false;
-  int? lastMessageAt;
+  int? lastMessageAt, lastPurgeAt;
   Timer? poller;
   String get chatId => widget.chat['id'] as String;
 
@@ -433,10 +433,15 @@ class _ChatScreenState extends State<ChatScreen> {
     if (chatKey == null || syncing) return;
     syncing = true;
     try {
-      final response = await widget.session.api.getMessages(
-        chatId, since: lastMessageAt == null ? null : lastMessageAt! - 1,
-        limit: lastMessageAt == null ? 50 : 100,
-      );
+      final results = await Future.wait([
+        widget.session.api.getMessages(
+          chatId, since: lastMessageAt == null ? null : lastMessageAt! - 1,
+          limit: lastMessageAt == null ? 50 : 100,
+        ),
+        widget.session.api.getPurgedMessages(chatId, since: lastPurgeAt == null ? null : lastPurgeAt! - 1),
+      ]);
+      final response = results[0] as Map<String, dynamic>;
+      final purges = results[1] as Map<String, int>;
       final raw = (response['messages'] as List? ?? []).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       final fresh = raw.where((message) => message['id'] is String && !messageIds.contains(message['id'])).toList();
       final decoded = <Map<String, dynamic>>[];
@@ -456,6 +461,11 @@ class _ChatScreenState extends State<ChatScreen> {
             final timestamp = (item['createdAt'] as num?)?.toInt() ?? 0;
             if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           }
+          for (final entry in purges.entries) {
+            messages.removeWhere((item) => item['id'] == entry.key);
+            messageIds.remove(entry.key);
+            if (lastPurgeAt == null || entry.value > lastPurgeAt!) lastPurgeAt = entry.value;
+          }
           messages.sort((a, b) => (a['createdAt'] as num).compareTo(b['createdAt'] as num));
           loading = false; error = null;
         });
@@ -465,8 +475,15 @@ class _ChatScreenState extends State<ChatScreen> {
               duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
           });
         }
-      } else if (mounted && loading) {
-        setState(() { loading = false; error = null; });
+      } else if (mounted && (loading || purges.isNotEmpty)) {
+        setState(() {
+          for (final entry in purges.entries) {
+            messages.removeWhere((item) => item['id'] == entry.key);
+            messageIds.remove(entry.key);
+            if (lastPurgeAt == null || entry.value > lastPurgeAt!) lastPurgeAt = entry.value;
+          }
+          loading = false; error = null;
+        });
       }
     } catch (e) {
       if (mounted && !silent) setState(() { error = e.toString(); loading = false; });
