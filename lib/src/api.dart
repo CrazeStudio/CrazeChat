@@ -303,11 +303,11 @@ class CrazeChatApi {
   }
 
   Future<dynamic> _dbGet(String path, {Map<String, String>? query}) async => (await _dbCall('GET', path, query: query))['data'];
-  Future<void> _dbPut(String path, Object value) async { await _dbCall('PUT', path, value); }
-  Future<void> _dbPatch(String path, Map<String, dynamic> value) async { await _dbCall('PATCH', path, value); }
+  Future<void> _dbPut(String path, Object value) async { await _dbCall('PUT', path, body: value); }
+  Future<void> _dbPatch(String path, Map<String, dynamic> value) async { await _dbCall('PATCH', path, body: value); }
   Future<void> _dbDelete(String path) async { await _dbCall('DELETE', path); }
 
-  Future<Map<String, dynamic>> _dbCall(String method, String path, [Object? body], {Map<String, String>? query}) async {
+  Future<Map<String, dynamic>> _dbCall(String method, String path, {Object? body, Map<String, String>? query}) async {
     final configuredUrl = baseUrl.trim();
     if (configuredUrl.isEmpty || accessKey.isEmpty) {
       throw const ApiException('CrazeChat is not configured. Build with the CrazeStudio-Web BURL and KEY values.');
@@ -333,7 +333,7 @@ class CrazeChatApi {
         request.body = jsonEncode(body);
       }
       final streamed = await _client.send(request).timeout(const Duration(seconds: 12));
-      final response = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 25));
+      final response = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 12));
       Map<String, dynamic> data = {};
       try {
         final decoded = jsonDecode(response.body);
