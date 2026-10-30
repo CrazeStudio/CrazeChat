@@ -1,0 +1,7 @@
+name = "crazechat-api"
+main = "worker.ts"
+compatibility_date = "2026-10-30"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "*"
