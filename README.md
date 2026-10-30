@@ -88,3 +88,24 @@ GitHub Actions builds the release APK when both repository secrets are present.
 CrazeStudio-Web's existing database gateway authorizes requests with one shared `ACCESS_KEY`. Because the Android build contains that key, a determined user can extract it and call the database routes directly. Client-side checks in the app are not a substitute for server-enforced per-user authorization. This integration is suitable for controlled testing, not a public production messenger with private user data, until the backend adds a secure per-user authorization mechanism. Keep Firebase direct-client rules locked down and never publish the service-account JSON.
 
 The current chat encryption implementation uses X25519, HKDF-SHA256, and AES-256-GCM. It has not been independently audited and does not provide forward secrecy or out-of-band public-key verification.
+
+
+## Fast message synchronization
+
+CrazeChat initially loads the latest 50 messages and then requests only messages at or after the last received `createdAt` timestamp. The gateway translates the bounded sync request into a Firebase Realtime Database query. This avoids downloading and decrypting the entire conversation every few seconds.
+
+**Required Firebase Realtime Database index:** merge the following index into your existing database rules. Do not replace your existing security rules with this snippet.
+
+```json
+{
+  "rules": {
+    "Massages": {
+      "$chatId": {
+        ".indexOn": ["createdAt"]
+      }
+    }
+  }
+}
+```
+
+The app reuses its HTTP client, fetches chat records concurrently, decrypts only newly received messages, and adds sent messages locally after the server confirms the write. The two-account switcher stores at most two account profiles in Android secure storage; each account's private identity key remains encrypted by its own password.
