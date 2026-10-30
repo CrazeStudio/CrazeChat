@@ -238,7 +238,7 @@ class CrazeChatApi {
   }
 
   Future<Map<String, dynamic>?> _findUser(String username) async {
-    final index = await _dbGet('usernames/$usernameLower');
+    final index = await _dbGet('usernames/${username.toLowerCase()}');
     if (index is! Map || index['uid'] is! String) return null;
     final user = await _dbGet('users/${index['uid']}');
     return user is Map ? Map<String, dynamic>.from(user) : null;
