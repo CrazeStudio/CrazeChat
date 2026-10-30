@@ -29,10 +29,11 @@ class CrazeChatApi {
   }
 
   Future<Map<String, dynamic>> getMessages(String chatId, {int? since, int limit = 50}) => _listMessages(chatId, since: since, limit: limit);
-  Future<List<String>> getPurgedMessageIds(String chatId, {int? since}) async {
+  Future<Map<String, int>> getPurgedMessages(String chatId, {int? since}) async {
     final records = await _dbGet('MassagesPurge/$chatId', query: {'limit': '100', if (since != null) 'since': '$since'});
-    if (records is! Map) return const <String>[];
-    return records.keys.whereType<String>().toList();
+    if (records is! Map) return const <String, int>{};
+    return {for (final entry in records.entries) if (entry.key is String && entry.value is Map)
+      entry.key as String: _asInt((entry.value as Map)['createdAt'])};
   }
 
   Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
