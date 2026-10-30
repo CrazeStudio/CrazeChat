@@ -460,7 +460,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> deleteMessage(Map<String, dynamic> message) async {
     final messageId = message['id']?.toString();
-    if (messageId == null || !RegExp(r'^[a-f0-9]{32}
+    if (messageId == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(messageId)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete message?'),
+        content: const Text('This permanently removes the message from the server and both chat inboxes.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.session.api.delete('/chats/$chatId/messages/$messageId');
+      if (!mounted) return;
+      setState(() => messages.removeWhere((item) => item['id'] == messageId));
+      showMessage(context, 'Message permanently deleted from the server.');
+    } catch (e) {
+      if (mounted) showMessage(context, e.toString());
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
