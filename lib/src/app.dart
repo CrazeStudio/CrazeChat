@@ -393,6 +393,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? peerName, error;
   bool loading = true, sending = false, syncing = false;
   int? lastMessageAt, lastPurgeAt;
+  final Set<String> purgeIds = <String>{};
   Timer? poller;
   String get chatId => widget.chat['id'] as String;
 
@@ -462,10 +463,11 @@ class _ChatScreenState extends State<ChatScreen> {
             if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           }
           for (final entry in purges.entries) {
+            if (!purgeIds.add(entry.key)) continue;
             messages.removeWhere((item) => item['id'] == entry.key);
             messageIds.remove(entry.key);
-            if (lastPurgeAt == null || entry.value > lastPurgeAt!) lastPurgeAt = entry.value;
           }
+          lastPurgeAt = DateTime.now().millisecondsSinceEpoch - 2000;
           messages.sort((a, b) => (a['createdAt'] as num).compareTo(b['createdAt'] as num));
           loading = false; error = null;
         });
@@ -478,10 +480,11 @@ class _ChatScreenState extends State<ChatScreen> {
       } else if (mounted && (loading || purges.isNotEmpty)) {
         setState(() {
           for (final entry in purges.entries) {
+            if (!purgeIds.add(entry.key)) continue;
             messages.removeWhere((item) => item['id'] == entry.key);
             messageIds.remove(entry.key);
-            if (lastPurgeAt == null || entry.value > lastPurgeAt!) lastPurgeAt = entry.value;
           }
+          lastPurgeAt = DateTime.now().millisecondsSinceEpoch - 2000;
           loading = false; error = null;
         });
       }
