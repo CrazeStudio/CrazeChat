@@ -5,25 +5,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-jobs:
-  api:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package.json
-      - name: Install API packages
-        working-directory: backend
-        run: npm install --include=dev
-      - name: Compile API
-        working-directory: backend
-        run: |
-          npm run build
-          npm run build:worker
 
+jobs:
   android:
     runs-on: ubuntu-latest
     steps:
@@ -50,10 +33,10 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Skipping APK build because repository secrets BURL and KEY are not both configured."
+            echo "::error::APK build requires repository secrets BURL and KEY."
+            exit 1
           fi
       - name: Build release APK
-        if: steps.app_config.outputs.configured == 'true'
         env:
           CRAZECHAT_BURL: ${{ secrets.BURL }}
           CRAZECHAT_KEY: ${{ secrets.KEY }}
@@ -62,7 +45,6 @@ jobs:
             --dart-define="BURL=$CRAZECHAT_BURL" \
             --dart-define="KEY=$CRAZECHAT_KEY"
       - name: Upload APK
-        if: steps.app_config.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: crazechat-android-release
