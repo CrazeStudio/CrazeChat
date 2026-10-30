@@ -18,6 +18,7 @@ class CrazeChatApi {
   static const baseUrl = String.fromEnvironment('BURL');
   static const accessKey = String.fromEnvironment('KEY');
   static final _passwordKdf = Pbkdf2(macAlgorithm: Hmac.sha256(), iterations: 310000, bits: 256);
+  static final http.Client _client = http.Client();
   String? token;
 
   Future<Map<String, dynamic>> get(String path) async {
@@ -26,6 +27,8 @@ class CrazeChatApi {
     if (match != null) return _listMessages(match.group(1)!);
     throw const ApiException('This CrazeChat API operation is not supported.', statusCode: 404);
   }
+
+  Future<Map<String, dynamic>> getMessages(String chatId, {int? since, int limit = 50}) => _listMessages(chatId, since: since, limit: limit);
 
   Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
     final data = body ?? const <String, dynamic>{};
@@ -166,10 +169,10 @@ class CrazeChatApi {
     return {'chats': chats};
   }
 
-  Future<Map<String, dynamic>> _listMessages(String chatId) async {
+  Future<Map<String, dynamic>> _listMessages(String chatId, {int? since, int limit = 50}) async {
     final identity = _requireIdentity();
     await _requireChatMember(chatId, identity.uid);
-    final records = await _dbGet('Massages/$chatId');
+    final records = await _dbGet('Massages/$chatId', query: {'limit': '$limit', if (since != null) 'since': '$since'});
     if (records == null) return {'messages': <Map<String, dynamic>>[]};
     if (records is! Map) throw const ApiException('The message folder has an invalid format.');
     final messages = <Map<String, dynamic>>[];
@@ -294,12 +297,12 @@ class CrazeChatApi {
     }
   }
 
-  Future<dynamic> _dbGet(String path) async => (await _dbCall('GET', path))['data'];
+  Future<dynamic> _dbGet(String path, {Map<String, String>? query}) async => (await _dbCall('GET', path, query: query))['data'];
   Future<void> _dbPut(String path, Object value) async { await _dbCall('PUT', path, value); }
   Future<void> _dbPatch(String path, Map<String, dynamic> value) async { await _dbCall('PATCH', path, value); }
   Future<void> _dbDelete(String path) async { await _dbCall('DELETE', path); }
 
-  Future<Map<String, dynamic>> _dbCall(String method, String path, [Object? body]) async {
+  Future<Map<String, dynamic>> _dbCall(String method, String path, [Object? body], {Map<String, String>? query}) async {
     final configuredUrl = baseUrl.trim();
     if (configuredUrl.isEmpty || accessKey.isEmpty) {
       throw const ApiException('CrazeChat is not configured. Build with the CrazeStudio-Web BURL and KEY values.');
@@ -311,12 +314,12 @@ class CrazeChatApi {
         throw const FormatException('Invalid API origin');
       }
       final encodedPath = path.split('/').map(Uri.encodeComponent).join('/');
-      uri = base.resolve('/db/$encodedPath');
+      uri = base.resolve('/db/$encodedPath').replace(queryParameters: query);
     } on FormatException {
       throw const ApiException('CrazeStudio-Web BURL is invalid. Use the deployment origin only.');
     }
 
-    final client = http.Client();
+
     try {
       final request = http.Request(method, uri)
         ..headers.addAll({'Accept': 'application/json', 'X-Access-Key': accessKey});
@@ -324,7 +327,7 @@ class CrazeChatApi {
         request.headers['Content-Type'] = 'application/json';
         request.body = jsonEncode(body);
       }
-      final streamed = await client.send(request).timeout(const Duration(seconds: 25));
+      final streamed = await _client.send(request).timeout(const Duration(seconds: 12));
       final response = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 25));
       Map<String, dynamic> data = {};
       try {
@@ -352,7 +355,7 @@ class CrazeChatApi {
     } catch (error) {
       throw ApiException('CrazeChat database request failed (${error.runtimeType}).');
     } finally {
-      client.close();
+      
     }
   }
 
