@@ -29,6 +29,11 @@ class CrazeChatApi {
   }
 
   Future<Map<String, dynamic>> getMessages(String chatId, {int? since, int limit = 50}) => _listMessages(chatId, since: since, limit: limit);
+  Future<List<String>> getPurgedMessageIds(String chatId, {int? since}) async {
+    final records = await _dbGet('MassagesPurge/$chatId', query: {'limit': '100', if (since != null) 'since': '$since'});
+    if (records is! Map) return const <String>[];
+    return records.keys.whereType<String>().toList();
+  }
 
   Future<Map<String, dynamic>> post(String path, [Map<String, dynamic>? body]) async {
     final data = body ?? const <String, dynamic>{};
@@ -51,8 +56,10 @@ class CrazeChatApi {
     if (message is! Map || message['senderId'] != identity.uid) {
       throw const ApiException('You can only delete messages you sent.', statusCode: 403);
     }
+    final purgedAt = DateTime.now().millisecondsSinceEpoch;
+    await _dbPut('MassagesPurge/$chatId/$messageId', {'createdAt': purgedAt, 'messageId': messageId});
     await _dbDelete('Massages/$chatId/$messageId');
-    return {'ok': true, 'deleted': messageId};
+    return {'ok': true, 'deleted': messageId, 'purgedAt': purgedAt};
   }
 
   Future<Map<String, dynamic>> _register(Map<String, dynamic> data) async {
