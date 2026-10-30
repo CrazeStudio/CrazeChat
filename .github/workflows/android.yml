@@ -23,6 +23,12 @@ jobs:
         run: flutter analyze
       - name: Run tests
         run: flutter test
+      - name: Validate API backend and Worker
+        working-directory: backend
+        run: |
+          npm install --include=dev
+          npm run build
+          npm run build:worker
       - name: Check app configuration secrets
         id: app_config
         env:
