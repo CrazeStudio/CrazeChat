@@ -58,8 +58,13 @@ class CrazeChatApi {
       throw const ApiException('You can only delete messages you sent.', statusCode: 403);
     }
     final purgedAt = DateTime.now().millisecondsSinceEpoch;
-    await _dbDelete('Massages/$chatId/$messageId');
     await _dbPut('MassagesPurge/$chatId/$messageId', {'createdAt': purgedAt, 'messageId': messageId});
+    try {
+      await _dbDelete('Massages/$chatId/$messageId');
+    } catch (_) {
+      await _dbDelete('MassagesPurge/$chatId/$messageId');
+      rethrow;
+    }
     return {'ok': true, 'deleted': messageId, 'purgedAt': purgedAt};
   }
 
