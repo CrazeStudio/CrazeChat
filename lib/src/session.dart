@@ -14,12 +14,16 @@ class ChatSession extends ChangeNotifier {
   String? token, username, userId;
   Map<String, dynamic>? identityEnvelope;
   KeyPair? identity;
+  List<Map<String, dynamic>> savedAccounts = [];
+  static const _accountsKey = 'savedAccounts';
 
   bool get signedIn => token != null && username != null;
   bool get unlocked => identity != null;
 
   Future<void> restore() async {
     try {
+      final saved = await _storage.read(key: _accountsKey);
+      if (saved != null) savedAccounts = (jsonDecode(saved) as List).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       token = await _storage.read(key: 'token');
       username = await _storage.read(key: 'username');
       userId = await _storage.read(key: 'userId');
@@ -49,6 +53,10 @@ class ChatSession extends ChangeNotifier {
     await _storage.write(key: 'username', value: username);
     await _storage.write(key: 'userId', value: userId);
     await _storage.write(key: 'identityEnvelope', value: jsonEncode(identityEnvelope));
+    savedAccounts.removeWhere((item) => item['userId'] == userId);
+    savedAccounts.insert(0, {'token': token, 'username': username, 'userId': userId, 'identityEnvelope': identityEnvelope});
+    if (savedAccounts.length > 2) savedAccounts = savedAccounts.take(2).toList();
+    await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
   }
 
@@ -59,10 +67,32 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signOut() async {
+  Future<void> switchAccount(String targetId) async {
+    Map<String, dynamic>? account;
+    for (final item in savedAccounts) { if (item['userId'] == targetId) { account = item; break; } }
+    if (account == null) return;
+    identity = null; token = account['token'] as String; username = account['username'] as String;
+    userId = account['userId'] as String; identityEnvelope = Map<String, dynamic>.from(account['identityEnvelope'] as Map);
+    api.token = token; await _persistActive(); notifyListeners();
+  }
+
+  Future<void> addAccount() async {
     identity = null; token = null; username = null; userId = null; identityEnvelope = null; api.token = null;
-    await _storage.deleteAll();
-    notifyListeners();
+    await _storage.delete(key: 'token'); await _storage.delete(key: 'username');
+    await _storage.delete(key: 'userId'); await _storage.delete(key: 'identityEnvelope'); notifyListeners();
+  }
+
+  Future<void> signOut() async {
+    savedAccounts.removeWhere((item) => item['userId'] == userId);
+    await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+    identity = null; token = null; username = null; userId = null; identityEnvelope = null; api.token = null;
+    await _storage.delete(key: 'token'); await _storage.delete(key: 'username');
+    await _storage.delete(key: 'userId'); await _storage.delete(key: 'identityEnvelope'); notifyListeners();
+  }
+
+  Future<void> _persistActive() async {
+    await _storage.write(key: 'token', value: token); await _storage.write(key: 'username', value: username);
+    await _storage.write(key: 'userId', value: userId); await _storage.write(key: 'identityEnvelope', value: jsonEncode(identityEnvelope));
   }
 
   void lock() { identity = null; notifyListeners(); }
