@@ -37,6 +37,11 @@ class ChatSession extends ChangeNotifier {
         token = null; username = null; userId = null; identityEnvelope = null;
       } else {
         api.token = token;
+        if (!savedAccounts.any((item) => item['userId'] == userId)) {
+          savedAccounts.insert(0, {'token': token, 'username': username, 'userId': userId, 'identityEnvelope': identityEnvelope});
+          if (savedAccounts.length > 2) savedAccounts = savedAccounts.take(2).toList();
+          await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+        }
       }
     } finally {
       ready = true;
