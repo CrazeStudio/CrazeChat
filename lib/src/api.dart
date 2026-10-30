@@ -281,7 +281,9 @@ class CrazeChatApi {
       if (salt.length != 16 || expected.length != 32) return false;
       final key = await _passwordKdf.deriveKey(secretKey: SecretKey(utf8.encode(password)), nonce: salt);
       final actual = await key.extractBytes();
-      if (actual.length != expected.length) return false;
+      if (actual.length != expected.length) {
+        return false;
+      }
       var difference = 0;
       for (var i = 0; i < actual.length; i++) {
         difference |= actual[i] ^ expected[i];
