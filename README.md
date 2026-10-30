@@ -1,65 +1,90 @@
 # CrazeChat
 
-Flutter messaging app with password-protected identity keys and client-side encrypted direct messages.
+Flutter messaging app with device-side encrypted direct messages. The app uses **CrazeStudio-Web** as its database API; it does not deploy a separate CrazeChat authentication server.
 
-## Backend deployment options
+## Backend configuration
 
-The Android app talks to one API base URL (`BURL`). This repository currently contains two alternative API implementations; deploy **one**, not both against the same existing user database unless you have migrated password hashes.
+Deploy `CrazeStudio/CrazeStudio-Web` using its documented Vercel or Cloudflare Worker setup. Configure these server-side values in that deployment:
 
-### Cloudflare Workers (recommended by the Android CI workflow)
+- `ACCESS_KEY`
+- `FIREBASE_URL`
+- `FIREBASE_SDK`
 
-The Worker entry point is `backend/worker.ts`. It uses Firebase Realtime Database REST with service-account OAuth and Cloudflare Web Crypto; it does not run the Express/Node server.
+The Android app uses the existing CrazeStudio-Web database routes:
 
-From the repository root:
+- `GET /db/:path*`
+- `PUT /db/:path*`
+- `PATCH /db/:path*`
+- `DELETE /db/:path*`
 
-```bash
-cd backend
-npm install
-npx wrangler login
-npx wrangler secret put DATABASE_URL
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
-npx wrangler secret put API_TOKEN_SIGNING_SECRET
-npx wrangler secret put ACCESS_KEY
-npm run build:worker
-npm run deploy:worker
+No `/auth/*` or `/chats/*` backend endpoints are added. The Flutter API adapter translates the app's account and chat actions into database-gateway operations.
+
+## Firebase data layout
+
+CrazeChat stores application data directly at the Firebase Realtime Database root:
+
+```text
+users/
+  {uid}/
+    uid
+    username
+    usernameLower
+    passwordHash
+    publicKey
+    identityEnvelope
+    createdAt
+
+usernames/
+  {usernameLower}/
+    uid
+
+chats/
+  {chatId}/
+    participants/
+    createdAt
+    updatedAt
+    lastMessageAt
+
+userChats/
+  {uid}/
+    {chatId}: true
+
+Massages/
+  {chatId}/
+    {messageId}/
+      senderId
+      format
+      ciphertext
+      nonce
+      mac
+      createdAt
 ```
 
-Enter the database URL, complete service-account JSON, random signing secret (at least 32 characters), and app access key when prompted. The secret names are exactly `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `API_TOKEN_SIGNING_SECRET`, and `ACCESS_KEY`.
+The `Massages` path is intentionally capitalized and spelled exactly as shown. Message payloads are encrypted on-device; the database stores the ciphertext envelope. A user can long-press one of their own sent messages and confirm deletion. CrazeChat then sends `DELETE /db/Massages/{chatId}/{messageId}`, removing the server record rather than only hiding it locally.
+
+Passwords are processed on-device with PBKDF2-HMAC-SHA256 (310,000 iterations) and a random salt before the password hash is stored. The password itself is not written to the database. The private identity key remains inside the password-encrypted identity envelope.
+
+## Android configuration
 
 Set GitHub Actions repository secrets:
-- `BURL`: deployed Worker base URL, e.g. `https://crazechat-api.<your-subdomain>.workers.dev`.
-- `KEY`: the exact same value configured as Worker secret `ACCESS_KEY`.
 
-The Android workflow compiles these values into the app. An embedded app key can be extracted, so it is only a basic gate, not a replacement for user authentication, authorization, and abuse controls. Never treat `KEY` as a secret capable of protecting the API by itself.
+- `BURL`: the CrazeStudio-Web deployment origin only, such as `https://your-project.vercel.app` (do not append `/db`).
+- `KEY`: the same value configured as CrazeStudio-Web's server-side `ACCESS_KEY`.
 
-### Render / Node.js (alternative)
-
-`render.yaml` deploys `backend/server.ts` through the Node/Express runtime. It uses Firebase Admin SDK and scrypt password hashes, whereas the Worker uses PBKDF2-HMAC-SHA256. Accounts created by one implementation cannot sign in through the other without a password-reset or migration flow. Keep one backend implementation selected for a given production database.
-
-## Firebase
-
-Create a Firebase project, enable Realtime Database, create a service account with database access, and keep direct client database access denied. Set `DATABASE_URL` and `FIREBASE_SERVICE_ACCOUNT_JSON` as Worker secrets. Health endpoint: `/api/health`.
-
-## Android build
-
-From repository root:
+Build locally:
 
 ```bash
 bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release --dart-define=BURL=https://YOUR-WORKER-URL --dart-define=KEY=YOUR_ACCESS_KEY
+flutter build apk --release --dart-define=BURL=https://YOUR-CRAZESTUDIO-WEB-ORIGIN --dart-define=KEY=YOUR_ACCESS_KEY
 ```
 
-GitHub Actions uploads the release APK when both repository secrets `BURL` and `KEY` are configured.
+GitHub Actions builds the release APK when both repository secrets are present.
 
-## Routes
+## Security limitation
 
-`POST /auth/register`, `POST /auth/login`, `GET /users?q=username`, `POST /chats`, `GET /chats`, `GET /chats/:chatId/messages`, `POST /chats/:chatId/messages`, `GET /api/health`, `GET /api/docs`.
+CrazeStudio-Web's existing database gateway authorizes requests with one shared `ACCESS_KEY`. Because the Android build contains that key, a determined user can extract it and call the database routes directly. Client-side checks in the app are not a substitute for server-enforced per-user authorization. This integration is suitable for controlled testing, not a public production messenger with private user data, until the backend adds a secure per-user authorization mechanism. Keep Firebase direct-client rules locked down and never publish the service-account JSON.
 
-## Compatibility and security notes
-
-The Worker hashes new account passwords using PBKDF2-HMAC-SHA256 (310,000 iterations), because Workers Web Crypto does not expose Node scrypt. Existing accounts created by the previous Express backend use scrypt hashes and will not authenticate against this Worker version; recreate/migrate those accounts before switching. The Worker does not currently implement a distributed rate limiter. Configure Cloudflare rate limiting before public production use. The alternative Express server has in-process rate limits; these are not shared across multiple server instances.
-
-Messages remain encrypted client-side with X25519/HKDF-SHA256 and AES-256-GCM. This initial design lacks forward secrecy and out-of-band public-key verification and has not been independently audited. Do not use it for high-risk communications until reviewed.
+The current chat encryption implementation uses X25519, HKDF-SHA256, and AES-256-GCM. It has not been independently audited and does not provide forward secrecy or out-of-band public-key verification.
