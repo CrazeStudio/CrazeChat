@@ -360,7 +360,29 @@ class CrazeChatApi {
 
   bool _isBase64(Object? value, {int? expectedBytes}) {
     if (value is! String || value.isEmpty ||
-        !RegExp(r'^[A-Za-z0-9+/]+={0,2}$').hasMatch(value)) return false;
+        !RegExp(r'^[A-Za-z0-9+/]+={0,2}
+    try {
+      final decoded = base64Decode(value);
+      return decoded.isNotEmpty && (expectedBytes == null || decoded.length == expectedBytes);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  List<int> _randomBytes(int length) {
+    final random = Random.secure();
+    return List<int>.generate(length, (_) => random.nextInt(256));
+  }
+
+  String _randomHex(int bytes) =>
+      _randomBytes(bytes).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  int _asInt(Object? value) =>
+      value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
+}
+).hasMatch(value)) {
+      return false;
+    }
     try {
       final decoded = base64Decode(value);
       return decoded.isNotEmpty && (expectedBytes == null || decoded.length == expectedBytes);
