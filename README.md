@@ -1,73 +1,75 @@
-# CrazeChat — Flutter Android app
+# CrazeChat
 
-CrazeChat is an Android-first Flutter messaging app. It connects to the CrazeChat API on Vercel, backed by Firebase Realtime Database; Firebase service credentials are never included in the APK.
+CrazeChat is a Flutter Android messaging app with password-protected identity keys and end-to-end encrypted direct messages. The app is designed so the API and Firebase database receive ciphertext, not readable message text.
 
-## Design
+## Included
 
-Clean blue-and-white surfaces, deep navy in dark mode, rounded inputs and message bubbles, responsive Android layouts, and system/manual theme selection.
+- Username/password account registration and sign-in.
+- Server-side password verification using salted scrypt hashes.
+- X25519 identity keys created on the device.
+- The account password derives an Argon2id wrapping key that encrypts the private identity key with AES-256-GCM.
+- Encrypted identity-key backup stored on the API, allowing restore on another device with the same password.
+- X25519 + HKDF-SHA256 derives a shared direct-chat key.
+- AES-256-GCM encrypts each message on-device with chat/sender context as authenticated additional data.
+- Firebase stores user metadata, public keys, encrypted identity envelopes, and encrypted message envelopes.
+- Flutter secure storage holds the session token and encrypted local identity backup.
+- Android CI runs analysis, crypto tests, and produces a release APK.
+- A Render Blueprint deploys the Node.js API. No Firebase service-account key is included in the repository or APK.
 
-## Build and install
+## Encryption model
 
-The default API base URL is `https://crazechat-api.vercel.app`.
+The login password is not sent as the message-encryption key. It is used on-device with Argon2id to unlock the user's encrypted X25519 private key. Two chat participants use X25519 and HKDF-SHA256 to derive the same conversation secret, then AES-256-GCM encrypts each message with a fresh nonce. The API stores the encrypted envelope; it does not have the private keys or chat secret.
 
-Requirements for a local build: Flutter stable, Android SDK, and Java 17.
+This is end-to-end encryption, not a promise that data is mathematically impossible to recover. Weak passwords, compromised devices, modified client builds, screenshots, notifications, and implementation flaws can still expose information. The initial direct-chat design uses long-lived identity keys and does not provide forward secrecy against later identity-key compromise. Do not use this first release for high-risk communications until it has had an independent security review.
 
-```sh
+If a user loses the account password and has no unlocked device, the encrypted private key cannot be recovered by CrazeStudio. There is no password reset that can decrypt the old key.
+
+## Deploy the API on Render
+
+1. Create a Firebase project and enable Realtime Database.
+2. Create a Firebase service account and keep its JSON private.
+3. In Firebase Realtime Database Rules, apply the contents of \`firebase.database.rules.json\`. These deny direct client reads and writes; the API uses the Admin SDK.
+4. In Render, create a Blueprint from this repository and configure:
+   - \`DATABASE_URL\`: the Realtime Database URL.
+   - \`FIREBASE_SERVICE_ACCOUNT_JSON\`: the entire service-account JSON.
+   - \`API_TOKEN_SIGNING_SECRET\`: a random secret of at least 32 characters.
+   - \`ALLOWED_ORIGINS\`: leave \`*\` for native Android, or set exact web origins later.
+5. After deployment, open \`https://YOUR-RENDER-SERVICE.onrender.com/api/health\`. It must report \`ok: true\` and \`database: "connected"\`.
+
+Never paste service-account JSON or signing secrets into GitHub, source files, or chat. Rotate any secret that has been exposed.
+
+## Build the Android app
+
+Install Flutter stable, Android Studio / Android SDK, and Java 17 or newer. From the repository root:
+
+\`\`\`bash
+bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release \
-  --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.vercel.app
-```
+flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com
+\`\`\`
 
-The **CrazeChat Android CI** workflow runs Dart analysis and regression tests, creates Android platform files if they are absent, builds a release APK on pushes to `main`, and uploads the `crazechat-android-release` artifact. Open **Actions → CrazeChat Android CI**, select a successful run, and download that artifact. The app version is `2.0.1+3`.
+The APK is created at \`build/app/outputs/flutter-apk/app-release.apk\`. GitHub Actions also uploads it as the \`crazechat-android-release\` artifact after a successful build.
 
-You may change `CRAZECHAT_API_BASE_URL` to another public HTTPS API base URL at build time. This version does not need a shared installation ID in the APK.
+For local API development, copy \`backend/.env.example\` to \`backend/.env\`, fill in Firebase values, then run \`cd backend && npm install && npm run dev\`. Use \`http://10.0.2.2:3000\` for an Android emulator or your computer's LAN IP for a physical device.
 
-## API contract
+## API routes
 
-New installs register and log in through `POST /auth/register` and `POST /auth/login` without sending an app-wide password. The API returns a signed, user-scoped `X-API-Token` and a rotating refresh token. The client stores these tokens in Android secure storage and refreshes using `POST /auth/refresh`. The API derives the user ID from the signed token and rejects a mismatching `X-User-ID`. Legacy `POST /verify` is not part of the current sign-in flow.
+- \`POST /auth/register\` — create a username and upload the encrypted identity envelope.
+- \`POST /auth/login\` — verify the password and return the encrypted identity envelope.
+- \`GET /users?q=username\` — search users and retrieve public keys.
+- \`POST /chats\` — create or reopen a direct conversation by username.
+- \`GET /chats\` — list the current user's conversations.
+- \`GET /chats/:chatId/messages\` — retrieve recent encrypted messages.
+- \`POST /chats/:chatId/messages\` — store an encrypted message envelope only.
+- \`GET /api/health\` — check API and Firebase connectivity.
+- \`GET /api/docs\` — compact API documentation.
 
-Required Vercel environment variables:
+## Current scope
 
-- `DATABASE_URL`: Firebase Realtime Database URL (not PostgreSQL).
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: server-only Firebase service-account JSON.
-- `API_TOKEN_SIGNING_SECRET`: long, random server-only secret for signing access tokens.
-- `CRON_SECRET`: long, random secret for the cleanup endpoint.
-- `API_VERIFY_KEY`: optional, for legacy clients that still use `POST /verify`.
+This first rebuild implements account creation/sign-in, password-based identity-key protection, username lookup, one-to-one encrypted messaging, conversation history, secure local session storage, Firebase persistence, and a Render deployment path. Group chats, media attachments, push notifications, typing indicators, message editing/reactions, multi-device key rotation, and forward secrecy are not implemented in this first build.
 
-After changing Vercel environment variables, redeploy the API. Verify `GET https://crazechat-api.vercel.app/api/health` returns `ok: true` and `database: "connected"`. A source-code commit or a passing APK build does not prove that live Vercel/Firebase is healthy.
+## Security notes
 
-| Feature | HTTP routes used |
-| --- | --- |
-| Authentication and health | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /api/health`, `GET /api/docs` (`POST /verify` is legacy-only) |
-| Registration and login | `POST /api/newuser`, `POST /auth/register`, `POST /api/user/login`, `POST /auth/login`, `POST /auth/migrate` |
-| Account and password | `POST /auth/change-password`, `DELETE /auth/account`, `DELETE /api/deleteuser` |
-| Compact direct chat | `GET/POST /api/chat` with `useridof1`, `useridof2`, optional `message`, `useridsendby`, and `touser` |
-| Compact group chat | `GET/POST /api/groupchat` with comma-separated `userids` and optional `message` |
-| Server-side purge | `DELETE /api/chat/:chatId`, `DELETE /api/groupchat/:chatId`, `POST /api/purge`, scheduled `GET /api/cron/cleanup` |
-| Own profile | `GET/PUT/PATCH /api/chat/users/me` |
-| Discover users | `GET /api/chat/users`, `GET /api/chat/users/:userId`, `GET /api/chat/users/by-username/:username` |
-| Privacy | `GET/PATCH /api/chat/privacy/me` |
-| Conversations | `POST/GET /api/chat/chats`, `GET /api/chat/chats/:chatId` |
-| Group members and key envelopes | `POST /api/chat/chats/:chatId/members`, `PUT /api/chat/chats/:chatId/group-keys`, `GET /api/chat/chats/:chatId/group-key/me` |
-| Encrypted messages and receipts | `POST/GET /api/chat/messages`, `POST/GET /api/chat/messages/:messageId/seen` |
-| Edit, delete, pin, react | `PATCH/DELETE /api/chat/messages/:messageId`, `POST /api/chat/messages/:messageId/pin`, `POST/DELETE /api/chat/messages/:messageId/reactions` |
-| Presence and public keys | `POST/GET /api/chat/presence`, `PUT /api/chat/keys/me`, `GET /api/chat/keys` |
-| Encrypted backup | `PUT/GET/DELETE /api/chat/backups/me` |
-
-The compact `/api/chat` and `/api/groupchat` routes store their `message` input as plaintext for compatibility. The Flutter app should use `POST /api/chat/messages` for end-to-end encrypted messages. Passwords are stored as salted scrypt hashes, never plaintext. Cleanup also removes old `authSessions` and `authRateLimits` nodes left by earlier versions.
-
-## Encryption and privacy
-
-- Direct-message format follows the earlier Android implementation: P-256 ECDH, SHA-256 of the shared secret, AES-256-GCM, base64 ciphertext-plus-tag and base64 nonce.
-- Profile/key backup follows the existing `CCP2:` format: random 16-byte salt, PBKDF2-HMAC-SHA256 with 600,000 iterations, AES-GCM with `CrazeChatProfileV2` additional authenticated data.
-- Group messages use versioned AES-GCM ciphertext with `G2v<version>:` prefix and `CrazeChatGroupV2:<version>` associated data. The group owner creates one encrypted key envelope per member.
-- Private keys and session tokens are stored through Flutter secure storage, not SharedPreferences or the database.
-- Old unversioned group messages may be readable using the legacy compatibility key, but that previous format used a constant embedded in the old app and must not be treated as confidential.
-
-Security depends on the deployed API, Firebase database rules, server environment variables, user passwords, and actual client/device behavior. Use a test Firebase project first. Keep Firebase rules closed to unauthenticated clients and configure the API with `DATABASE_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `API_TOKEN_SIGNING_SECRET`, and `CRON_SECRET` on Vercel. `API_VERIFY_KEY` is only for legacy clients using `/verify`.
-
-## Test scope and limitations
-
-The repository includes model parsing tests and a CI build. Features that require a real API/Firebase deployment (registering accounts, sending between devices, restore, group rotation, expiry cleanup, account deletion) must be integration-tested against a test backend; local source review alone cannot prove production behavior. Keep the original device and app data if an account's only private key may exist there.
+Use HTTPS for every deployed API connection. Keep Firebase Realtime Database inaccessible to unauthenticated clients. The server retains encrypted message history without a retention policy. A successful Android CI build does not prove that Firebase credentials are configured or that the live service is healthy; verify the health endpoint and test with two separate accounts/devices before using it for real conversations.
