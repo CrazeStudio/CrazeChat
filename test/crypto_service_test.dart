@@ -1,3 +1,4 @@
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crazechat/src/crypto_service.dart';
 
@@ -7,8 +8,8 @@ void main() {
   test('password protects and restores the private identity key', () async {
     final material = await CryptoService.createIdentity('correct horse battery staple 2026');
     final restored = await CryptoService.unlockIdentity(material.envelope, 'correct horse battery staple 2026');
-    final originalPublic = await material.keyPair.extractPublicKey();
-    final restoredPublic = await restored.extractPublicKey();
+    final originalPublic = await material.keyPair.extractPublicKey() as SimplePublicKey;
+    final restoredPublic = await restored.extractPublicKey() as SimplePublicKey;
     expect(restoredPublic.bytes, originalPublic.bytes);
     await expectLater(
       CryptoService.unlockIdentity(material.envelope, 'wrong password'),

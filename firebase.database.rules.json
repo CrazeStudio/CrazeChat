@@ -1,6 +1,13 @@
 {
   "rules": {
     ".read": false,
-    ".write": false
+    ".write": false,
+    "crazechat": {
+      "v1": {
+        "users": {
+          ".indexOn": ["usernameLower"]
+        }
+      }
+    }
   }
 }

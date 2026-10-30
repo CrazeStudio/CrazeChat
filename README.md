@@ -24,6 +24,8 @@ This is end-to-end encryption, not a promise that data is mathematically impossi
 
 If a user loses the account password and has no unlocked device, the encrypted private key cannot be recovered by CrazeStudio. There is no password reset that can decrypt the old key.
 
+Public-key authenticity is not yet protected by an out-of-band verification flow in this initial implementation. The API supplies public keys, so a malicious or compromised API could substitute a key and attempt a man-in-the-middle attack. Before treating the app as suitable for sensitive communications, add safety-number or QR-code verification, key-change warnings and pinning, independent cryptographic review, and forward-secret session establishment. Until then, describe this release as an encrypted prototype rather than audited secure messaging.
+
 ## Deploy the API on Render
 
 1. Create a Firebase project and enable Realtime Database.

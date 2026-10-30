@@ -10,7 +10,7 @@ class IdentityMaterial {
 
 class CryptoService {
   static const _identityAad = 'CrazeChat/identity-key/v1';
-  static const _aes = AesGcm.with256bits();
+  static final _aes = AesGcm.with256bits();
   static final _identityKdf = Argon2id(memory: 32 * 1024, parallelism: 1, iterations: 2, hashLength: 32);
 
   static List<int> _randomBytes(int length) {
@@ -22,9 +22,14 @@ class CryptoService {
     final keyPair = await X25519().newKeyPair();
     final privateBytes = await keyPair.extractPrivateKeyBytes();
     final publicKey = await keyPair.extractPublicKey();
+    final publicKeyBase64 = base64Encode(publicKey.bytes);
     final salt = _randomBytes(16);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: password, nonce: salt);
-    final box = await _aes.encrypt(privateBytes, secretKey: wrappingKey, aad: utf8.encode(_identityAad));
+    final box = await _aes.encrypt(
+      privateBytes,
+      secretKey: wrappingKey,
+      aad: utf8.encode(_identityAad + ':' + publicKeyBase64),
+    );
     return IdentityMaterial(
       keyPair: keyPair,
       envelope: {
@@ -36,7 +41,7 @@ class CryptoService {
         'nonce': base64Encode(box.nonce),
         'ciphertext': base64Encode(box.cipherText),
         'mac': base64Encode(box.mac.bytes),
-        'publicKey': base64Encode(publicKey.bytes),
+        'publicKey': publicKeyBase64,
       },
     );
   }
@@ -45,6 +50,7 @@ class CryptoService {
     if (envelope['version'] != 1 || envelope['kdf'] != 'Argon2id' || envelope['publicKey'] is! String) {
       throw const FormatException('Unsupported encrypted identity format.');
     }
+    final publicKeyBase64 = envelope['publicKey'] as String;
     final salt = base64Decode(envelope['salt'] as String);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: password, nonce: salt);
     final box = SecretBox(
@@ -52,8 +58,12 @@ class CryptoService {
       nonce: base64Decode(envelope['nonce'] as String),
       mac: Mac(base64Decode(envelope['mac'] as String)),
     );
-    final privateBytes = await _aes.decrypt(box, secretKey: wrappingKey, aad: utf8.encode(_identityAad));
-    final publicKey = SimplePublicKey(base64Decode(envelope['publicKey'] as String), type: KeyPairType.x25519);
+    final privateBytes = await _aes.decrypt(
+      box,
+      secretKey: wrappingKey,
+      aad: utf8.encode(_identityAad + ':' + publicKeyBase64),
+    );
+    final publicKey = SimplePublicKey(base64Decode(publicKeyBase64), type: KeyPairType.x25519);
     return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
   }
 

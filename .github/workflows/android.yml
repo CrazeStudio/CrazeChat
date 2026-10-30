@@ -6,7 +6,23 @@ on:
     branches: [main]
   workflow_dispatch:
 jobs:
-  verify:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package.json
+      - name: Install API packages
+        working-directory: backend
+        run: npm install --include=dev
+      - name: Compile API
+        working-directory: backend
+        run: npm run build
+
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

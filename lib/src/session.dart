@@ -3,6 +3,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api.dart';
+import 'crypto_service.dart';
 
 class ChatSession extends ChangeNotifier {
   ChatSession() : api = CrazeChatApi();

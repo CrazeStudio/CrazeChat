@@ -119,12 +119,13 @@ app.post('/auth/register', authLimiter, async (req, res) => {
     const { username, password, publicKey, identityEnvelope } = req.body ?? {};
     if (!validUsername(username)) return res.status(400).json({ error: 'Username must be 3–20 letters, numbers, or underscores.' });
     if (!validPassword(password)) return res.status(400).json({ error: 'Use a password of at least 12 characters.' });
-    if (!isBase64(publicKey,32) || !validEnvelope(identityEnvelope)) return res.status(400).json({ error: 'A valid encrypted identity key is required.' });
+    if (!isBase64(publicKey,32) || !validEnvelope(identityEnvelope) || identityEnvelope.publicKey !== publicKey) return res.status(400).json({ error: 'A valid encrypted identity key is required.' });
     const normalized = username.toLowerCase();
+    const passwordHash = await hashPassword(password);
     const uid = crypto.randomUUID().replaceAll('-','');
     const claim = await db.ref(ROOT + '/usernames/' + normalized).transaction((value) => value === null ? { uid } : undefined);
     if (!claim.committed) return res.status(409).json({ error: 'That username is already taken.' });
-    const user: UserRecord = { uid, username, usernameLower: normalized, passwordHash: await hashPassword(password), publicKey, identityEnvelope, createdAt: Date.now() };
+    const user: UserRecord = { uid, username, usernameLower: normalized, passwordHash, publicKey, identityEnvelope, createdAt: Date.now() };
     try { await db.ref(ROOT + '/users/' + uid).set(user); }
     catch (error) { await db.ref(ROOT + '/usernames/' + normalized).remove(); throw error; }
     res.status(201).json({ token: issueToken(user), user: safeProfile(user), identityEnvelope });
