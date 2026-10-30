@@ -11,10 +11,11 @@ const PORT = Number(process.env.PORT || 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 const TOKEN_SECRET = process.env.API_TOKEN_SIGNING_SECRET;
+const APP_ACCESS_KEY = process.env.APP_ACCESS_KEY;
 const ROOT = 'crazechat/v1';
 
-if (!DATABASE_URL || !SERVICE_ACCOUNT || !TOKEN_SECRET || TOKEN_SECRET.length < 32) {
-  throw new Error('Set DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON, and a 32+ character API_TOKEN_SIGNING_SECRET.');
+if (!DATABASE_URL || !SERVICE_ACCOUNT || !TOKEN_SECRET || TOKEN_SECRET.length < 32 || !APP_ACCESS_KEY) {
+  throw new Error('Set DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON, a 32+ character API_TOKEN_SIGNING_SECRET, and APP_ACCESS_KEY.');
 }
 const serviceAccountJson = JSON.parse(SERVICE_ACCOUNT) as { project_id: string; client_email: string; private_key: string };
 const serviceAccount = {
@@ -28,8 +29,22 @@ const app = express();
 const origins = (process.env.ALLOWED_ORIGINS || '*').split(',').map((v) => v.trim()).filter(Boolean);
 app.disable('x-powered-by');
 app.use(helmet());
-app.use(cors({ origin: origins.includes('*') ? '*' : origins, methods: ['GET','POST','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
+app.use(cors({ origin: origins.includes('*') ? '*' : origins, methods: ['GET','POST','PATCH','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization','X-API-Key'] }));
 app.use(express.json({ limit: '64kb' }));
+
+function requireAppAccessKey(req: Request, res: express.Response, next: express.NextFunction): void {
+  const provided = Buffer.from(req.header('x-api-key') || '');
+  const expected = Buffer.from(APP_ACCESS_KEY!);
+  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
+    res.status(403).json({ error: 'API access denied.' });
+    return;
+  }
+  next();
+}
+
+// Public health/docs endpoints remain available to deployment monitors.
+// All application API routes require the app's X-API-Key header.
+app.use(['/auth', '/users', '/chats'], requireAppAccessKey);
 
 type AuthContext = { uid: string; username: string };
 type AuthRequest = Request & { auth?: AuthContext };

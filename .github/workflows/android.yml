@@ -38,9 +38,29 @@ jobs:
         run: flutter analyze
       - name: Run tests
         run: flutter test
+      - name: Check app configuration secrets
+        id: app_config
+        env:
+          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_KEY: ${{ secrets.KEY }}
+        run: |
+          if [[ -n "$CRAZECHAT_BURL" && -n "$CRAZECHAT_KEY" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping APK build because repository secrets BURL and KEY are not both configured."
+          fi
       - name: Build release APK
-        run: flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://crazechat-api.onrender.com
+        if: steps.app_config.outputs.configured == 'true'
+        env:
+          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_KEY: ${{ secrets.KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define="BURL=$CRAZECHAT_BURL" \
+            --dart-define="KEY=$CRAZECHAT_KEY"
       - name: Upload APK
+        if: steps.app_config.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: crazechat-android-release

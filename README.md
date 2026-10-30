@@ -49,7 +49,7 @@ bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release --dart-define=CRAZECHAT_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com
+flutter build apk --release --dart-define=BURL=https://YOUR-API-URL --dart-define=KEY=YOUR_APP_ACCESS_KEY
 \`\`\`
 
 The APK is created at \`build/app/outputs/flutter-apk/app-release.apk\`. GitHub Actions also uploads it as the \`crazechat-android-release\` artifact after a successful build.

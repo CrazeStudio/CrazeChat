@@ -11,10 +11,11 @@ class ApiException implements Exception {
 
 class CrazeChatApi {
   CrazeChatApi({this.token});
-  static const baseUrl = String.fromEnvironment(
-    'CRAZECHAT_API_BASE_URL',
-    defaultValue: 'https://crazechat-api.onrender.com',
-  );
+
+  // Injected by GitHub Actions from repository secrets BURL and KEY.
+  static const baseUrl = String.fromEnvironment('BURL');
+  static const accessKey = String.fromEnvironment('KEY');
+
   String? token;
 
   Future<Map<String, dynamic>> get(String path) => _send('GET', path);
@@ -22,10 +23,30 @@ class CrazeChatApi {
       _send('POST', path, body);
 
   Future<Map<String, dynamic>> _send(String method, String path, [Map<String, dynamic>? body]) async {
-    final uri = Uri.parse(baseUrl).resolve(path);
-    final headers = <String, String>{'Accept': 'application/json'};
+    final configuredUrl = baseUrl.trim();
+    if (configuredUrl.isEmpty || accessKey.isEmpty) {
+      throw const ApiException(
+        'CrazeChat is not configured. Build the app with the BURL and KEY settings.',
+      );
+    }
+
+    late final Uri uri;
+    try {
+      uri = Uri.parse(configuredUrl).resolve(path);
+      if (!uri.hasScheme || uri.host.isEmpty || !{'https', 'http'}.contains(uri.scheme)) {
+        throw const FormatException('Invalid API URL');
+      }
+    } on FormatException {
+      throw const ApiException('CrazeChat API URL (BURL) is invalid.');
+    }
+
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'X-API-Key': accessKey,
+    };
     if (body != null) headers['Content-Type'] = 'application/json';
     if (token != null) headers['Authorization'] = 'Bearer $token';
+
     final client = http.Client();
     try {
       final request = http.Request(method, uri)..headers.addAll(headers);
