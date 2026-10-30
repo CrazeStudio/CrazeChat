@@ -131,9 +131,6 @@ class CrazeChatApi {
     final targetId = target['uid'] as String;
     if (targetId == identity.uid) throw const ApiException('You cannot start a chat with yourself.', statusCode: 400);
 
-    final own = await _dbGet('users/${identity.uid}');
-    if (own is! Map) throw const ApiException('Your account record could not be found.', statusCode: 404);
-
     final orderedIds = [identity.uid, targetId]..sort();
     final digest = await Sha256().hash(utf8.encode(orderedIds.join(':')));
     final chatId = digest.bytes.take(16).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
@@ -216,10 +213,10 @@ class CrazeChatApi {
   Future<Map<String, dynamic>> _mapChat(String chatId, Map<String, dynamic> chat) async {
     final participants = chat['participants'];
     if (participants is! Map) throw const ApiException('A conversation has an invalid member list.');
+    final memberIds = participants.keys.whereType<String>().where((uid) => participants[uid] == true).toList();
+    final records = await Future.wait(memberIds.map((uid) => _dbGet('users/$uid')));
     final members = <Map<String, dynamic>>[];
-    for (final uid in participants.keys) {
-      if (uid is! String || participants[uid] != true) continue;
-      final record = await _dbGet('users/$uid');
+    for (final record in records) {
       if (record is Map) members.add(_safeUser(Map<String, dynamic>.from(record)));
     }
     return {
