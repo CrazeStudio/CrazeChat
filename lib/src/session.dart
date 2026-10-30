@@ -30,7 +30,10 @@ class ChatSession extends ChangeNotifier {
       final encoded = await _storage.read(key: 'identityEnvelope');
       if (encoded != null) identityEnvelope = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
       if (token == null || username == null || userId == null || identityEnvelope == null) {
-        await _storage.deleteAll();
+        await _storage.delete(key: 'token');
+        await _storage.delete(key: 'username');
+        await _storage.delete(key: 'userId');
+        await _storage.delete(key: 'identityEnvelope');
         token = null; username = null; userId = null; identityEnvelope = null;
       } else {
         api.token = token;
