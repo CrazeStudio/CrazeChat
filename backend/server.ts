@@ -16,7 +16,12 @@ const ROOT = 'crazechat/v1';
 if (!DATABASE_URL || !SERVICE_ACCOUNT || !TOKEN_SECRET || TOKEN_SECRET.length < 32) {
   throw new Error('Set DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_JSON, and a 32+ character API_TOKEN_SIGNING_SECRET.');
 }
-const serviceAccount = JSON.parse(SERVICE_ACCOUNT) as { project_id: string; client_email: string; private_key: string };
+const serviceAccountJson = JSON.parse(SERVICE_ACCOUNT) as { project_id: string; client_email: string; private_key: string };
+const serviceAccount = {
+  projectId: serviceAccountJson.project_id,
+  clientEmail: serviceAccountJson.client_email,
+  privateKey: serviceAccountJson.private_key.replace(/\\n/g, '\n'),
+};
 if (!getApps().length) initializeApp({ credential: cert(serviceAccount), databaseURL: DATABASE_URL });
 const db = getDatabase();
 const app = express();
@@ -187,10 +192,11 @@ app.get('/chats', requireAuth, async (req, res) => {
 
 app.get('/chats/:chatId/messages', requireAuth, async (req, res) => {
   try {
-    if (!(await memberChat(req.params.chatId, me(req).uid))) return res.status(404).json({ error: 'Conversation not found.' });
-    const snap = await db.ref(ROOT + '/messages/' + req.params.chatId).orderByChild('createdAt').limitToLast(60).get();
+    const chatId = typeof req.params.chatId === 'string' ? req.params.chatId : '';
+    if (!(await memberChat(chatId, me(req).uid))) return res.status(404).json({ error: 'Conversation not found.' });
+    const snap = await db.ref(ROOT + '/messages/' + chatId).orderByChild('createdAt').limitToLast(60).get();
     const messages: Record<string, unknown>[] = [];
-    snap.forEach((child) => messages.push({ id: child.key, ...(child.val() as object) }));
+    snap.forEach((child) => { messages.push({ id: child.key, ...(child.val() as object) }); });
     messages.sort((a,b) => Number(a.createdAt) - Number(b.createdAt));
     res.json({ messages });
   } catch (error) { console.error('list messages failed', error); res.status(500).json({ error: 'Could not load messages.' }); }
@@ -199,7 +205,8 @@ app.get('/chats/:chatId/messages', requireAuth, async (req, res) => {
 app.post('/chats/:chatId/messages', requireAuth, messageLimiter, async (req, res) => {
   try {
     const uid = me(req).uid;
-    if (!(await memberChat(req.params.chatId, uid))) return res.status(404).json({ error: 'Conversation not found.' });
+    const chatId = typeof req.params.chatId === 'string' ? req.params.chatId : '';
+    if (!(await memberChat(chatId, uid))) return res.status(404).json({ error: 'Conversation not found.' });
     const { ciphertext, nonce, mac, format } = req.body ?? {};
     if (format !== 'cc-e2ee-v1' || !isBase64(ciphertext) || !isBase64(nonce,12) || !isBase64(mac,16)) {
       return res.status(400).json({ error: 'Only valid encrypted message envelopes are accepted.' });
@@ -208,8 +215,8 @@ app.post('/chats/:chatId/messages', requireAuth, messageLimiter, async (req, res
     const id = crypto.randomUUID().replaceAll('-','');
     const createdAt = Date.now();
     const message = { id, senderId: uid, format, ciphertext, nonce, mac, createdAt };
-    await db.ref(ROOT + '/messages/' + req.params.chatId + '/' + id).set(message);
-    await db.ref(ROOT + '/chats/' + req.params.chatId).update({ updatedAt: createdAt, lastMessageAt: createdAt });
+    await db.ref(ROOT + '/messages/' + chatId + '/' + id).set(message);
+    await db.ref(ROOT + '/chats/' + chatId).update({ updatedAt: createdAt, lastMessageAt: createdAt });
     res.status(201).json({ message });
   } catch (error) { console.error('send message failed', error); res.status(500).json({ error: 'Could not send the encrypted message.' }); }
 });
