@@ -103,6 +103,11 @@ CrazeChat initially loads the latest 50 messages and then requests only messages
       "$chatId": {
         ".indexOn": ["createdAt"]
       }
+    },
+    "MassagesPurge": {
+      "$chatId": {
+        ".indexOn": ["createdAt"]
+      }
     }
   }
 }
