@@ -20,7 +20,9 @@ jobs:
         run: npm install --include=dev
       - name: Compile API
         working-directory: backend
-        run: npm run build
+        run: |
+          npm run build
+          npm run build:worker
 
   android:
     runs-on: ubuntu-latest

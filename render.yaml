@@ -16,7 +16,7 @@ services:
         sync: false
       - key: API_TOKEN_SIGNING_SECRET
         sync: false
-      - key: APP_ACCESS_KEY
+      - key: ACCESS_KEY
         sync: false
       - key: ALLOWED_ORIGINS
         value: "*"
