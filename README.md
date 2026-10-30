@@ -2,7 +2,11 @@
 
 Flutter messaging app with password-protected identity keys and client-side encrypted direct messages.
 
-## Deploy API to Cloudflare Workers
+## Backend deployment options
+
+The Android app talks to one API base URL (`BURL`). This repository currently contains two alternative API implementations; deploy **one**, not both against the same existing user database unless you have migrated password hashes.
+
+### Cloudflare Workers (recommended by the Android CI workflow)
 
 The Worker entry point is `backend/worker.ts`. It uses Firebase Realtime Database REST with service-account OAuth and Cloudflare Web Crypto; it does not run the Express/Node server.
 
@@ -26,7 +30,11 @@ Set GitHub Actions repository secrets:
 - `BURL`: deployed Worker base URL, e.g. `https://crazechat-api.<your-subdomain>.workers.dev`.
 - `KEY`: the exact same value configured as Worker secret `ACCESS_KEY`.
 
-The Android workflow compiles these values into the app. An embedded app key can be extracted, so it is only a basic gate, not a replacement for user authentication, authorization, and abuse controls.
+The Android workflow compiles these values into the app. An embedded app key can be extracted, so it is only a basic gate, not a replacement for user authentication, authorization, and abuse controls. Never treat `KEY` as a secret capable of protecting the API by itself.
+
+### Render / Node.js (alternative)
+
+`render.yaml` deploys `backend/server.ts` through the Node/Express runtime. It uses Firebase Admin SDK and scrypt password hashes, whereas the Worker uses PBKDF2-HMAC-SHA256. Accounts created by one implementation cannot sign in through the other without a password-reset or migration flow. Keep one backend implementation selected for a given production database.
 
 ## Firebase
 
@@ -52,6 +60,6 @@ GitHub Actions uploads the release APK when both repository secrets `BURL` and `
 
 ## Compatibility and security notes
 
-The Worker hashes new account passwords using PBKDF2-HMAC-SHA256 (310,000 iterations), because Workers Web Crypto does not expose Node scrypt. Existing accounts created by the previous Express backend use scrypt hashes and will not authenticate against this Worker version; recreate/migrate those accounts before switching. This initial build has no distributed rate limiter; configure Cloudflare rate limiting before public production use.
+The Worker hashes new account passwords using PBKDF2-HMAC-SHA256 (310,000 iterations), because Workers Web Crypto does not expose Node scrypt. Existing accounts created by the previous Express backend use scrypt hashes and will not authenticate against this Worker version; recreate/migrate those accounts before switching. The Worker does not currently implement a distributed rate limiter. Configure Cloudflare rate limiting before public production use. The alternative Express server has in-process rate limits; these are not shared across multiple server instances.
 
 Messages remain encrypted client-side with X25519/HKDF-SHA256 and AES-256-GCM. This initial design lacks forward secrecy and out-of-band public-key verification and has not been independently audited. Do not use it for high-risk communications until reviewed.
