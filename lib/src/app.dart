@@ -298,9 +298,18 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 6),
           const Text('Your direct messages are end-to-end encrypted.'),
           const SizedBox(height: 18),
+          ...widget.session.savedAccounts.where((account) => account['userId'] != widget.session.userId).map((account) =>
+            ListTile(leading: const Icon(Icons.switch_account), title: Text('@${account['username']}'),
+              subtitle: const Text('Switch account'), onTap: () {
+                Navigator.pop(sheetContext);
+                widget.session.switchAccount(account['userId'] as String);
+              })),
+          if (widget.session.savedAccounts.length < 2)
+            ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('Add another account'),
+              onTap: () { Navigator.pop(sheetContext); widget.session.addAccount(); }),
           ListTile(leading: const Icon(Icons.lock_outline), title: const Text('Lock app'),
             onTap: () { Navigator.pop(sheetContext); widget.session.lock(); }),
-          ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out'),
+          ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out this account'),
             onTap: () { Navigator.pop(sheetContext); widget.session.signOut(); }),
         ]),
       )),
@@ -379,9 +388,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
   final scroll = ScrollController();
   List<Map<String, dynamic>> messages = [];
+  final Set<String> messageIds = <String>{};
   SecretKey? chatKey;
   String? peerName, error;
-  bool loading = true, sending = false;
+  bool loading = true, sending = false, syncing = false;
+  int? lastMessageAt;
   Timer? poller;
   String get chatId => widget.chat['id'] as String;
 
@@ -412,32 +423,55 @@ class _ChatScreenState extends State<ChatScreen> {
         chatId: chatId,
       );
       await loadMessages();
-      poller = Timer.periodic(const Duration(seconds: 5), (_) => loadMessages(silent: true));
+      poller = Timer.periodic(const Duration(seconds: 3), (_) => loadMessages(silent: true));
     } catch (_) {
       if (mounted) setState(() { error = 'Could not establish the encrypted chat key.'; loading = false; });
     }
   }
 
   Future<void> loadMessages({bool silent = false}) async {
-    if (chatKey == null) return;
+    if (chatKey == null || syncing) return;
+    syncing = true;
     try {
-      final response = await widget.session.api.get('/chats/$chatId/messages');
+      final response = await widget.session.api.getMessages(
+        chatId, since: lastMessageAt == null ? null : lastMessageAt! - 1,
+        limit: lastMessageAt == null ? 50 : 100,
+      );
       final raw = (response['messages'] as List? ?? []).map((v) => Map<String, dynamic>.from(v as Map)).toList();
+      final fresh = raw.where((message) => message['id'] is String && !messageIds.contains(message['id'])).toList();
       final decoded = <Map<String, dynamic>>[];
-      for (final message in raw) {
+      for (final message in fresh) {
         try {
           final clear = await CryptoService.decryptMessage(message: message, chatKey: chatKey!, chatId: chatId);
           decoded.add({...message, 'clearText': clear});
         } catch (_) { decoded.add({...message, 'clearText': 'Unable to decrypt this message'}); }
       }
-      if (mounted) setState(() { messages = decoded; loading = false; error = null; });
-      if (!silent && scroll.hasClients) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (scroll.hasClients) scroll.jumpTo(scroll.position.maxScrollExtent);
+      if (!mounted) return;
+      if (decoded.isNotEmpty) {
+        decoded.sort((a, b) => (a['createdAt'] as num).compareTo(b['createdAt'] as num));
+        setState(() {
+          messages.addAll(decoded);
+          for (final item in decoded) {
+            messageIds.add(item['id'] as String);
+            final timestamp = (item['createdAt'] as num?)?.toInt() ?? 0;
+            if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
+          }
+          messages.sort((a, b) => (a['createdAt'] as num).compareTo(b['createdAt'] as num));
+          loading = false; error = null;
         });
+        if (!silent && scroll.hasClients) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+          });
+        }
+      } else if (mounted && loading) {
+        setState(() { loading = false; error = null; });
       }
     } catch (e) {
       if (mounted && !silent) setState(() { error = e.toString(); loading = false; });
+    } finally {
+      syncing = false;
     }
   }
 
@@ -450,8 +484,21 @@ class _ChatScreenState extends State<ChatScreen> {
       final encrypted = await CryptoService.encryptMessage(
         text: text, chatKey: chatKey!, chatId: chatId, senderId: widget.session.userId!,
       );
-      await widget.session.api.post('/chats/$chatId/messages', encrypted);
-      await loadMessages();
+      final response = await widget.session.api.post('/chats/$chatId/messages', encrypted);
+      final sent = Map<String, dynamic>.from(response['message'] as Map);
+      final clear = await CryptoService.decryptMessage(message: sent, chatKey: chatKey!, chatId: chatId);
+      if (mounted && !messageIds.contains(sent['id'])) {
+        setState(() {
+          messages.add({...sent, 'clearText': clear});
+          messageIds.add(sent['id'] as String);
+          final timestamp = (sent['createdAt'] as num?)?.toInt() ?? 0;
+          if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+        });
+      }
     } catch (e) {
       input.text = text;
       if (mounted) showMessage(context, e.toString());
@@ -476,7 +523,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await widget.session.api.delete('/chats/$chatId/messages/$messageId');
       if (!mounted) return;
-      setState(() => messages.removeWhere((item) => item['id'] == messageId));
+      setState(() { messages.removeWhere((item) => item['id'] == messageId); messageIds.remove(messageId); });
       showMessage(context, 'Message permanently deleted from the server.');
     } catch (e) {
       if (mounted) showMessage(context, e.toString());
