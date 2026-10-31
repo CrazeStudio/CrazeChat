@@ -44,7 +44,11 @@ class ChatSession extends ChangeNotifier {
           // them, so users must sign in again instead of trusting local tokens.
           await api.restoreSession();
         } on ApiException catch (error) {
-          if (error.statusCode == 401 || error.statusCode == 403) {
+          // The generic CrazeStudio-Web gateway also returns 401 for a missing
+          // or mismatched shared gateway credential. That is not proof that the
+          // user's saved JWT is invalid; never erase local accounts on that response.
+          if ((error.statusCode == 401 || error.statusCode == 403) &&
+              error.code != 'UNAUTHORIZED' && error.code != 'GATEWAY_NOT_CONFIGURED') {
             savedAccounts.removeWhere((account) => account['userId'] == userId);
             await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
             await _clearActiveSession();
