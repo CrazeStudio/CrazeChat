@@ -5,9 +5,10 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 class ApiException implements Exception {
-  const ApiException(this.message, {this.statusCode});
+  const ApiException(this.message, {this.statusCode, this.code});
   final String message;
   final int? statusCode;
+  final String? code;
   @override
   String toString() => message;
 }
@@ -136,9 +137,12 @@ class CrazeChatApi {
         if (decoded is Map<String, dynamic>) result = decoded;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw ApiException(result['message']?.toString() ?? result['error']?.toString() ??
-            'CrazeChat /db request failed (HTTP ${response.statusCode}).',
-            statusCode: response.statusCode);
+        throw ApiException(
+          result['message']?.toString() ?? result['error']?.toString() ??
+              'CrazeChat /db request failed (HTTP ${response.statusCode}).',
+          statusCode: response.statusCode,
+          code: result['error']?.toString(),
+        );
       }
       if (result['ok'] == false) {
         throw ApiException(result['message']?.toString() ?? 'CrazeChat operation failed.');
