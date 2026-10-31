@@ -1,113 +1,96 @@
 # CrazeChat
 
-CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is encrypted on the device using the existing X25519 + HKDF-SHA256 + AES-256-GCM envelope. The authenticated Node.js API stores encrypted envelopes and never accepts a plaintext message field.
+CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is encrypted on the device with X25519, HKDF-SHA256, and AES-256-GCM. The API stores encrypted message envelopes and never receives plaintext message content.
 
 ## Architecture
 
-- Android app: Flutter, local encrypted-message cache, device-side encryption.
-- API: Node.js + Express, deployed from the backend directory (Render blueprint included).
-- Database: Firebase Realtime Database, accessed only by the API using Firebase Admin credentials.
-- Authentication: Per-user JWT bearer tokens signed by API_TOKEN_SIGNING_SECRET.
-- CloudPurge: Receiver-confirmed server-side ciphertext deletion with a durable receipt tombstone.
+```text
+CrazeChat Android (Flutter)
+        |
+        | HTTPS + per-user JWT
+        v
+CrazeStudio-Web (/db/* path-based REST API)
+        |
+        | server-side Firebase service account
+        v
+Firebase Realtime Database
+```
 
-The Flutter app no longer uses the generic CrazeStudio-Web ACCESS_KEY gateway. Do not put a Firebase service-account key or a shared database access key in the APK.
+**CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
 
-## Backend deployment
+## API contract
 
-Deploy CrazeStudio/CrazeChat as a Render Blueprint. The render.yaml file creates the crazechat-api service.
+The Flutter client uses these path-based endpoints on the CrazeStudio-Web deployment:
 
-Set these environment variables in the backend service:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/db/auth/register` | Create account and encrypted identity backup |
+| POST | `/db/auth/login` | Authenticate and receive a user JWT |
+| GET | `/db/auth/session` | Validate the current session |
+| GET | `/db/users/search?query=name` | Search usernames |
+| GET | `/db/chats` | List the signed-in user's conversations |
+| POST | `/db/chats` | Create or open a direct conversation |
+| GET | `/db/chats/{chatId}/messages` | Synchronize encrypted messages |
+| POST | `/db/chats/{chatId}/messages` | Send an encrypted message |
+| DELETE | `/db/chats/{chatId}/messages/{messageId}` | Delete a message sent by the current user |
+| GET | `/db/chats/{chatId}/purges` | Synchronize CloudPurge receipts |
+| POST | `/db/chats/{chatId}/purges/{messageId}/acknowledge` | Acknowledge a received message |
+
+Protected requests send `Authorization: Bearer {user JWT}`. The mobile app does **not** contain the Firebase service-account key or the shared CrazeStudio-Web gateway key. The existing `POST /db` operation dispatcher remains available for compatibility, and generic Firebase path operations remain separately gateway-key protected.
+
+## CrazeStudio-Web deployment
+
+Deploy `CrazeStudio/CrazeStudio-Web` to Vercel. Keep the repository root as the project root, use the Vite preset, build with `npm run build`, and output `dist`.
+
+Configure these server-side environment variables in Vercel:
 
 | Variable | Purpose |
 | --- | --- |
-| DATABASE_URL | Firebase Realtime Database HTTPS URL |
-| FIREBASE_SERVICE_ACCOUNT_JSON | Complete Firebase service-account JSON |
-| API_TOKEN_SIGNING_SECRET | Random secret of at least 32 characters used to sign JWTs |
-| ALLOWED_ORIGINS | Optional comma-separated CORS allowlist; * supports native mobile clients |
+| `FIREBASE_URL` | HTTPS Firebase Realtime Database URL |
+| `FIREBASE_SDK` | Complete service-account JSON |
+| `SESSION_SECRET` | Recommended: random server-only signing secret of at least 32 characters |
 
-The Firebase service account must have permission to read and write the CrazeChat database. Keep the service-account JSON and JWT signing secret in backend environment variables only.
+The existing CrazeStudio-Web API also supports `KEY` (or legacy `ACCESS_KEY`) for its generic database gateway and legacy operation endpoint. Keep it server-side; the CrazeChat REST client does not use or embed it.
 
-The health endpoint is /api/health; API documentation is available at /api/docs.
+Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
 
-## Android build configuration
+The CrazeChat REST routes use the existing per-user JWT verification and participant checks in the CrazeStudio-Web dispatcher. Registration and login are public entry points; the gateway currently applies an in-process per-instance request throttle. Before a public production launch, configure a deployment-level rate limit/WAF for `/db/auth/register` and `/db/auth/login`, because serverless instance-local throttling is only best-effort.
 
-Set one GitHub Actions repository secret:
+## Android build
 
-- API_URL: the HTTPS origin of the deployed CrazeChat API, for example https://crazechat-api.onrender.com. Do not append a route or slash path.
+The only app build variable is the HTTPS origin of the CrazeStudio-Web deployment:
 
-The old BURL and KEY secrets are no longer used by the Android application. Remove them after the new API deployment is ready.
-
-Build locally:
-
-~~~bash
+```bash
 bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release --dart-define=API_URL=https://YOUR-CRAZECHAT-API-ORIGIN
-~~~
+flutter build apk --release --dart-define=BURL=https://YOUR-CRAZESTUDIO-WEB-ORIGIN
+```
 
-Backend checks:
+For GitHub Actions, add repository secret `BURL` containing the same HTTPS origin. The workflow runs Flutter analysis and tests on each push/PR, and builds an APK when `BURL` is configured. No `KEY` secret is required by the mobile app.
 
-~~~bash
-cd backend
-npm install --include=dev
-npm test
-npm start
-~~~
+## Database and privacy
 
-Required backend environment variables are documented in backend/.env.example.
-
-## Existing Firebase data compatibility
-
-The authenticated backend deliberately uses the existing root-level Firebase paths so existing accounts and direct conversations are retained:
-
-~~~text
-users/{uid}
-usernames/{usernameLower}
-chats/{chatId}
-userChats/{uid}/{chatId}
-Massages/{chatId}/{messageId}
-MassagesPurge/{chatId}/{messageId}
-~~~
-
-The message path Massages is intentionally capitalized and spelled exactly as shown for compatibility with previous CrazeChat builds.
-
-Merge the indexes in firebase.database.rules.json into your Firebase Realtime Database rules. Keep direct client reads and writes denied. The API uses Firebase Admin credentials and does not rely on permissive mobile-client rules.
-
-## CloudPurge lifecycle
-
-1. The sender encrypts the message and writes a copy to the device's secure local storage before submitting it to the API.
-2. The API stores the encrypted envelope under Massages/{chatId}/{messageId}.
-3. The receiver downloads and decrypts the envelope.
-4. The receiver saves the encrypted envelope in Flutter Secure Storage. The acknowledgement call is made only after that write completes.
-5. The API verifies that the caller is a participant and is not the sender.
-6. A single Firebase multi-location update writes a cloudpurge-received tombstone under MassagesPurge and removes the server-side encrypted payload.
-7. Both participants keep their local encrypted copy. Sender-deletion tombstones are handled separately and remove the local display copy.
-
-The acknowledgement is authenticated and idempotent. A receiver cannot acknowledge their own message. A failed local save or failed acknowledgement leaves the server payload available for a later retry.
-
-Trust boundary: the server cannot remotely inspect a receiver's device storage. It relies on the authenticated official client to send the acknowledgement only after its local secure-storage write has succeeded. A modified client could lie about this; no server-side API can prove another device has durably saved a file without a trusted hardware attestation mechanism.
-
-## Security notes
-
-- Password hashes retain the existing PBKDF2-HMAC-SHA256 format (310,000 iterations) so existing root-level accounts remain usable.
-- Login issues a seven-day signed JWT. Protected routes verify signature, issuer, audience, and expiry.
-- User IDs and sender IDs are taken from the verified JWT, never from a client-supplied sender field.
-- Message envelopes are size-limited and validated before database writes.
-- Registration and message endpoints are rate-limited.
-- Firebase direct-client rules should remain deny-by-default.
-- The existing Cloudflare backend/worker.ts is a legacy implementation and is not the app API target for this release. Do not deploy it for CrazeChat until it has been brought to parity with the Node.js API and CloudPurge receipt contract.
-- The current key agreement does not yet provide forward secrecy or out-of-band public-key verification. The cryptography has not been independently audited.
+- Accounts are stored under `Users/{sha256-lowercase-username}`.
+- Direct conversations are stored under `Massages/chats/{chatId}`.
+- Participants are recorded in the existing `participents` node for compatibility.
+- Encrypted messages are stored under `Massages/chats/{chatId}/massages/{messageId}`.
+- CloudPurge receipts are stored under `Massages/chats/{chatId}/purges/{messageId}`.
+- Firebase direct-client reads and writes must remain denied. CrazeStudio-Web accesses Firebase using its server-side service account.
+- The API validates JWT sessions and verifies conversation membership before returning or mutating conversation data.
+- The current key agreement does not yet provide forward secrecy or out-of-band public-key verification; the cryptographic design has not been independently audited.
 
 ## Current app functions
 
 - Username/password registration and login.
-- Server-verified JWT sessions.
-- Direct conversations and automatic message polling.
-- Encrypted local message cache and offline outbox retry.
+- Device-encrypted identity backup and local unlock.
+- Server-verified JWT sessions and account switching.
+- Direct conversations and periodic inbox/message synchronization.
+- X25519 + HKDF-SHA256 + AES-256-GCM message encryption.
+- Encrypted local message cache and offline send retry.
 - CloudPurge receipt synchronization.
-- In-conversation message search, copy, and sender-side deletion.
-- Local account locking and account switching.
+- In-conversation search, copy, and sender-side deletion.
+- Local account locking and secure-storage-backed session persistence.
 
-Attachments, voice messages, reactions, group chats, and calls are not included in this implementation yet.
+Attachments, voice messages, reactions, group chats, and calls are not implemented in this release.
