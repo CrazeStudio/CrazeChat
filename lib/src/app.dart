@@ -382,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       foregroundColor: _brand,
                       fixedSize: const Size(44, 44),
                     ),
-                    icon: const Icon(Icons.edit_square, size: 20),
+                    icon: const Icon(Icons.edit_rounded, size: 20),
                   ),
                   const SizedBox(width: 5),
                   IconButton(
@@ -400,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             Expanded(
               child: switch (page) {
-                0 => _buildInbox(context, Theme.of(context).colorScheme, chats.where((chat) {
+                0 => _buildInbox(context, chats.where((chat) {
                   final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
                   return name.contains(search.text.trim().toLowerCase());
                 }).toList()),
@@ -435,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildInbox(BuildContext context, ColorScheme colors, List<Map<String, dynamic>> filtered) {
+  Widget _buildInbox(BuildContext context, List<Map<String, dynamic>> filtered) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
