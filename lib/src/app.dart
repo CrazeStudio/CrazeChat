@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -276,7 +277,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final search = TextEditingController();
   List<Map<String, dynamic>> chats = [];
-  bool loading = true, failed = false;
+  bool loading = true, failed = false, syncingChats = false;
+  Timer? chatsPoller;
   int page = 0;
 
   @override
@@ -284,22 +286,40 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     search.addListener(_changed);
     loadChats();
+    chatsPoller = Timer.periodic(const Duration(seconds: 4), (_) => loadChats(silent: true));
   }
   @override
-  void dispose() { search.removeListener(_changed); search.dispose(); super.dispose(); }
+  void dispose() {
+    chatsPoller?.cancel();
+    search.removeListener(_changed);
+    search.dispose();
+    super.dispose();
+  }
   void _changed() => setState(() {});
 
-  Future<void> loadChats() async {
+  Future<void> loadChats({bool silent = false}) async {
+    if (syncingChats) return;
+    syncingChats = true;
     try {
       final data = await widget.session.api.get('/chats');
       final list = (data['chats'] as List? ?? const []).whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value)).toList();
-      if (mounted) setState(() { chats = list; loading = false; failed = false; });
-    } catch (error) {
-      if (mounted) {
-        setState(() { loading = false; failed = true; });
-        showMessage(context, error.toString());
+      if (!mounted) return;
+      final changed = jsonEncode(chats) != jsonEncode(list);
+      if (changed || loading || failed) {
+        setState(() {
+          chats = list;
+          loading = false;
+          failed = false;
+        });
       }
+    } catch (error) {
+      if (mounted && !silent) {
+        setState(() { loading = false; failed = true; });
+        if (chats.isEmpty) showMessage(context, error.toString());
+      }
+    } finally {
+      syncingChats = false;
     }
   }
 
@@ -328,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> openChat(Map<String, dynamic> chat) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(session: widget.session, chat: chat)));
-    if (mounted) loadChats();
+    if (mounted) loadChats(silent: true);
   }
 
   Map<String, dynamic>? _peer(Map<String, dynamic> chat) {
@@ -470,20 +490,12 @@ class _HomeScreenState extends State<HomeScreen> {
               )),
               const Spacer(),
               Text('${chats.length} chats', style: const TextStyle(color: _muted, fontSize: 11, fontWeight: FontWeight.w600)),
-              IconButton(
-                tooltip: 'Refresh chats',
-                visualDensity: VisualDensity.compact,
-                onPressed: loading ? null : loadChats,
-                icon: const Icon(Icons.refresh_rounded, size: 19, color: _muted),
-              ),
+
             ],
           ),
         ),
         Expanded(
-          child: RefreshIndicator(
-            color: _brand,
-            onRefresh: loadChats,
-            child: loading
+          child: loading
                 ? const Center(child: CircularProgressIndicator(color: _brand))
                 : failed && chats.isEmpty
                     ? ListView(
@@ -492,10 +504,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Icon(Icons.cloud_off_rounded, size: 48, color: _muted),
                           const SizedBox(height: 14),
                           const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
-                          Center(child: TextButton.icon(
-                            onPressed: loadChats,
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Try again'),
+                          const Center(child: Text(
+                            'Reconnecting automatically…',
+                            style: TextStyle(color: _muted, fontSize: 12),
                           )),
                         ],
                       )
