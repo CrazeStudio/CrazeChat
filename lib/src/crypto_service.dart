@@ -10,12 +10,53 @@ class IdentityMaterial {
 
 class CryptoService {
   static const _identityAad = 'CrazeChat/identity-key/v1';
-  static final _aes = AesGcm.with256bits();
+  // Keep the wire format identical to the Cloudflare API validator:
+  // AES-GCM nonce = 12 bytes, authentication tag = 16 bytes.
+  static final _aes = AesGcm.with256bits(nonceLength: 12);
   static final _identityKdf = Argon2id(memory: 32 * 1024, parallelism: 1, iterations: 2, hashLength: 32);
 
   static List<int> _randomBytes(int length) {
     final random = Random.secure();
     return List<int>.generate(length, (_) => random.nextInt(256));
+  }
+
+  static List<int> _decodeExact(Map<String, dynamic> envelope, String field, int length) {
+    final value = envelope[field];
+    if (value is! String) throw FormatException('Encrypted identity field "$field" is missing.');
+    try {
+      final decoded = base64Decode(value);
+      if (decoded.length != length) {
+        throw FormatException('Encrypted identity field "$field" must contain exactly $length bytes.');
+      }
+      return decoded;
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw FormatException('Encrypted identity field "$field" is not valid base64.');
+    }
+  }
+
+  static void validateIdentityEnvelope(Map<String, dynamic> envelope) {
+    if (envelope['version'] != 1 || envelope['kdf'] != 'Argon2id') {
+      throw const FormatException('Unsupported encrypted identity version or KDF.');
+    }
+    _decodeExact(envelope, 'salt', 16);
+    _decodeExact(envelope, 'nonce', 12);
+    _decodeExact(envelope, 'mac', 16);
+    _decodeExact(envelope, 'publicKey', 32);
+    final ciphertext = envelope['ciphertext'];
+    if (ciphertext is! String || ciphertext.isEmpty) {
+      throw const FormatException('Encrypted identity ciphertext is missing.');
+    }
+    try {
+      if (base64Decode(ciphertext).isEmpty) {
+        throw const FormatException('Encrypted identity ciphertext is empty.');
+      }
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw const FormatException('Encrypted identity ciphertext is not valid base64.');
+    }
   }
 
   static Future<IdentityMaterial> createIdentity(String password) async {
@@ -28,42 +69,39 @@ class CryptoService {
     final box = await _aes.encrypt(
       privateBytes,
       secretKey: wrappingKey,
-      aad: utf8.encode(_identityAad + ':' + publicKeyBase64),
+      aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
-    return IdentityMaterial(
-      keyPair: keyPair,
-      envelope: {
-        'version': 1,
-        'kdf': 'Argon2id',
-        'kdfMemoryKiB': 32768,
-        'kdfIterations': 2,
-        'salt': base64Encode(salt),
-        'nonce': base64Encode(box.nonce),
-        'ciphertext': base64Encode(box.cipherText),
-        'mac': base64Encode(box.mac.bytes),
-        'publicKey': publicKeyBase64,
-      },
-    );
+    final envelope = <String, dynamic>{
+      'version': 1,
+      'kdf': 'Argon2id',
+      'kdfMemoryKiB': 32768,
+      'kdfIterations': 2,
+      'salt': base64Encode(salt),
+      'nonce': base64Encode(box.nonce),
+      'ciphertext': base64Encode(box.cipherText),
+      'mac': base64Encode(box.mac.bytes),
+      'publicKey': publicKeyBase64,
+    };
+    validateIdentityEnvelope(envelope);
+    return IdentityMaterial(keyPair: keyPair, envelope: envelope);
   }
 
   static Future<KeyPair> unlockIdentity(Map<String, dynamic> envelope, String password) async {
-    if (envelope['version'] != 1 || envelope['kdf'] != 'Argon2id' || envelope['publicKey'] is! String) {
-      throw const FormatException('Unsupported encrypted identity format.');
-    }
+    validateIdentityEnvelope(envelope);
     final publicKeyBase64 = envelope['publicKey'] as String;
-    final salt = base64Decode(envelope['salt'] as String);
+    final salt = _decodeExact(envelope, 'salt', 16);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: password, nonce: salt);
     final box = SecretBox(
       base64Decode(envelope['ciphertext'] as String),
-      nonce: base64Decode(envelope['nonce'] as String),
-      mac: Mac(base64Decode(envelope['mac'] as String)),
+      nonce: _decodeExact(envelope, 'nonce', 12),
+      mac: Mac(_decodeExact(envelope, 'mac', 16)),
     );
     final privateBytes = await _aes.decrypt(
       box,
       secretKey: wrappingKey,
-      aad: utf8.encode(_identityAad + ':' + publicKeyBase64),
+      aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
-    final publicKey = SimplePublicKey(base64Decode(publicKeyBase64), type: KeyPairType.x25519);
+    final publicKey = SimplePublicKey(_decodeExact(envelope, 'publicKey', 32), type: KeyPairType.x25519);
     return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
   }
 
