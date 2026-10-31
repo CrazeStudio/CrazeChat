@@ -138,9 +138,11 @@ class _AuthScreenState extends State<AuthScreen> {
     } on ApiException catch (error) {
       if (mounted) { showMessage(context, error.message); }
     } catch (_) {
-      if (mounted) showMessage(context, creating
-          ? 'Account setup failed. Check the API deployment and try again.'
-          : 'Password could not unlock this account.');
+      if (mounted) {
+        showMessage(context, creating
+            ? 'Account setup failed. Check the API deployment and try again.'
+            : 'Password could not unlock this account.');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -352,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(children: [
             const _BrandMark(),
             const SizedBox(width: 12),
-            Expanded(child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('crazechat', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
               _Eyebrow('A private space'),
             ])),
@@ -622,7 +624,7 @@ class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
         const _PurgeStep(number: '04', title: 'Purge',
           description: 'The server writes a receipt tombstone and removes the server-side ciphertext atomically.'),
         const SizedBox(height: 12),
-        Card(child: const Padding(
+        const Card(child: Padding(
           padding: EdgeInsets.all(16),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.info_outline_rounded, color: _brand),
@@ -963,8 +965,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+      if (scroll.hasClients) {
+        scroll.animateTo(
+          scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
