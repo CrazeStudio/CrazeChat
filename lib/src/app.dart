@@ -1032,7 +1032,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       _scrollToBottom();
       try {
-        final response = await widget.session.api.post('/chats/$chatId/messages', {
+        final response = await widget.session.api.sendMessage(chatId, {
           'id': id, 'format': encrypted['format'], 'ciphertext': encrypted['ciphertext'],
           'nonce': encrypted['nonce'], 'mac': encrypted['mac'],
         });
