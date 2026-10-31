@@ -123,14 +123,12 @@ class _AuthScreenState extends State<AuthScreen> {
       late final KeyPair keyPair;
       if (creating) {
         final material = await CryptoService.createIdentity(pass);
-        result = await widget.session.api.post('/auth/register', {
-          'username': name, 'password': pass,
-          'publicKey': material.envelope['publicKey'],
-          'identityEnvelope': material.envelope,
-        });
+        result = await widget.session.api.register(
+          username: name, password: pass, identityEnvelope: material.envelope,
+        );
         keyPair = material.keyPair;
       } else {
-        result = await widget.session.api.post('/auth/login', {'username': name, 'password': pass});
+        result = await widget.session.api.login(username: name, password: pass);
         keyPair = await CryptoService.unlockIdentity(
           Map<String, dynamic>.from(result['identityEnvelope'] as Map), pass,
         );
@@ -301,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (syncingChats) return;
     syncingChats = true;
     try {
-      final data = await widget.session.api.get('/chats');
+      final data = await widget.session.api.listChats();
       final list = (data['chats'] as List? ?? const []).whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value)).toList();
       if (!mounted) return;
@@ -341,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
     controller.dispose();
     if (target == null || target.isEmpty || !mounted) return;
     try {
-      final response = await widget.session.api.post('/chats', {'username': target});
+      final response = await widget.session.api.createChat(target);
       await openChat(Map<String, dynamic>.from(response['chat'] as Map));
     } catch (error) { if (mounted) showMessage(context, error.toString()); }
   }
@@ -991,7 +989,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final id = item['id']?.toString();
       if (id == null) continue;
       try {
-        final response = await widget.session.api.post('/chats/$chatId/messages', {
+        final response = await widget.session.api.sendMessage(chatId, {
           'id': id, 'format': item['format'], 'ciphertext': item['ciphertext'],
           'nonce': item['nonce'], 'mac': item['mac'],
         });
@@ -1076,7 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await widget.session.api.delete('/chats/$chatId/messages/$id');
+      await widget.session.api.deleteMessage(chatId, id);
       await widget.session.deleteCachedMessage(chatId, id);
       if (!mounted) return;
       setState(() { messages.removeWhere((item) => item['id'] == id); messageIds.remove(id); });
