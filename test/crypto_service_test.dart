@@ -1,9 +1,24 @@
+import 'dart:convert';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crazechat/src/crypto_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('identity envelope matches the API byte-length contract', () async {
+    final material = await CryptoService.createIdentity('correct horse battery staple 2026');
+    final envelope = material.envelope;
+    expect(envelope['version'], 1);
+    expect(envelope['kdf'], 'Argon2id');
+    expect(base64Decode(envelope['salt'] as String), hasLength(16));
+    expect(base64Decode(envelope['nonce'] as String), hasLength(12));
+    expect(base64Decode(envelope['ciphertext'] as String), isNotEmpty);
+    expect(base64Decode(envelope['mac'] as String), hasLength(16));
+    expect(base64Decode(envelope['publicKey'] as String), hasLength(32));
+    expect(() => CryptoService.validateIdentityEnvelope({...envelope, 'nonce': base64Encode(List<int>.filled(11, 0))}), throwsFormatException);
+  });
 
   test('password protects and restores the private identity key', () async {
     final material = await CryptoService.createIdentity('correct horse battery staple 2026');
