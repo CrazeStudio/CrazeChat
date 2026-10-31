@@ -42,7 +42,7 @@ class ChatSession extends ChangeNotifier {
         try {
           // Previous builds stored unsigned local claims. The new API rejects
           // them, so users must sign in again instead of trusting local tokens.
-          await api.get('/auth/me');
+          await api.restoreSession();
         } on ApiException catch (error) {
           if (error.statusCode == 401 || error.statusCode == 403) {
             savedAccounts.removeWhere((account) => account['userId'] == userId);
