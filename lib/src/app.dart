@@ -393,17 +393,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'New conversation',
-                    onPressed: startChat,
-                    style: IconButton.styleFrom(
-                      backgroundColor: const Color(0xFFE5F2EB),
-                      foregroundColor: _brand,
-                      fixedSize: const Size(44, 44),
-                    ),
-                    icon: const Icon(Icons.edit_rounded, size: 20),
-                  ),
-                  const SizedBox(width: 5),
-                  IconButton(
                     tooltip: 'Account settings',
                     onPressed: () => setState(() => page = 2),
                     style: IconButton.styleFrom(
@@ -536,15 +525,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(color: _muted, fontSize: 13),
                               )),
-                              if (search.text.isEmpty) ...[
-                                const SizedBox(height: 18),
-                                Center(child: FilledButton.icon(
-                                  onPressed: startChat,
-                                  style: FilledButton.styleFrom(backgroundColor: _brand, foregroundColor: Colors.white),
-                                  icon: const Icon(Icons.person_add_alt_1_rounded),
-                                  label: const Text('Start your first chat'),
-                                )),
-                              ],
                             ],
                           )
                         : ListView.separated(
@@ -719,9 +699,7 @@ class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
     }
   }
   @override
-  Widget build(BuildContext context) => RefreshIndicator(
-    onRefresh: refresh,
-    child: ListView(
+  Widget build(BuildContext context) => ListView(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
       children: [
         const _Eyebrow('Automatic message lifecycle'),
@@ -780,8 +758,7 @@ class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
           ]),
         )),
       ],
-    ),
-  );
+    );
 }
 
 class _PurgeStep extends StatelessWidget {
