@@ -19,6 +19,7 @@ class CrazeChatApi {
   CrazeChatApi({this.token});
 
   static const apiUrl = String.fromEnvironment('BURL');
+  static const gatewayKey = String.fromEnvironment('KEY');
   static final http.Client _client = http.Client();
   static const _timeout = Duration(seconds: 15);
   static const _idPattern = r'^[a-f0-9]{32}$';
@@ -106,6 +107,9 @@ class CrazeChatApi {
     if (configured.isEmpty) {
       throw const ApiException('CrazeChat is not configured. Set the BURL build variable.');
     }
+    if (gatewayKey.isEmpty) {
+      throw const ApiException('CrazeChat gateway key is missing. Configure the KEY build secret.');
+    }
     late final Uri uri;
     try {
       final base = Uri.parse(configured);
@@ -124,6 +128,7 @@ class CrazeChatApi {
       final request = http.Request('POST', uri)
         ..headers['Accept'] = 'application/json'
         ..headers['Content-Type'] = 'application/json'
+        ..headers['X-Access-Key'] = gatewayKey
         ..body = jsonEncode({'operation': operation, 'data': data});
       final currentToken = token;
       if (currentToken != null && currentToken.isNotEmpty) {
