@@ -161,7 +161,7 @@ class ChatSession extends ChangeNotifier {
   }
 
   String _messageIndexKey(String chatId) => 'cc_msg_index_${userId}_$chatId';
-  String _messageKey(String chatId, String messageId) => 'cc_msg_${userId}_${chatId}_${messageId}';
+  String _messageKey(String chatId, String messageId) => 'cc_msg_${userId}_${chatId}_$messageId';
 
   /// Persists only the encrypted envelope and delivery metadata. The receipt
   /// endpoint must not be called until this Future completes successfully.

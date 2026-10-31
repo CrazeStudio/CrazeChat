@@ -86,13 +86,12 @@ class _BrandMark extends StatelessWidget {
 }
 
 class _Eyebrow extends StatelessWidget {
-  const _Eyebrow(this.text, {this.color = _muted});
+  const _Eyebrow(this.text);
   final String text;
-  final Color color;
   @override
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
-    style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5),
+    style: const TextStyle(color: _muted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5),
   );
 }
 
@@ -137,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       await widget.session.acceptSession(result, keyPair);
     } on ApiException catch (error) {
-      if (mounted) showMessage(context, error.message);
+      if (mounted) { showMessage(context, error.message); }
     } catch (_) {
       if (mounted) showMessage(context, creating
           ? 'Account setup failed. Check the API deployment and try again.'
@@ -210,7 +209,7 @@ class _AuthScreenState extends State<AuthScreen> {
 class _SecurityNote extends StatelessWidget {
   const _SecurityNote();
   @override
-  Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+  Widget build(BuildContext context) => const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Icon(Icons.verified_user_outlined, color: _brand, size: 20),
     SizedBox(width: 10),
     Expanded(child: Text(
@@ -353,7 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(children: [
             const _BrandMark(),
             const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+            Expanded(child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('crazechat', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
               _Eyebrow('A private space'),
             ])),
@@ -604,7 +603,7 @@ class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
               style: const TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w900)),
             const Text('encrypted message copies saved on this device', style: TextStyle(color: Color(0xFFD4E9E0))),
             const SizedBox(height: 18),
-            const Divider(color: Color(0x557FFFFFFF)),
+            const Divider(color: Color(0x55FFFFFF)),
             const Row(children: [
               Icon(Icons.verified_rounded, color: Color(0xFFB7E9D0), size: 17),
               SizedBox(width: 7),
@@ -623,9 +622,9 @@ class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
         const _PurgeStep(number: '04', title: 'Purge',
           description: 'The server writes a receipt tombstone and removes the server-side ciphertext atomically.'),
         const SizedBox(height: 12),
-        Card(child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+        Card(child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.info_outline_rounded, color: _brand),
             SizedBox(width: 10),
             Expanded(child: Text(
@@ -747,10 +746,12 @@ class _ChatScreenState extends State<ChatScreen> {
       messageIds.add(id);
       final timestamp = (decoded['createdAt'] as num?)?.toInt() ?? 0;
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
-      if (mounted) setState(() {
-        messages.add(decoded);
-        messages.sort((a, b) => _time(a).compareTo(_time(b)));
-      });
+      if (mounted) {
+        setState(() {
+          messages.add(decoded);
+          messages.sort((a, b) => _time(a).compareTo(_time(b)));
+        });
+      }
     } catch (_) {
       // A damaged cache entry can be recovered from remote sync if it remains.
     }
@@ -761,15 +762,19 @@ class _ChatScreenState extends State<ChatScreen> {
     syncing = true;
     try {
       await _retryPendingMessages();
-      final results = await Future.wait([
-        widget.session.api.getMessages(chatId,
-          since: lastMessageAt == null ? null : lastMessageAt! - 1, limit: 100),
-        widget.session.api.getPurgedMessages(chatId,
-          since: lastPurgeAt == null ? null : lastPurgeAt! - 1),
-      ]);
-      final raw = (results[0]['messages'] as List? ?? const []).whereType<Map>()
-          .map((value) => Map<String, dynamic>.from(value)).toList();
-      final purges = results[1];
+      final messageResponse = await widget.session.api.getMessages(
+        chatId,
+        since: lastMessageAt == null ? null : lastMessageAt! - 1,
+        limit: 100,
+      );
+      final purges = await widget.session.api.getPurgedMessages(
+        chatId,
+        since: lastPurgeAt == null ? null : lastPurgeAt! - 1,
+      );
+      final raw = (messageResponse['messages'] as List? ?? const [])
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .toList();
 
       for (final message in raw) {
         final id = message['id']?.toString();
@@ -871,11 +876,13 @@ class _ChatScreenState extends State<ChatScreen> {
       // Sender cache is durable before the server makes the message visible,
       // preventing a fast receiver acknowledgement from racing the sender save.
       await widget.session.saveCachedMessage(chatId, queued);
-      if (mounted) setState(() {
-        messages.add({...queued, 'clearText': text});
+      if (mounted) {
+        setState(() {
+          messages.add({...queued, 'clearText': text});
         messageIds.add(id);
-        lastMessageAt = createdAt;
-      });
+          lastMessageAt = createdAt;
+        });
+      }
       _scrollToBottom();
       try {
         final response = await widget.session.api.post('/chats/$chatId/messages', {
