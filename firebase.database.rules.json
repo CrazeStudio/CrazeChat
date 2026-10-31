@@ -2,18 +2,8 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "users": {
-      ".indexOn": ["usernameLower"]
-    },
-    "Massages": {
-      "$chatId": {
-        ".indexOn": ["createdAt"]
-      }
-    },
-    "MassagesPurge": {
-      "$chatId": {
-        ".indexOn": ["purgedAt"]
-      }
+    "Users": {
+      ".indexOn": ["UsernameLower", "User id"]
     }
   }
 }
