@@ -39,9 +39,9 @@ jobs:
       - name: Detect API URL configuration
         id: app_config
         env:
-          CRAZECHAT_API_URL: ${{ secrets.API_URL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL }}
         run: |
-          if [[ "$CRAZECHAT_API_URL" == https://* ]]; then
+          if [[ "$CRAZECHAT_BURL" == https://* ]]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -50,14 +50,14 @@ jobs:
       - name: Build release APK
         if: steps.app_config.outputs.configured == 'true'
         env:
-          CRAZECHAT_API_URL: ${{ secrets.API_URL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL }}
         run: |
           flutter build apk --release \
-            --dart-define="API_URL=$CRAZECHAT_API_URL"
+            --dart-define="BURL=$CRAZECHAT_BURL"
 
       - name: Report API deployment requirement
         if: steps.app_config.outputs.configured == 'false'
-        run: echo "::warning::Backend tests passed; set the API_URL repository secret to build a connected release APK."
+        run: echo "::warning::Backend tests passed; set the BURL repository secret to build a connected release APK."
 
       - name: Upload APK
         if: steps.app_config.outputs.configured == 'true'
