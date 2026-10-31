@@ -342,132 +342,268 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final filtered = chats.where((chat) {
-      final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
-      return name.contains(search.text.trim().toLowerCase());
-    }).toList();
+    final isInbox = page == 0;
     return Scaffold(
-      body: SafeArea(child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-          child: Row(children: [
-            const _BrandMark(),
-            const SizedBox(width: 12),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('crazechat', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
-              _Eyebrow('A private space'),
-            ])),
-            IconButton(tooltip: 'New conversation', onPressed: startChat, icon: const Icon(Icons.add_comment_outlined)),
-            IconButton(tooltip: 'Account', onPressed: () => setState(() => page = 2), icon: const Icon(Icons.account_circle_outlined)),
-          ]),
+      backgroundColor: const Color(0xFFF6F8F7),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
+              child: Row(
+                children: [
+                  const _BrandMark(size: 42),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          page == 0 ? 'Messages' : page == 1 ? 'Privacy' : 'Settings',
+                          style: const TextStyle(
+                            color: Color(0xFF142A27),
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.8,
+                          ),
+                        ),
+                        Text(
+                          '@${widget.session.username ?? 'crazechat'}',
+                          style: const TextStyle(color: Color(0xFF71817C), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'New conversation',
+                    onPressed: startChat,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFE5F2EB),
+                      foregroundColor: _brand,
+                      fixedSize: const Size(44, 44),
+                    ),
+                    icon: const Icon(Icons.edit_square, size: 20),
+                  ),
+                  const SizedBox(width: 5),
+                  IconButton(
+                    tooltip: 'Account settings',
+                    onPressed: () => setState(() => page = 2),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: _ink,
+                      fixedSize: const Size(44, 44),
+                    ),
+                    icon: const Icon(Icons.person_outline_rounded, size: 21),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: switch (page) {
+                0 => _buildInbox(context, Theme.of(context).colorScheme, chats.where((chat) {
+                  final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
+                  return name.contains(search.text.trim().toLowerCase());
+                }).toList()),
+                1 => CloudPurgeDashboard(session: widget.session),
+                _ => _buildSettings(context),
+              },
+            ),
+          ],
         ),
-        Expanded(child: switch (page) {
-          0 => _buildInbox(context, colors, filtered),
-          1 => CloudPurgeDashboard(session: widget.session),
-          _ => _buildSettings(context),
-        }),
-      ])),
-      floatingActionButton: page == 0 ? FloatingActionButton(
-        onPressed: startChat, backgroundColor: _brand, foregroundColor: Colors.white,
-        child: const Icon(Icons.add_rounded),
-      ) : null,
+      ),
+      floatingActionButton: isInbox
+          ? FloatingActionButton.extended(
+              onPressed: startChat,
+              backgroundColor: _brand,
+              foregroundColor: Colors.white,
+              elevation: 3,
+              icon: const Icon(Icons.add_comment_rounded),
+              label: const Text('New chat', style: TextStyle(fontWeight: FontWeight.w800)),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
+        backgroundColor: Colors.white,
+        indicatorColor: const Color(0xFFDCEFE5),
         selectedIndex: page,
         onDestinationSelected: (value) => setState(() => page = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.inbox_outlined), selectedIcon: Icon(Icons.inbox_rounded), label: 'Inbox'),
-          NavigationDestination(icon: Icon(Icons.cloud_sync_outlined), selectedIcon: Icon(Icons.cloud_sync_rounded), label: 'CloudPurge'),
-          NavigationDestination(icon: Icon(Icons.tune_rounded), selectedIcon: Icon(Icons.tune_rounded), label: 'Settings'),
+          NavigationDestination(icon: Icon(Icons.chat_bubble_outline_rounded), selectedIcon: Icon(Icons.chat_rounded), label: 'Chats'),
+          NavigationDestination(icon: Icon(Icons.shield_outlined), selectedIcon: Icon(Icons.shield_rounded), label: 'Privacy'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Settings'),
         ],
       ),
     );
   }
 
   Widget _buildInbox(BuildContext context, ColorScheme colors, List<Map<String, dynamic>> filtered) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const _Eyebrow('Your conversations'),
-          const SizedBox(height: 5),
-          Text('Talk freely.', style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w900, letterSpacing: -1.2, color: _ink,
-          )),
-          const SizedBox(height: 14),
-          TextField(controller: search, decoration: InputDecoration(
-            hintText: 'Search conversations', prefixIcon: const Icon(Icons.search_rounded),
-            suffixIcon: search.text.isEmpty ? null : IconButton(onPressed: () => search.clear(), icon: const Icon(Icons.close_rounded)),
-          )),
-        ]),
-      ),
-      Expanded(child: RefreshIndicator(
-        onRefresh: loadChats,
-        child: loading ? const Center(child: CircularProgressIndicator())
-          : failed && chats.isEmpty ? ListView(children: [
-              const SizedBox(height: 100),
-              const Icon(Icons.cloud_off_outlined, size: 52, color: _muted),
-              const SizedBox(height: 12),
-              const Center(child: Text('Could not load your inbox')),
-              Center(child: TextButton.icon(onPressed: loadChats, icon: const Icon(Icons.refresh_rounded), label: const Text('Try again'))),
-            ])
-          : filtered.isEmpty ? ListView(children: [
-              const SizedBox(height: 72),
-              Icon(Icons.forum_outlined, size: 58, color: colors.primary.withValues(alpha: .6)),
-              const SizedBox(height: 16),
-              Center(child: Text(search.text.isEmpty ? 'A fresh start.' : 'No matching conversations.',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800))),
-              const SizedBox(height: 7),
-              Center(child: Text(search.text.isEmpty
-                  ? 'Find someone on CrazeChat and start talking.'
-                  : 'Try another username.', style: TextStyle(color: colors.onSurfaceVariant))),
-              if (search.text.isEmpty) ...[
-                const SizedBox(height: 18),
-                Center(child: FilledButton.icon(onPressed: startChat,
-                  icon: const Icon(Icons.person_search_rounded), label: const Text('Find someone'))),
-              ],
-            ])
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-              itemCount: filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 9),
-              itemBuilder: (context, index) {
-                final chat = filtered[index];
-                final name = _peer(chat)?['username']?.toString() ?? 'Unknown user';
-                final initial = name.isEmpty ? '?' : name[0].toUpperCase();
-                return Material(
-                  color: Colors.white, borderRadius: BorderRadius.circular(20),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => openChat(chat),
-                    child: Padding(
-                      padding: const EdgeInsets.all(15),
-                      child: Row(children: [
-                        Container(
-                          width: 48, height: 48,
-                          decoration: BoxDecoration(color: const Color(0xFFE1F1E9), borderRadius: BorderRadius.circular(16)),
-                          child: Center(child: Text(initial,
-                            style: const TextStyle(color: _brand, fontSize: 18, fontWeight: FontWeight.w900))),
-                        ),
-                        const SizedBox(width: 13),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                          const SizedBox(height: 4),
-                          const Row(children: [
-                            Icon(Icons.lock_outline_rounded, size: 13, color: _brand),
-                            SizedBox(width: 5),
-                            Text('Private conversation', style: TextStyle(color: _muted, fontSize: 12)),
-                          ]),
-                        ])),
-                        const Icon(Icons.arrow_outward_rounded, color: _muted, size: 18),
-                      ]),
-                    ),
-                  ),
-                );
-              },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+          child: TextField(
+            controller: search,
+            decoration: InputDecoration(
+              hintText: 'Search people or conversations',
+              prefixIcon: const Icon(Icons.search_rounded, color: _muted),
+              suffixIcon: search.text.isEmpty
+                  ? null
+                  : IconButton(onPressed: search.clear, icon: const Icon(Icons.close_rounded)),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(vertical: 15),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: const BorderSide(color: _brand, width: 1.2),
+              ),
             ),
-      )),
-    ]);
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
+          child: Row(
+            children: [
+              const Text('YOUR CONVERSATIONS', style: TextStyle(
+                color: _muted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4,
+              )),
+              const Spacer(),
+              Text('${chats.length} chats', style: const TextStyle(color: _muted, fontSize: 11, fontWeight: FontWeight.w600)),
+              IconButton(
+                tooltip: 'Refresh chats',
+                visualDensity: VisualDensity.compact,
+                onPressed: loading ? null : loadChats,
+                icon: const Icon(Icons.refresh_rounded, size: 19, color: _muted),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            color: _brand,
+            onRefresh: loadChats,
+            child: loading
+                ? const Center(child: CircularProgressIndicator(color: _brand))
+                : failed && chats.isEmpty
+                    ? ListView(
+                        children: [
+                          const SizedBox(height: 110),
+                          const Icon(Icons.cloud_off_rounded, size: 48, color: _muted),
+                          const SizedBox(height: 14),
+                          const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
+                          Center(child: TextButton.icon(
+                            onPressed: loadChats,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Try again'),
+                          )),
+                        ],
+                      )
+                    : filtered.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              const SizedBox(height: 78),
+                              Center(
+                                child: Container(
+                                  width: 82, height: 82,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE5F2EB),
+                                    borderRadius: BorderRadius.circular(28),
+                                  ),
+                                  child: const Icon(Icons.forum_rounded, size: 36, color: _brand),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Center(child: Text(
+                                search.text.isEmpty ? 'Your chats start here' : 'No conversations found',
+                                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink),
+                              )),
+                              const SizedBox(height: 7),
+                              Center(child: Text(
+                                search.text.isEmpty
+                                    ? 'Find someone and start a private conversation.'
+                                    : 'Try another name or username.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: _muted, fontSize: 13),
+                              )),
+                              if (search.text.isEmpty) ...[
+                                const SizedBox(height: 18),
+                                Center(child: FilledButton.icon(
+                                  onPressed: startChat,
+                                  style: FilledButton.styleFrom(backgroundColor: _brand, foregroundColor: Colors.white),
+                                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                                  label: const Text('Start your first chat'),
+                                )),
+                              ],
+                            ],
+                          )
+                        : ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 100),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 5),
+                            itemBuilder: (context, index) {
+                              final chat = filtered[index];
+                              final peer = _peer(chat);
+                              final name = peer?['username']?.toString() ?? 'Unknown user';
+                              final initial = name.isEmpty ? '?' : name[0].toUpperCase();
+                              return Material(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(19),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(19),
+                                  onTap: () => openChat(chat),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 54, height: 54,
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [Color(0xFFE5F3EB), Color(0xFFD5EADF)],
+                                              begin: Alignment.topLeft, end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius: BorderRadius.circular(19),
+                                          ),
+                                          child: Center(child: Text(initial, style: const TextStyle(
+                                            color: _brand, fontSize: 21, fontWeight: FontWeight.w900,
+                                          ))),
+                                        ),
+                                        const SizedBox(width: 13),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w800)),
+                                              const SizedBox(height: 5),
+                                              const Row(children: [
+                                                Icon(Icons.lock_rounded, size: 12, color: _brand),
+                                                SizedBox(width: 5),
+                                                Expanded(child: Text(
+                                                  'End-to-end encrypted conversation',
+                                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(color: _muted, fontSize: 11),
+                                                )),
+                                              ]),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA9A2), size: 22),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildSettings(BuildContext context) => ListView(
