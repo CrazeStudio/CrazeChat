@@ -441,7 +441,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         widget.session.api.getPurgedMessages(chatId, since: lastPurgeAt == null ? null : lastPurgeAt! - 1),
       ]);
-      final response = results[0] as Map<String, dynamic>;
+      final response = results[0];
       final purges = results[1] as Map<String, int>;
       final raw = (response['messages'] as List? ?? []).map((v) => Map<String, dynamic>.from(v as Map)).toList();
       final fresh = raw.where((message) => message['id'] is String && !messageIds.contains(message['id'])).toList();
@@ -463,7 +463,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           }
           for (final entry in purges.entries) {
-            if (!purgeIds.add(entry.key)) continue;
+            if (!purgeIds.add(entry.key)) { continue; }
             messages.removeWhere((item) => item['id'] == entry.key);
             messageIds.remove(entry.key);
           }
