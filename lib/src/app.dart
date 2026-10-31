@@ -473,8 +473,8 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         if (!silent && scroll.hasClients) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+            if (scroll.hasClients) { scroll.animateTo(scroll.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
           });
         }
       } else if (mounted && (loading || purges.isNotEmpty)) {
@@ -515,8 +515,8 @@ class _ChatScreenState extends State<ChatScreen> {
           if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
+          if (scroll.hasClients) { scroll.animateTo(scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 180), curve: Curves.easeOut); }
         });
       }
     } catch (e) {
@@ -609,11 +609,12 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(child: TextField(
               controller: input, minLines: 1, maxLines: 5,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(hintText: 'Write an encrypted message', prefixIcon: Icon(Icons.lock_outline)),
+              decoration: const InputDecoration(hintText: 'Message', prefixIcon: Icon(Icons.emoji_emotions_outlined), fillColor: Colors.white),
               onSubmitted: (_) => send(),
             )),
             const SizedBox(width: 8),
             IconButton.filled(
+              style: IconButton.styleFrom(backgroundColor: const Color(0xFF087E65), foregroundColor: Colors.white, fixedSize: const Size(50, 50)),
               onPressed: sending ? null : send,
               icon: sending ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.send_rounded),
