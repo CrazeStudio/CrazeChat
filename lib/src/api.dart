@@ -240,17 +240,36 @@ class CrazeChatApi {
     final info = information is Map
         ? Map<String, dynamic>.from(information)
         : <String, dynamic>{};
-    final messageText = info['massage'] ?? info['message'];
+    final rawMessage = info['massage'] ?? info['message'];
+    Map<String, dynamic> envelope = {};
+    if (rawMessage is Map) {
+      envelope = Map<String, dynamic>.from(rawMessage);
+    } else if (rawMessage is String) {
+      // Store the complete authenticated-encryption envelope in the single
+      // Information.massage field, serialized as JSON.
+      try {
+        final decoded = jsonDecode(rawMessage);
+        if (decoded is Map) envelope = Map<String, dynamic>.from(decoded);
+      } on FormatException {
+        // A bare ciphertext is not sufficient for AES-GCM decryption because
+        // the nonce and authentication tag are also required.
+      }
+    }
     return {
       ...source,
+      ...envelope,
       'id': source['id'] ?? source['messageId'],
       'senderId': source['senderId'] ?? info['Sender user id'] ?? info['senderId'],
       'createdAt': source['createdAt'] ?? info['Timestamp'] ?? info['timestamp'],
-      if (source['format'] == null) 'format': 'cc-e2ee-v1',
-      if (source['ciphertext'] == null && messageText is String)
-        'ciphertext': messageText,
-      if (source['nonce'] == null && info['nonce'] != null) 'nonce': info['nonce'],
-      if (source['mac'] == null && info['mac'] != null) 'mac': info['mac'],
+      if (source['format'] == null && envelope['format'] == null)
+        'format': 'cc-e2ee-v1',
+      if (source['ciphertext'] == null && envelope['ciphertext'] == null &&
+          rawMessage is String && envelope.isEmpty)
+        'ciphertext': rawMessage,
+      if (source['nonce'] == null && envelope['nonce'] == null && info['nonce'] != null)
+        'nonce': info['nonce'],
+      if (source['mac'] == null && envelope['mac'] == null && info['mac'] != null)
+        'mac': info['mac'],
     };
   }
 
