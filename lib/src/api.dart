@@ -76,7 +76,10 @@ class CrazeChatApi {
   Future<Map<String, dynamic>> sendMessage(String chatId, Map<String, dynamic> message) {
     _validateId(chatId, 'conversation');
     _validateId(message['id']?.toString() ?? '', 'message');
-    return _db('messages.send', {'chatId': chatId, ...message});
+    return _db('messages.send', {
+      'chatId': chatId,
+      'message': Map<String, dynamic>.from(message),
+    });
   }
 
   Future<Map<String, dynamic>> deleteMessage(String chatId, String messageId) {
