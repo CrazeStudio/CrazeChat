@@ -18,7 +18,7 @@ class ApiException implements Exception {
 class CrazeChatApi {
   CrazeChatApi({this.token});
 
-  static const apiUrl = String.fromEnvironment('API_URL');
+  static const apiUrl = String.fromEnvironment('BURL');
   static final http.Client _client = http.Client();
   static const _timeout = Duration(seconds: 15);
 
