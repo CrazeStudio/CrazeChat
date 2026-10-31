@@ -30,19 +30,12 @@ jobs:
       - name: Run Flutter tests
         run: flutter test
 
-      - name: Test authenticated backend and CloudPurge lifecycle
-        working-directory: backend
-        run: |
-          npm install --include=dev
-          npm test
-
       - name: Detect API URL configuration
         id: app_config
         env:
           CRAZECHAT_BURL: ${{ secrets.BURL }}
-          CRAZECHAT_KEY: ${{ secrets.KEY }}
         run: |
-          if [[ "$CRAZECHAT_BURL" == https://* && -n "$CRAZECHAT_KEY" ]]; then
+          if [[ "$CRAZECHAT_BURL" == https://* ]]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -52,15 +45,13 @@ jobs:
         if: steps.app_config.outputs.configured == 'true'
         env:
           CRAZECHAT_BURL: ${{ secrets.BURL }}
-          CRAZECHAT_KEY: ${{ secrets.KEY }}
         run: |
           flutter build apk --release \
-            --dart-define="BURL=$CRAZECHAT_BURL" \
-            --dart-define="KEY=$CRAZECHAT_KEY"
+            --dart-define="BURL=$CRAZECHAT_BURL"
 
       - name: Report API deployment requirement
         if: steps.app_config.outputs.configured == 'false'
-        run: echo "::warning::Backend tests passed; set both BURL and KEY repository secrets to build a connected release APK."
+        run: echo "::warning::Set the BURL repository secret to your HTTPS CrazeStudio-Web origin to build a connected release APK."
 
       - name: Upload APK
         if: steps.app_config.outputs.configured == 'true'
