@@ -20,7 +20,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF2563EB);
+    const seed = Color(0xFF087E65);
     return MaterialApp(
       title: 'CrazeChat',
       debugShowCheckedModeBanner: false,
@@ -28,13 +28,15 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        scaffoldBackgroundColor: const Color(0xFFF5F8FF),
-        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFFF5F8FF)),
+        scaffoldBackgroundColor: const Color(0xFFF7F8F7),
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.white, surfaceTintColor: Colors.white, elevation: 0),
         cardTheme: CardThemeData(color: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
         inputDecorationTheme: InputDecorationTheme(
-          filled: true, fillColor: const Color(0xFFF1F5FB),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          filled: true, fillColor: const Color(0xFFF1F3F2),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         ),
       ),
       darkTheme: ThemeData(
@@ -321,10 +323,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('CrazeChat', style: TextStyle(fontWeight: FontWeight.w800)),
-          Text('Private messaging', style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant)),
-        ]),
+        toolbarHeight: 68,
+        title: const Text('CrazeChat', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800, letterSpacing: -0.7)), 
         actions: [
           IconButton(onPressed: startChat, tooltip: 'New conversation', icon: const Icon(Icons.edit_square)),
           IconButton(onPressed: showAccountMenu, tooltip: 'Account', icon: const Icon(Icons.account_circle_outlined)),
@@ -563,7 +563,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Text('End-to-end encrypted', style: TextStyle(fontSize: 11))]),
         ])),
       ])),
-      body: Column(children: [
+      body: Container(color: const Color(0xFFECE9E2), child: Column(children: [
         Expanded(
           child: loading ? const Center(child: CircularProgressIndicator())
             : error != null ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(error!, textAlign: TextAlign.center)))
@@ -585,11 +585,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Align(
                       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .78),
-                      margin: const EdgeInsets.only(bottom: 9),
-                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .82),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: mine ? colors.primary : colors.surfaceContainerHighest,
+                        color: mine ? const Color(0xFFD8F5E7) : Colors.white,
                         borderRadius: BorderRadius.only(
                           topLeft: const Radius.circular(18), topRight: const Radius.circular(18),
                           bottomLeft: Radius.circular(mine ? 18 : 5), bottomRight: Radius.circular(mine ? 5 : 18),
@@ -621,7 +621,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ]),
         )),
-      ]),
+      ])),
     );
   }
 }
