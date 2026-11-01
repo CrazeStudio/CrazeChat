@@ -491,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: colors.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4,
               )),
               const Spacer(),
-              Text('${chats.length} chats · $totalSent sent', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w700)),
+              Text('${chats.length} chats · $totalSent sent on device', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w700)),
 
             ],
           ),
@@ -597,7 +597,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                                             decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(20)),
-                                            child: Text('${sentCounts[chat['id']?.toString()] ?? 0} sent',
+                                            child: Text('${sentCounts[chat['id']?.toString()] ?? 0} saved sent',
                                               style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800)),
                                           ),
                                           const SizedBox(height: 4),
