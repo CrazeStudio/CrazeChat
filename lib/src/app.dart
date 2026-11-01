@@ -394,7 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   IconButton(
                     tooltip: 'Account settings',
-                    onPressed: () => setState(() => page = 2),
+                    onPressed: () => setState(() => page = 1),
                     style: IconButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: _ink,
@@ -411,7 +411,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
                   return name.contains(search.text.trim().toLowerCase());
                 }).toList()),
-                1 => CloudPurgeDashboard(session: widget.session),
                 _ => _buildSettings(context),
               },
             ),
@@ -435,7 +434,6 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (value) => setState(() => page = value),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.chat_bubble_outline_rounded), selectedIcon: Icon(Icons.chat_rounded), label: 'Chats'),
-          NavigationDestination(icon: Icon(Icons.shield_outlined), selectedIcon: Icon(Icons.shield_rounded), label: 'Privacy'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Settings'),
         ],
       ),
@@ -614,8 +612,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ]),
       )),
       const SizedBox(height: 14),
-      _SettingsAction(icon: Icons.cloud_sync_outlined, title: 'CloudPurge',
-        subtitle: 'Receipt-based server cleanup', onTap: () => setState(() => page = 1)),
       _SettingsAction(icon: Icons.lock_outline_rounded, title: 'Lock CrazeChat',
         subtitle: 'Lock the local encryption identity', onTap: widget.session.lock),
       _SettingsAction(icon: Icons.switch_account_outlined, title: 'Switch account',
@@ -679,111 +675,6 @@ class _SettingsAction extends StatelessWidget {
   ));
 }
 
-class CloudPurgeDashboard extends StatefulWidget {
-  const CloudPurgeDashboard({super.key, required this.session});
-  final ChatSession session;
-  @override
-  State<CloudPurgeDashboard> createState() => _CloudPurgeDashboardState();
-}
-class _CloudPurgeDashboardState extends State<CloudPurgeDashboard> {
-  int cachedMessages = 0;
-  bool loading = true;
-  @override
-  void initState() { super.initState(); refresh(); }
-  Future<void> refresh() async {
-    try {
-      final count = await widget.session.getCachedMessageCount();
-      if (mounted) setState(() { cachedMessages = count; loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-  @override
-  Widget build(BuildContext context) => ListView(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
-      children: [
-        const _Eyebrow('Automatic message lifecycle'),
-        const SizedBox(height: 6),
-        Text('CloudPurge', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1)),
-        const SizedBox(height: 8),
-        const Text('Messages leave the server only after the receiver has decrypted the content and saved its encrypted envelope on their device.',
-          style: TextStyle(color: _muted, height: 1.45)),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFF0C7864), Color(0xFF124A43)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Row(children: [
-              Icon(Icons.cloud_done_outlined, color: Colors.white, size: 25),
-              SizedBox(width: 9),
-              Text('CLOUDPURGE PROTOCOL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1)),
-            ]),
-            const SizedBox(height: 16),
-            Text(loading ? '—' : '$cachedMessages',
-              style: const TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w900)),
-            const Text('encrypted message copies saved on this device', style: TextStyle(color: Color(0xFFD4E9E0))),
-            const SizedBox(height: 18),
-            const Divider(color: Color(0x55FFFFFF)),
-            const Row(children: [
-              Icon(Icons.verified_rounded, color: Color(0xFFB7E9D0), size: 17),
-              SizedBox(width: 7),
-              Expanded(child: Text('Local encrypted cache stays available after server cleanup.',
-                style: TextStyle(color: Colors.white, fontSize: 12))),
-            ]),
-          ]),
-        ),
-        const SizedBox(height: 16),
-        const _PurgeStep(number: '01', title: 'Receive',
-          description: 'The receiver downloads the encrypted message from the authenticated API.'),
-        const _PurgeStep(number: '02', title: 'Verify and save',
-          description: 'The app decrypts the message and saves its encrypted envelope to secure local storage.'),
-        const _PurgeStep(number: '03', title: 'Acknowledge',
-          description: 'Only after the local save succeeds does the receiver send an authenticated receipt.'),
-        const _PurgeStep(number: '04', title: 'Purge',
-          description: 'The server writes a receipt tombstone and removes the server-side ciphertext atomically.'),
-        const SizedBox(height: 12),
-        const Card(child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.info_outline_rounded, color: _brand),
-            SizedBox(width: 10),
-            Expanded(child: Text(
-              'CloudPurge cannot independently inspect another device’s storage. It trusts the authenticated receiver app to acknowledge only after its local save completes.',
-              style: TextStyle(fontSize: 12, color: _muted, height: 1.45),
-            )),
-          ]),
-        )),
-      ],
-    );
-}
-
-class _PurgeStep extends StatelessWidget {
-  const _PurgeStep({required this.number, required this.title, required this.description});
-  final String number;
-  final String title;
-  final String description;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 9),
-    child: Card(child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(number, style: const TextStyle(color: _brand, fontSize: 13, fontWeight: FontWeight.w900)),
-        const SizedBox(width: 13),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(description, style: const TextStyle(color: _muted, fontSize: 12, height: 1.4)),
-        ])),
-      ]),
-    )),
-  );
-}
-
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.session, required this.chat});
   final ChatSession session;
@@ -797,11 +688,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final search = TextEditingController();
   List<Map<String, dynamic>> messages = [];
   final Set<String> messageIds = <String>{};
-  final Set<String> purgeIds = <String>{};
   SecretKey? chatKey;
   String? peerName, error;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
-  int? lastMessageAt, lastPurgeAt;
+  int? lastMessageAt;
   Timer? poller;
 
   String get chatId => widget.chat['id'] as String;
@@ -890,10 +780,6 @@ class _ChatScreenState extends State<ChatScreen> {
         since: lastMessageAt == null ? null : lastMessageAt! - 1,
         limit: 100,
       );
-      final purges = await widget.session.api.getPurgedMessages(
-        chatId,
-        since: lastPurgeAt == null ? null : lastPurgeAt! - 1,
-      );
       final raw = (messageResponse['messages'] as List? ?? const [])
           .whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value))
@@ -904,18 +790,12 @@ class _ChatScreenState extends State<ChatScreen> {
         if (id == null) continue;
         final mine = message['senderId'] == widget.session.userId;
         try {
-          // Decrypt first, then persist the encrypted envelope. The receiver's
-          // authenticated receipt is sent only after this local save succeeds.
+          // Decrypt first, then persist the encrypted envelope locally.
           final decoded = await _decodeMessage(message);
           await widget.session.saveCachedMessage(chatId, {
             ...message,
             'deliveryState': mine ? 'sent' : 'saved',
           });
-          if (!mine) {
-            await widget.session.api.acknowledgeMessage(chatId, id);
-            await widget.session.updateCachedMessage(chatId, id, deliveryState: 'cloudpurged');
-            decoded['deliveryState'] = 'cloudpurged';
-          }
           final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
           if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           if (!messageIds.contains(id)) {
@@ -926,27 +806,11 @@ class _ChatScreenState extends State<ChatScreen> {
             if (index >= 0) messages[index] = decoded;
           }
         } catch (exception) {
-          if (!silent && mounted) showMessage(context, 'Message $id was not acknowledged: $exception');
+          if (!silent && mounted) showMessage(context, 'Could not save message $id locally: $exception');
         }
       }
 
-      for (final purge in purges) {
-        final id = purge['messageId']?.toString();
-        if (id == null) continue;
-        final purgedAt = (purge['purgedAt'] as num?)?.toInt() ?? 0;
-        if (lastPurgeAt == null || purgedAt > lastPurgeAt!) lastPurgeAt = purgedAt;
-        if (!purgeIds.add(id)) continue;
-        if (purge['reason'] == 'sender-delete') {
-          await widget.session.deleteCachedMessage(chatId, id);
-          messages.removeWhere((item) => item['id'] == id);
-          messageIds.remove(id);
-        } else if (purge['reason'] == 'cloudpurge-received' &&
-            purge['senderId'] == widget.session.userId) {
-          await widget.session.updateCachedMessage(chatId, id, deliveryState: 'cloudpurged');
-          final index = messages.indexWhere((item) => item['id'] == id);
-          if (index >= 0) messages[index]['deliveryState'] = 'cloudpurged';
-        }
-      }
+
 
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
@@ -1150,7 +1014,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Icon(Icons.auto_awesome_rounded, color: _brand, size: 17),
             SizedBox(width: 8),
             Expanded(child: Text(
-              'CLOUDPURGE ACTIVE · Server copies clear after receiver save',
+              'END-TO-END ENCRYPTED · Messages stay available in your conversation',
               style: TextStyle(color: Color(0xFF175C4B), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
             )),
           ]),
@@ -1232,15 +1096,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               const SizedBox(height: 8),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(
-                                  state == 'cloudpurged' ? Icons.cloud_done_rounded
-                                      : state == 'queued' ? Icons.schedule_rounded
-                                      : Icons.check_circle_outline_rounded,
+                                  state == 'queued' ? Icons.schedule_rounded : Icons.check_circle_outline_rounded,
                                   size: 12, color: _brand,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  state == 'cloudpurged' ? 'CLOUDPURGE COMPLETE'
-                                      : state == 'queued' ? 'WAITING TO SEND' : 'SENT · AWAITING RECEIPT',
+                                  state == 'queued' ? 'WAITING TO SEND' : 'SENT',
                                   style: const TextStyle(fontSize: 9, color: _brand, fontWeight: FontWeight.w800, letterSpacing: .3),
                                 ),
                               ]),
