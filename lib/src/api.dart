@@ -63,17 +63,6 @@ class CrazeChatApi {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getPurgedMessages(String chatId, {int? since}) async {
-    _validateId(chatId, 'conversation');
-    final result = await _request('GET', 'chats/$chatId/purges', query: {
-      if (since != null && since >= 0) 'since': '$since',
-    });
-    return (result['purges'] as List? ?? const [])
-        .whereType<Map>()
-        .map((entry) => Map<String, dynamic>.from(entry))
-        .toList();
-  }
-
   Future<Map<String, dynamic>> sendMessage(String chatId, Map<String, dynamic> message) {
     _validateId(chatId, 'conversation');
     _validateId(message['id']?.toString() ?? '', 'message');
@@ -86,12 +75,6 @@ class CrazeChatApi {
     _validateId(chatId, 'conversation');
     _validateId(messageId, 'message');
     return _request('DELETE', 'chats/$chatId/messages/$messageId');
-  }
-
-  Future<Map<String, dynamic>> acknowledgeMessage(String chatId, String messageId) {
-    _validateId(chatId, 'conversation');
-    _validateId(messageId, 'message');
-    return _request('POST', 'chats/$chatId/purges/$messageId/acknowledge');
   }
 
   String createMessageId() {
