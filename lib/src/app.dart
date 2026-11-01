@@ -307,8 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final chat in list) {
         final id = chat['id']?.toString();
         if (id == null || id.isEmpty) continue;
-        final cached = await widget.session.loadCachedMessages(id);
-        nextSentCounts[id] = cached.where((message) => message['senderId'] == widget.session.userId).length;
+        try {
+          final cached = await widget.session.loadCachedMessages(id);
+          nextSentCounts[id] = cached.where((message) => message['senderId'] == widget.session.userId).length;
+        } catch (_) {
+          // A local cache issue must not prevent the inbox itself from loading.
+          nextSentCounts[id] = 0;
+        }
       }
       if (!mounted) return;
       final changed = jsonEncode(chats) != jsonEncode(list) || jsonEncode(sentCounts) != jsonEncode(nextSentCounts);
