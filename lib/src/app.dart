@@ -373,7 +373,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final isInbox = page == 0;
     final colors = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: colors.surface,
       body: SafeArea(
@@ -391,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           page == 0 ? 'Messages' : page == 1 ? 'Privacy' : 'Settings',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: colors.onSurface,
                             fontSize: 25,
                             fontWeight: FontWeight.w900,
@@ -566,14 +565,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                         Container(
                                           width: 54, height: 54,
                                           decoration: BoxDecoration(
-                                            gradient: const LinearGradient(
-                                              colors: [Color(0xFFE5F3EB), Color(0xFFD5EADF)],
-                                              begin: Alignment.topLeft, end: Alignment.bottomRight,
-                                            ),
+                                            color: colors.secondaryContainer,
                                             borderRadius: BorderRadius.circular(19),
                                           ),
-                                          child: Center(child: Text(initial, style: const TextStyle(
-                                            color: _brand, fontSize: 21, fontWeight: FontWeight.w900,
+                                          child: Center(child: Text(initial, style: TextStyle(
+                                            color: colors.onSecondaryContainer, fontSize: 21, fontWeight: FontWeight.w900,
                                           ))),
                                         ),
                                         const SizedBox(width: 13),
@@ -584,13 +580,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                               Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(color: colors.onSurface, fontSize: 15, fontWeight: FontWeight.w800)),
                                               const SizedBox(height: 5),
-                                              const Row(children: [
-                                                Icon(Icons.lock_rounded, size: 12, color: _brand),
-                                                SizedBox(width: 5),
+                                              Row(children: [
+                                                const Icon(Icons.lock_rounded, size: 12, color: _brand),
+                                                const SizedBox(width: 5),
                                                 Expanded(child: Text(
                                                   'End-to-end encrypted conversation',
                                                   maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(color: _muted, fontSize: 11),
+                                                  style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11),
                                                 )),
                                               ]),
                                             ],
