@@ -760,13 +760,13 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) { await socket.close(); return; }
       realtime = socket;
       reconnectTimer?.cancel();
-      await loadMessages(silent: true);
       realtimeSubscription = socket.listen(
         (event) => _handleRealtimeEvent(event),
         onError: (_) => _scheduleRealtimeReconnect(),
         onDone: _scheduleRealtimeReconnect,
         cancelOnError: true,
       );
+      await loadMessages(silent: true);
     } catch (_) {
       _scheduleRealtimeReconnect();
     } finally {
