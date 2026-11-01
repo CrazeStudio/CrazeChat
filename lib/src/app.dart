@@ -275,6 +275,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final search = TextEditingController();
   List<Map<String, dynamic>> chats = [];
+  final Map<String, int> sentCounts = {};
   bool loading = true, failed = false, syncingChats = false;
   Timer? chatsPoller;
   int page = 0;
@@ -302,11 +303,21 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = await widget.session.api.listChats();
       final list = (data['chats'] as List? ?? const []).whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value)).toList();
+      final nextSentCounts = <String, int>{};
+      for (final chat in list) {
+        final id = chat['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+        final cached = await widget.session.loadCachedMessages(id);
+        nextSentCounts[id] = cached.where((message) => message['senderId'] == widget.session.userId).length;
+      }
       if (!mounted) return;
-      final changed = jsonEncode(chats) != jsonEncode(list);
+      final changed = jsonEncode(chats) != jsonEncode(list) || jsonEncode(sentCounts) != jsonEncode(nextSentCounts);
       if (changed || loading || failed) {
         setState(() {
           chats = list;
+          sentCounts
+            ..clear()
+            ..addAll(nextSentCounts);
           loading = false;
           failed = false;
         });
@@ -361,8 +372,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final isInbox = page == 0;
+    final colors = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F7),
+      backgroundColor: colors.surface,
       body: SafeArea(
         child: Column(
           children: [
@@ -379,7 +392,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(
                           page == 0 ? 'Messages' : page == 1 ? 'Privacy' : 'Settings',
                           style: const TextStyle(
-                            color: Color(0xFF142A27),
+                            color: colors.onSurface,
                             fontSize: 25,
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.8,
@@ -387,7 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         Text(
                           '@${widget.session.username ?? 'crazechat'}',
-                          style: const TextStyle(color: Color(0xFF71817C), fontSize: 12),
+                          style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
                         ),
                       ],
                     ),
@@ -396,8 +409,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     tooltip: 'Account settings',
                     onPressed: () => setState(() => page = 2),
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: _ink,
+                      backgroundColor: colors.surfaceContainerHighest,
+                      foregroundColor: colors.onSurface,
                       fixedSize: const Size(44, 44),
                     ),
                     icon: const Icon(Icons.person_outline_rounded, size: 21),
@@ -429,8 +442,9 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           : null,
       bottomNavigationBar: NavigationBar(
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDCEFE5),
+        backgroundColor: colors.surfaceContainer,
+        indicatorColor: colors.secondaryContainer,
+        surfaceTintColor: Colors.transparent,
         selectedIndex: page,
         onDestinationSelected: (value) => setState(() => page = value),
         destinations: const [
@@ -443,6 +457,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildInbox(BuildContext context, List<Map<String, dynamic>> filtered) {
+    final colors = Theme.of(context).colorScheme;
+    final totalSent = sentCounts.values.fold<int>(0, (sum, count) => sum + count);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -457,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? null
                   : IconButton(onPressed: search.clear, icon: const Icon(Icons.close_rounded)),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: colors.surfaceContainerHighest,
               contentPadding: const EdgeInsets.symmetric(vertical: 15),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
@@ -472,11 +488,11 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
           child: Row(
             children: [
-              const Text('YOUR CONVERSATIONS', style: TextStyle(
-                color: _muted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4,
+              Text('YOUR CONVERSATIONS', style: TextStyle(
+                color: colors.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4,
               )),
               const Spacer(),
-              Text('${chats.length} chats', style: const TextStyle(color: _muted, fontSize: 11, fontWeight: FontWeight.w600)),
+              Text('${chats.length} chats · $totalSent sent', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w700)),
 
             ],
           ),
@@ -538,7 +554,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               final name = peer?['username']?.toString() ?? 'Unknown user';
                               final initial = name.isEmpty ? '?' : name[0].toUpperCase();
                               return Material(
-                                color: Colors.white,
+                                color: colors.surfaceContainer,
                                 borderRadius: BorderRadius.circular(19),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(19),
@@ -566,7 +582,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(color: _ink, fontSize: 15, fontWeight: FontWeight.w800)),
+                                                style: TextStyle(color: colors.onSurface, fontSize: 15, fontWeight: FontWeight.w800)),
                                               const SizedBox(height: 5),
                                               const Row(children: [
                                                 Icon(Icons.lock_rounded, size: 12, color: _brand),
@@ -581,7 +597,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-                                        const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA9A2), size: 22),
+                                        Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                                            decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(20)),
+                                            child: Text('${sentCounts[chat['id']?.toString()] ?? 0} sent',
+                                              style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800)),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant, size: 19),
+                                        ]),
                                       ],
                                     ),
                                   ),
