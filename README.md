@@ -70,6 +70,8 @@ The CrazeStudio-Web deployment must define `ACCESS_KEY` server-side. Every `/db/
 
 Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
 
+**Security limit:** `KEY` is embedded in the APK and can be extracted. Treat it as a shared app-gateway gate, not as a confidential credential or a replacement for user authentication. Keep per-user JWT checks, participant authorization, and server-side rate limits enabled.
+
 The CrazeChat REST routes use the existing per-user JWT verification and participant checks in the CrazeStudio-Web dispatcher. Registration and login are public entry points; the gateway currently applies an in-process per-instance request throttle. Before a public production launch, configure a deployment-level rate limit/WAF for `/db/auth/register` and `/db/auth/login`, because serverless instance-local throttling is only best-effort.
 
 ## Android build
@@ -81,10 +83,12 @@ bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev
+flutter build apk --release \\
+  --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev \\
+  --dart-define=KEY=YOUR_SHARED_KEY
 ```
 
-For GitHub Actions, configure repository secret `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow also has this non-secret origin as a fallback). `BURL` is compiled into the app because it is a public API origin, not a credential. The workflow runs Flutter analysis and tests on each push/PR and builds a release APK. `ACCESS_KEY` belongs only in CrazeStudio-Web's server environment and is not an Android or CrazeChat GitHub Actions build secret.
+For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow has this origin as a fallback) and configure repository secret `KEY` with exactly the same value as backend `ACCESS_KEY`. The workflow compiles both values into the APK. `ACCESS_KEY` itself remains a backend environment variable and is not the Flutter build-variable name.
 
 ## Database and privacy
 
