@@ -740,7 +740,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (mounted) setState(() => loading = false);
       await loadMessages();
-      poller = Timer.periodic(const Duration(seconds: 4), (_) => loadMessages(silent: true));
+      poller = Timer.periodic(const Duration(seconds: 1), (_) => loadMessages(silent: true));
     } catch (exception) {
       if (mounted) setState(() { error = 'Could not establish the encrypted conversation: $exception'; loading = false; });
     }
@@ -774,7 +774,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (chatKey == null || syncing) return;
     syncing = true;
     try {
-      await _retryPendingMessages();
+      if (!silent) await _retryPendingMessages();
       final messageResponse = await widget.session.api.getMessages(
         chatId,
         since: lastMessageAt == null ? null : lastMessageAt! - 1,
