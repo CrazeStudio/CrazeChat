@@ -30,12 +30,13 @@ jobs:
       - name: Run Flutter tests
         run: flutter test
 
-      - name: Detect API URL configuration
+      - name: Detect API configuration
         id: app_config
         env:
-          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
+          CRAZECHAT_KEY: ${{ secrets.KEY }}
         run: |
-          if [[ "$CRAZECHAT_BURL" == https://* ]]; then
+          if [[ "$CRAZECHAT_BURL" == https://* && -n "$CRAZECHAT_KEY" ]]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -44,14 +45,16 @@ jobs:
       - name: Build release APK
         if: steps.app_config.outputs.configured == 'true'
         env:
-          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
+          CRAZECHAT_KEY: ${{ secrets.KEY }}
         run: |
           flutter build apk --release \
-            --dart-define="BURL=$CRAZECHAT_BURL"
+            --dart-define="BURL=$CRAZECHAT_BURL" \
+            --dart-define="KEY=$CRAZECHAT_KEY"
 
-      - name: Report API deployment requirement
+      - name: Report API configuration requirement
         if: steps.app_config.outputs.configured == 'false'
-        run: echo "::warning::Set the BURL repository secret to your HTTPS CrazeStudio-Web origin to build a connected release APK."
+        run: echo "::warning::Set the KEY repository secret to the exact backend ACCESS_KEY value. BURL must be the HTTPS CrazeStudio-Web origin."
 
       - name: Upload APK
         if: steps.app_config.outputs.configured == 'true'

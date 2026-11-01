@@ -14,12 +14,13 @@ class ApiException implements Exception {
 }
 
 /// CrazeChat REST client. All database access goes through CrazeStudio-Web;
-/// the mobile app carries only the user's short-lived session JWT, never the
-/// server-side Firebase or shared gateway credentials.
+/// the app sends the shared build-time KEY in X-Access-Key and the user's
+/// short-lived JWT separately in Authorization.
 class CrazeChatApi {
   CrazeChatApi({this.token});
 
   static const apiUrl = String.fromEnvironment('BURL');
+  static const apiKey = String.fromEnvironment('KEY');
   static final http.Client _client = http.Client();
   static const _timeout = Duration(seconds: 20);
   static const _idPattern = r'^[a-f0-9]{32}$';
@@ -109,6 +110,10 @@ class CrazeChatApi {
     if (configured.isEmpty) {
       throw const ApiException('CrazeChat is not configured. Set the BURL build variable to your CrazeStudio-Web origin.');
     }
+    final sharedKey = apiKey.trim();
+    if (sharedKey.isEmpty) {
+      throw const ApiException('CrazeChat is not configured. Set the KEY build variable to the same value as the backend ACCESS_KEY.');
+    }
 
     late final Uri uri;
     try {
@@ -128,7 +133,10 @@ class CrazeChatApi {
     }
 
     try {
-      final headers = <String, String>{'Accept': 'application/json'};
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'X-Access-Key': sharedKey,
+      };
       if (body != null) headers['Content-Type'] = 'application/json';
       final currentToken = token;
       if (currentToken != null && currentToken.isNotEmpty) {

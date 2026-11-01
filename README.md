@@ -7,7 +7,7 @@ CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is e
 ```text
 CrazeChat Android (Flutter)
         |
-        | HTTPS + per-user JWT
+        | HTTPS + X-Access-Key + per-user JWT
         v
 CrazeStudio-Web (/db/* path-based REST API)
         |
@@ -17,6 +17,8 @@ Firebase Realtime Database
 ```
 
 **CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
+
+The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value.
 
 ## API contract
 
@@ -36,39 +38,57 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | GET | `/db/chats/{chatId}/purges` | Synchronize CloudPurge receipts |
 | POST | `/db/chats/{chatId}/purges/{messageId}/acknowledge` | Acknowledge a received message |
 
-Protected requests send `Authorization: Bearer {user JWT}`. The mobile app does **not** contain the Firebase service-account key or the shared CrazeStudio-Web gateway key. The existing `POST /db` operation dispatcher remains available for compatibility, and generic Firebase path operations remain separately gateway-key protected.
+Every request sends `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key. The existing `POST /db` operation dispatcher and generic Firebase path operations use the same shared-key check.
 
 ## CrazeStudio-Web deployment
 
-Deploy `CrazeStudio/CrazeStudio-Web` to Vercel. Keep the repository root as the project root, use the Vite preset, build with `npm run build`, and output `dist`.
+Deploy `CrazeStudio/CrazeStudio-Web` to your selected serverless host. The current Cloudflare Worker origin used by CrazeChat is:
 
-Configure these server-side environment variables in Vercel:
+```text
+https://crazestudio-web.mehetabhoque566.workers.dev
+```
+
+For Cloudflare, configure these server-side secrets with Wrangler (never commit their values):
+
+```bash
+npx wrangler secret put ACCESS_KEY
+npx wrangler secret put FIREBASE_URL
+npx wrangler secret put FIREBASE_SDK
+npx wrangler secret put SESSION_SECRET
+```
+
+For Vercel, add the same names under Project → Settings → Environment Variables. The required backend values are:
 
 | Variable | Purpose |
 | --- | --- |
+| `ACCESS_KEY` | Shared gateway key (32+ random bytes recommended); it must match the CrazeChat frontend `KEY` value exactly. |
 | `FIREBASE_URL` | HTTPS Firebase Realtime Database URL |
 | `FIREBASE_SDK` | Complete service-account JSON |
-| `SESSION_SECRET` | Recommended: random server-only signing secret of at least 32 characters |
+| `SESSION_SECRET` | Random server-only JWT signing secret of at least 32 characters. |
 
-The existing CrazeStudio-Web API also supports `KEY` (or legacy `ACCESS_KEY`) for its generic database gateway and legacy operation endpoint. Keep it server-side; the CrazeChat REST client does not use or embed it.
+The CrazeStudio-Web deployment must define `ACCESS_KEY` server-side. Every `/db/*` request, including registration and login, must send the matching value in `X-Access-Key`. Protected chat routes additionally validate per-user JWTs and conversation membership. In Flutter, use the build-variable name `KEY`; never define `ACCESS_KEY` in the app.
 
 Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
+
+**Security limit:** `KEY` is embedded in the APK and can be extracted. Treat it as a shared app-gateway gate, not as a confidential credential or a replacement for user authentication. Keep per-user JWT checks, participant authorization, and server-side rate limits enabled.
 
 The CrazeChat REST routes use the existing per-user JWT verification and participant checks in the CrazeStudio-Web dispatcher. Registration and login are public entry points; the gateway currently applies an in-process per-instance request throttle. Before a public production launch, configure a deployment-level rate limit/WAF for `/db/auth/register` and `/db/auth/login`, because serverless instance-local throttling is only best-effort.
 
 ## Android build
 
-The only app build variable is the HTTPS origin of the CrazeStudio-Web deployment:
+The app has two build variables: `BURL` is the HTTPS origin of CrazeStudio-Web and `KEY` is the shared value matching backend `ACCESS_KEY`:
 
 ```bash
 bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release --dart-define=BURL=https://YOUR-CRAZESTUDIO-WEB-ORIGIN
+flutter build apk --release \
+  --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev \
+  --dart-define=KEY=YOUR_SHARED_KEY
 ```
 
-For GitHub Actions, add repository secret `BURL` containing the same HTTPS origin. The workflow runs Flutter analysis and tests on each push/PR, and builds an APK when `BURL` is configured. No `KEY` secret is required by the mobile app.
+For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow has this origin as a fallback) and configure repository secret `KEY` with exactly the same value as backend `ACCESS_KEY`. The workflow compiles both values into the APK. `ACCESS_KEY` itself remains a backend environment variable and is not the Flutter build-variable name.
 
 ## Database and privacy
 
