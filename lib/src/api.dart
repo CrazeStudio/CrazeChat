@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -69,6 +70,27 @@ class CrazeChatApi {
     return _request('POST', 'chats/$chatId/messages', body: {
       'message': Map<String, dynamic>.from(message),
     });
+  }
+
+  Future<WebSocket> connectRealtime(String chatId) async {
+    _validateId(chatId, 'conversation');
+    final configured = apiUrl.trim();
+    final sharedKey = apiKey.trim();
+    final currentToken = token;
+    if (configured.isEmpty || sharedKey.isEmpty || currentToken == null || currentToken.isEmpty) {
+      throw const ApiException('Realtime connection requires BURL, KEY and a signed-in session.');
+    }
+    final base = Uri.parse(configured);
+    final uri = base.replace(
+      scheme: base.scheme == 'https' ? 'wss' : 'ws',
+      path: '/api/realtime/$chatId',
+      query: null,
+      fragment: null,
+    );
+    return WebSocket.connect(uri.toString(), headers: {
+      'X-Access-Key': sharedKey,
+      'Authorization': 'Bearer $currentToken',
+    }).timeout(const Duration(seconds: 15));
   }
 
   Future<Map<String, dynamic>> deleteMessage(String chatId, String messageId) {

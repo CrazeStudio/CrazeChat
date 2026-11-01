@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -692,7 +693,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String? peerName, error;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
   int? lastMessageAt;
-  Timer? poller;
+  WebSocket? realtime;
+  StreamSubscription? realtimeSubscription;
+  Timer? reconnectTimer;
+  bool connectingRealtime = false;
 
   String get chatId => widget.chat['id'] as String;
   Map<String, dynamic>? get peer {
@@ -712,7 +716,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
   @override
   void dispose() {
-    poller?.cancel();
+    reconnectTimer?.cancel();
+    realtimeSubscription?.cancel();
+    realtime?.close();
     input.dispose();
     search.removeListener(_searchChanged);
     search.dispose();
@@ -740,9 +746,71 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (mounted) setState(() => loading = false);
       await loadMessages();
-      poller = Timer.periodic(const Duration(seconds: 1), (_) => loadMessages(silent: true));
+      _connectRealtime();
     } catch (exception) {
       if (mounted) setState(() { error = 'Could not establish the encrypted conversation: $exception'; loading = false; });
+    }
+  }
+
+  Future<void> _connectRealtime() async {
+    if (!mounted || connectingRealtime || realtime != null) return;
+    connectingRealtime = true;
+    try {
+      final socket = await widget.session.api.connectRealtime(chatId);
+      if (!mounted) { await socket.close(); return; }
+      realtime = socket;
+      reconnectTimer?.cancel();
+      realtimeSubscription = socket.listen(
+        (event) => _handleRealtimeEvent(event),
+        onError: (_) => _scheduleRealtimeReconnect(),
+        onDone: _scheduleRealtimeReconnect,
+        cancelOnError: true,
+      );
+      await loadMessages(silent: true);
+    } catch (_) {
+      _scheduleRealtimeReconnect();
+    } finally {
+      connectingRealtime = false;
+    }
+  }
+
+  void _scheduleRealtimeReconnect() {
+    realtime = null;
+    realtimeSubscription = null;
+    if (!mounted || reconnectTimer?.isActive == true) return;
+    reconnectTimer = Timer(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+      await loadMessages(silent: true);
+      _connectRealtime();
+    });
+  }
+
+  Future<void> _handleRealtimeEvent(dynamic event) async {
+    try {
+      final decodedEvent = jsonDecode(event.toString());
+      if (decodedEvent is! Map || decodedEvent['type'] != 'message' ||
+          decodedEvent['message'] is! Map) return;
+      final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
+      final id = message['id']?.toString();
+      if (id == null || message['senderId'] == widget.session.userId ||
+          messageIds.contains(id)) return;
+      final decoded = await _decodeMessage(message);
+      await widget.session.saveCachedMessage(chatId, {
+        ...message,
+        'deliveryState': 'saved',
+      });
+      messageIds.add(id);
+      final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
+      if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
+      if (mounted) {
+        setState(() {
+          messages.add(decoded);
+          messages.sort((a, b) => _time(a).compareTo(_time(b)));
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {
+      // The next reconnect sync recovers any event that could not be processed.
     }
   }
 
