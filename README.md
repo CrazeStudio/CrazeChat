@@ -7,7 +7,7 @@ CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is e
 ```text
 CrazeChat Android (Flutter)
         |
-        | HTTPS + per-user JWT
+        | HTTPS + X-Access-Key + per-user JWT
         v
 CrazeStudio-Web (/db/* path-based REST API)
         |
@@ -76,15 +76,15 @@ The CrazeChat REST routes use the existing per-user JWT verification and partici
 
 ## Android build
 
-The only app build variable is the HTTPS origin of the CrazeStudio-Web deployment:
+The app has two build variables: `BURL` is the HTTPS origin of CrazeStudio-Web and `KEY` is the shared value matching backend `ACCESS_KEY`:
 
 ```bash
 bash tool/prepare_android.sh
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release \\
-  --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev \\
+flutter build apk --release \
+  --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev \
   --dart-define=KEY=YOUR_SHARED_KEY
 ```
 
