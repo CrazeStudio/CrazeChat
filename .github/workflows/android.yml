@@ -44,7 +44,7 @@ jobs:
       - name: Build release APK
         if: steps.app_config.outputs.configured == 'true'
         env:
-          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
         run: |
           flutter build apk --release \
             --dart-define="BURL=$CRAZECHAT_BURL"
