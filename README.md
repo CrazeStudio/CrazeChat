@@ -38,7 +38,7 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | GET | `/db/chats/{chatId}/purges` | Synchronize CloudPurge receipts |
 | POST | `/db/chats/{chatId}/purges/{messageId}/acknowledge` | Acknowledge a received message |
 
-Protected requests send `Authorization: Bearer {user JWT}`. The mobile app does **not** contain the Firebase service-account key or the shared CrazeStudio-Web gateway key. The existing `POST /db` operation dispatcher remains available for compatibility, and generic Firebase path operations remain separately gateway-key protected.
+Every request sends `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key. The existing `POST /db` operation dispatcher and generic Firebase path operations use the same shared-key check.
 
 ## CrazeStudio-Web deployment
 
@@ -61,12 +61,12 @@ For Vercel, add the same names under Project → Settings → Environment Variab
 
 | Variable | Purpose |
 | --- | --- |
-| `ACCESS_KEY` | Random server-only gateway secret (at least 32 bytes); used for generic database routes and readiness diagnostics. |
+| `ACCESS_KEY` | Shared gateway key (32+ random bytes recommended); it must match the CrazeChat frontend `KEY` value exactly. |
 | `FIREBASE_URL` | HTTPS Firebase Realtime Database URL |
 | `FIREBASE_SDK` | Complete service-account JSON |
 | `SESSION_SECRET` | Random server-only JWT signing secret of at least 32 characters. |
 
-The CrazeStudio-Web deployment must define `ACCESS_KEY` as a server-side secret. It is used by the generic database gateway and legacy operation endpoint; the path-based CrazeChat REST endpoints use per-user JWTs instead. **Do not pass `ACCESS_KEY` through `--dart-define`, Flutter assets, GitHub build output, or any Android configuration.**
+The CrazeStudio-Web deployment must define `ACCESS_KEY` server-side. Every `/db/*` request, including registration and login, must send the matching value in `X-Access-Key`. Protected chat routes additionally validate per-user JWTs and conversation membership. In Flutter, use the build-variable name `KEY`; never define `ACCESS_KEY` in the app.
 
 Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
 
