@@ -18,7 +18,7 @@ Firebase Realtime Database
 
 **CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
 
-The deployment uses two environment variables at different trust boundaries: `BURL` configures the Flutter app's upstream API origin, while `KEY` is a server-only CrazeStudio-Web gateway secret. They must never be combined into the Android app configuration.
+The deployment uses two environment variables at different trust boundaries: `BURL` configures the Flutter app's upstream API origin, while `ACCESS_KEY` is a server-only CrazeStudio-Web gateway secret. They must never be combined into the Android app configuration.
 
 ## API contract
 
@@ -51,7 +51,7 @@ https://crazestudio-web.mehetabhoque566.workers.dev
 For Cloudflare, configure these server-side secrets with Wrangler (never commit their values):
 
 ```bash
-npx wrangler secret put KEY
+npx wrangler secret put ACCESS_KEY
 npx wrangler secret put FIREBASE_URL
 npx wrangler secret put FIREBASE_SDK
 npx wrangler secret put SESSION_SECRET
@@ -61,12 +61,12 @@ For Vercel, add the same names under Project → Settings → Environment Variab
 
 | Variable | Purpose |
 | --- | --- |
-| `KEY` | Random server-only gateway secret (at least 32 bytes); used for generic database routes and readiness diagnostics. |
+| `ACCESS_KEY` | Random server-only gateway secret (at least 32 bytes); used for generic database routes and readiness diagnostics. |
 | `FIREBASE_URL` | HTTPS Firebase Realtime Database URL |
 | `FIREBASE_SDK` | Complete service-account JSON |
 | `SESSION_SECRET` | Random server-only JWT signing secret of at least 32 characters. |
 
-The CrazeStudio-Web deployment must define `KEY` as a server-side secret (the gateway keeps `ACCESS_KEY` as a backwards-compatible alias). It is used by the generic database gateway and legacy operation endpoint; the path-based CrazeChat REST endpoints use per-user JWTs instead. **Do not pass `KEY` through `--dart-define`, Flutter assets, GitHub build output, or any Android configuration.**
+The CrazeStudio-Web deployment must define `ACCESS_KEY` as a server-side secret (the gateway keeps `ACCESS_KEY` as a backwards-compatible alias). It is used by the generic database gateway and legacy operation endpoint; the path-based CrazeChat REST endpoints use per-user JWTs instead. **Do not pass `ACCESS_KEY` through `--dart-define`, Flutter assets, GitHub build output, or any Android configuration.**
 
 Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
 
@@ -84,7 +84,7 @@ flutter test
 flutter build apk --release --dart-define=BURL=https://crazestudio-web.mehetabhoque566.workers.dev
 ```
 
-For GitHub Actions, configure repository secret `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow also has this non-secret origin as a fallback). `BURL` is compiled into the app because it is a public API origin, not a credential. The workflow runs Flutter analysis and tests on each push/PR and builds a release APK. `KEY` belongs only in CrazeStudio-Web's server environment and is not an Android or CrazeChat GitHub Actions build secret.
+For GitHub Actions, configure repository secret `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow also has this non-secret origin as a fallback). `BURL` is compiled into the app because it is a public API origin, not a credential. The workflow runs Flutter analysis and tests on each push/PR and builds a release APK. `ACCESS_KEY` belongs only in CrazeStudio-Web's server environment and is not an Android or CrazeChat GitHub Actions build secret.
 
 ## Database and privacy
 
