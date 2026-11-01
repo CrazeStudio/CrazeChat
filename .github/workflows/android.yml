@@ -33,7 +33,7 @@ jobs:
       - name: Detect API URL configuration
         id: app_config
         env:
-          CRAZECHAT_BURL: ${{ secrets.BURL }}
+          CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
         run: |
           if [[ "$CRAZECHAT_BURL" == https://* ]]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
