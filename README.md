@@ -66,7 +66,7 @@ For Vercel, add the same names under Project → Settings → Environment Variab
 | `FIREBASE_SDK` | Complete service-account JSON |
 | `SESSION_SECRET` | Random server-only JWT signing secret of at least 32 characters. |
 
-The CrazeStudio-Web deployment must define `ACCESS_KEY` as a server-side secret (the gateway keeps `ACCESS_KEY` as a backwards-compatible alias). It is used by the generic database gateway and legacy operation endpoint; the path-based CrazeChat REST endpoints use per-user JWTs instead. **Do not pass `ACCESS_KEY` through `--dart-define`, Flutter assets, GitHub build output, or any Android configuration.**
+The CrazeStudio-Web deployment must define `ACCESS_KEY` as a server-side secret. It is used by the generic database gateway and legacy operation endpoint; the path-based CrazeChat REST endpoints use per-user JWTs instead. **Do not pass `ACCESS_KEY` through `--dart-define`, Flutter assets, GitHub build output, or any Android configuration.**
 
 Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native Android requests do not send a browser Origin header.
 
