@@ -18,7 +18,7 @@ Firebase Realtime Database
 
 **CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
 
-The deployment uses two environment variables at different trust boundaries: `BURL` configures the Flutter app's upstream API origin, while `ACCESS_KEY` is a server-only CrazeStudio-Web gateway secret. They must never be combined into the Android app configuration.
+The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value.
 
 ## API contract
 
