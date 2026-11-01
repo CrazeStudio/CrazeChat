@@ -815,11 +815,15 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final decodedEvent = jsonDecode(event.toString());
       if (decodedEvent is! Map || decodedEvent['type'] != 'message' ||
-          decodedEvent['message'] is! Map) return;
+          decodedEvent['message'] is! Map) {
+        return;
+      }
       final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
       final id = message['id']?.toString();
       if (id == null || message['senderId'] == widget.session.userId ||
-          messageIds.contains(id)) return;
+          messageIds.contains(id)) {
+        return;
+      }
       final decoded = await _decodeMessage(message);
       await widget.session.saveCachedMessage(chatId, {
         ...message,
