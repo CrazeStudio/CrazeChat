@@ -86,6 +86,21 @@ class CryptoService {
     return IdentityMaterial(keyPair: keyPair, envelope: envelope);
   }
 
+  static Future<KeyPair> restoreIdentityFromPrivateBytes(
+    Map<String, dynamic> envelope,
+    List<int> privateBytes,
+  ) async {
+    validateIdentityEnvelope(envelope);
+    if (privateBytes.length != 32) {
+      throw const FormatException('Stored private identity key has an invalid length.');
+    }
+    final publicKey = SimplePublicKey(
+      _decodeExact(envelope, 'publicKey', 32),
+      type: KeyPairType.x25519,
+    );
+    return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
+  }
+
   static Future<KeyPair> unlockIdentity(Map<String, dynamic> envelope, String password) async {
     validateIdentityEnvelope(envelope);
     final publicKeyBase64 = envelope['publicKey'] as String;
