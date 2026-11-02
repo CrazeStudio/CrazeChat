@@ -33,6 +33,8 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
         session.api,
         userId: session.userId,
         enabled: session.notificationsEnabled,
+        soundEnabled: session.soundEffectsEnabled,
+        vibrationEnabled: session.vibrationEnabled,
       ));
     }
   }
