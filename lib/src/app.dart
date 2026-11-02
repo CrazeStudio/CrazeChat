@@ -87,6 +87,33 @@ class _BrandMark extends StatelessWidget {
   );
 }
 
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.username, this.size = 52});
+  final String username;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    const palette = [
+      Color(0xFF176B5B), Color(0xFF315D9B), Color(0xFF8A4F83),
+      Color(0xFF9A6238), Color(0xFF536B36), Color(0xFF6A5AA6),
+    ];
+    final normalized = username.trim();
+    final stableHash = normalized.codeUnits.fold<int>(
+      0, (value, unit) => (value * 31 + unit) & 0x7fffffff,
+    );
+    final color = palette[stableHash % palette.length];
+    final initial = normalized.isEmpty ? '?' : normalized.substring(0, 1).toUpperCase();
+    return CircleAvatar(
+      radius: size / 2,
+      backgroundColor: color,
+      child: Text(initial, style: TextStyle(
+        color: Colors.white, fontSize: size * .39, fontWeight: FontWeight.w900,
+      )),
+    );
+  }
+}
+
 class _Eyebrow extends StatelessWidget {
   const _Eyebrow(this.text);
   final String text;
@@ -121,20 +148,19 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => busy = true);
     try {
       late final Map<String, dynamic> result;
-      late final KeyPair keyPair;
+      late final IdentityMaterial material;
       if (creating) {
-        final material = await CryptoService.createIdentity(pass);
+        material = await CryptoService.createIdentity(pass);
         result = await widget.session.api.register(
           username: name, password: pass, identityEnvelope: material.envelope,
         );
-        keyPair = material.keyPair;
       } else {
         result = await widget.session.api.login(username: name, password: pass);
-        keyPair = await CryptoService.unlockIdentity(
+        material = await CryptoService.unlockIdentityMaterial(
           Map<String, dynamic>.from(result['identityEnvelope'] as Map), pass,
         );
       }
-      await widget.session.acceptSession(result, keyPair);
+      await widget.session.acceptSession(result, material);
     } on ApiException catch (error) {
       if (mounted) { showMessage(context, error.message); }
     } catch (_) {
@@ -555,7 +581,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               final chat = filtered[index];
                               final peer = _peer(chat);
                               final name = peer?['username']?.toString() ?? 'Unknown user';
-                              final initial = name.isEmpty ? '?' : name[0].toUpperCase();
                               return Material(
                                 color: colors.surfaceContainer,
                                 borderRadius: BorderRadius.circular(19),
@@ -566,16 +591,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
                                     child: Row(
                                       children: [
-                                        Container(
-                                          width: 54, height: 54,
-                                          decoration: BoxDecoration(
-                                            color: colors.secondaryContainer,
-                                            borderRadius: BorderRadius.circular(19),
-                                          ),
-                                          child: Center(child: Text(initial, style: TextStyle(
-                                            color: colors.onSecondaryContainer, fontSize: 21, fontWeight: FontWeight.w900,
-                                          ))),
-                                        ),
+                                        _ProfileAvatar(username: name, size: 54),
                                         const SizedBox(width: 13),
                                         Expanded(
                                           child: Column(
@@ -629,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> {
       Card(child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(children: [
-          const _BrandMark(size: 50),
+          _ProfileAvatar(username: widget.session.username ?? 'user', size: 54),
           const SizedBox(width: 13),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('@${widget.session.username}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
@@ -741,10 +757,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     search.addListener(_searchChanged);
+    // Retry only queued outgoing sends here. Incoming messages arrive over
+    // the authenticated WebSocket; history is fetched on initial connect/reconnect.
     syncTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
       if (!mounted) return;
       await _retryPendingMessages();
-      await loadMessages(silent: true);
     });
     prepare();
   }
@@ -776,6 +793,8 @@ class _ChatScreenState extends State<ChatScreen> {
         chatId: chatId,
       );
       final cached = await widget.session.loadCachedMessages(chatId);
+      // Local encrypted history is authoritative after the server purges a
+      // read message. Never hide a cached message based on its delivery state.
       for (final message in cached) {
         await _addLocalMessage(message);
       }
@@ -829,17 +848,27 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _acknowledgeIncoming(List<String> ids, {required String status}) async {
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) { return; }
     for (var start = 0; start < ids.length; start += 100) {
       final batch = ids.skip(start).take(100).toList();
       try {
         await widget.session.api.acknowledgeMessages(
           chatId, messageIds: batch, status: status,
         );
+        // A successful read acknowledgement lets the backend purge its
+        // server-side payload. The encrypted local copy and ChatView entry
+        // must remain untouched so the conversation survives future launches.
       } catch (_) {
-        // The next history sync/realtime reconnect retries the acknowledgement.
+        // Keep the local copy if the server did not confirm the purge.
       }
     }
+  }
+
+  Future<void> _scheduleReadPurge(List<String> ids) async {
+    if (ids.isEmpty) return;
+    // Both realtime and history paths save the encrypted envelope successfully
+    // before calling this method. No read request is sent before that save.
+    await _acknowledgeIncoming(ids, status: 'read');
   }
 
   String _outgoingState(Map<String, dynamic> message) {
@@ -856,10 +885,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _handleRealtimeEvent(dynamic event) async {
     try {
       final decodedEvent = jsonDecode(event.toString());
-      if (decodedEvent is! Map || decodedEvent['type'] != 'message' ||
-          decodedEvent['message'] is! Map) {
+      if (decodedEvent is! Map) return;
+      if (decodedEvent['type'] == 'message_deleted') {
+        // This event describes deletion of the remote Firebase copy only.
+        // Never propagate it into the receiver's durable local message history.
         return;
       }
+      if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map) return;
       final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
       final id = message['id']?.toString();
       if (id == null || message['senderId'] == widget.session.userId ||
@@ -871,7 +903,6 @@ class _ChatScreenState extends State<ChatScreen> {
         ...message,
         'deliveryState': 'saved',
       });
-      await _acknowledgeIncoming([id], status: 'read');
       message['deliveryState'] = 'saved';
       messageIds.add(id);
       final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
@@ -882,7 +913,9 @@ class _ChatScreenState extends State<ChatScreen> {
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
         _scrollToBottom();
+        SystemSound.play(SystemSoundType.alert);
       }
+      unawaited(_scheduleReadPurge([id]));
     } catch (_) {
       // The next reconnect sync recovers any event that could not be processed.
     }
@@ -956,7 +989,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
 
-      await _acknowledgeIncoming(receivedIds, status: 'read');
+      // Every received envelope above has been durably saved before the
+      // read acknowledgement can trigger server-side deletion.
+      await _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
       if (!silent) _scrollToBottom();
@@ -1034,6 +1069,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
       _scrollToBottom();
+      SystemSound.play(SystemSoundType.click);
       try {
         final response = await widget.session.api.sendMessage(chatId, {
           'id': id, 'format': encrypted['format'], 'ciphertext': encrypted['ciphertext'],
@@ -1141,14 +1177,7 @@ class _ChatScreenState extends State<ChatScreen> {
         leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded)),
         titleSpacing: 0,
         title: Row(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: const Color(0xFFE1F1E9), borderRadius: BorderRadius.circular(14)),
-            child: Center(child: Text(
-              (peerName ?? '?').isEmpty ? '?' : peerName![0].toUpperCase(),
-              style: const TextStyle(color: _brand, fontWeight: FontWeight.w900),
-            )),
-          ),
+          _ProfileAvatar(username: peerName ?? 'contact', size: 40),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(peerName ?? 'Conversation', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),

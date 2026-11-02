@@ -54,6 +54,19 @@ class ChatSession extends ChangeNotifier {
             await _clearActiveSession();
           }
         }
+        if (token != null && userId != null && identityEnvelope != null) {
+          final savedPrivateKey = await _storage.read(key: 'identityPrivateKey_$userId');
+          if (savedPrivateKey != null) {
+            try {
+              identity = await CryptoService.restoreIdentityFromPrivateBytes(
+                identityEnvelope!,
+                base64Decode(savedPrivateKey),
+              );
+            } catch (_) {
+              await _storage.delete(key: 'identityPrivateKey_$userId');
+            }
+          }
+        }
         if (token != null && !savedAccounts.any((item) => item['userId'] == userId)) {
           savedAccounts.insert(0, {
             'token': token,
@@ -73,13 +86,17 @@ class ChatSession extends ChangeNotifier {
     }
   }
 
-  Future<void> acceptSession(Map<String, dynamic> response, KeyPair keyPair) async {
+  Future<void> acceptSession(Map<String, dynamic> response, IdentityMaterial material) async {
     final user = Map<String, dynamic>.from(response['user'] as Map);
     token = response['token'] as String;
     username = user['username'] as String;
     userId = user['id'] as String;
     identityEnvelope = Map<String, dynamic>.from(response['identityEnvelope'] as Map);
-    identity = keyPair;
+    identity = material.keyPair;
+    await _storage.write(
+      key: 'identityPrivateKey_$userId',
+      value: base64Encode(material.privateKeyBytes),
+    );
     api.token = token;
     await _persistActive();
     savedAccounts.removeWhere((item) => item['userId'] == userId);
@@ -97,7 +114,14 @@ class ChatSession extends ChangeNotifier {
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
     if (envelope == null) throw const FormatException('No encrypted identity was saved.');
-    identity = await CryptoService.unlockIdentity(envelope, password);
+    final material = await CryptoService.unlockIdentityMaterial(envelope, password);
+    identity = material.keyPair;
+    if (userId != null) {
+      await _storage.write(
+        key: 'identityPrivateKey_$userId',
+        value: base64Encode(material.privateKeyBytes),
+      );
+    }
     notifyListeners();
   }
 
@@ -117,6 +141,17 @@ class ChatSession extends ChangeNotifier {
     identityEnvelope = Map<String, dynamic>.from(account['identityEnvelope'] as Map);
     api.token = token;
     await _persistActive();
+    final savedPrivateKey = await _storage.read(key: 'identityPrivateKey_$targetId');
+    if (savedPrivateKey != null) {
+      try {
+        identity = await CryptoService.restoreIdentityFromPrivateBytes(
+          identityEnvelope!,
+          base64Decode(savedPrivateKey),
+        );
+      } catch (_) {
+        await _storage.delete(key: 'identityPrivateKey_$targetId');
+      }
+    }
     notifyListeners();
   }
 
@@ -132,6 +167,7 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (userId != null) await _storage.delete(key: 'identityPrivateKey_$userId');
     savedAccounts.removeWhere((account) => account['userId'] == userId);
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     identity = null;

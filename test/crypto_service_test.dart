@@ -32,6 +32,17 @@ void main() {
     );
   });
 
+  test('secure-storage restore reconstructs the same identity from private bytes', () async {
+    final material = await CryptoService.createIdentity('correct horse battery staple 2026');
+    final restored = await CryptoService.restoreIdentityFromPrivateBytes(
+      material.envelope,
+      material.privateKeyBytes,
+    );
+    final originalPublic = await material.keyPair.extractPublicKey() as SimplePublicKey;
+    final restoredPublic = await restored.extractPublicKey() as SimplePublicKey;
+    expect(restoredPublic.bytes, originalPublic.bytes);
+  });
+
   test('two participants derive the same chat key and decrypt a message', () async {
     final alice = await CryptoService.createIdentity('alice secure password 2026');
     final bob = await CryptoService.createIdentity('bob secure password 2026');
