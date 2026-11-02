@@ -2,6 +2,14 @@
 
 CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is encrypted on the device with X25519, HKDF-SHA256, and AES-256-GCM. The API stores encrypted message envelopes and never receives plaintext message content.
 
+## Read-to-purge messages
+
+Incoming messages remain visible for 10 seconds after being displayed in an open conversation. The client then sends a read acknowledgement; the backend writes a minimal purge receipt and removes the encrypted server message. Both participants synchronize purge receipts and remove the local cached copy. If the read acknowledgement cannot reach the server, the encrypted local copy remains and the next sync retries.
+
+Message send/receive actions use the platform's short system sound. Profile avatars currently use generated initials and stable colors; uploaded photo avatars are not supported yet.
+
+The signed-in session and identity key are stored using Android secure storage backed by the platform keystore. Reopening the app restores the session and key automatically while the JWT remains valid; an expired/revoked session still requires sign-in.
+
 ## Architecture
 
 ```text
