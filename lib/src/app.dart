@@ -757,10 +757,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     search.addListener(_searchChanged);
+    // Retry only queued outgoing sends here. Incoming messages arrive over
+    // the authenticated WebSocket; history is fetched on initial connect/reconnect.
     syncTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
       if (!mounted) return;
       await _retryPendingMessages();
-      await loadMessages(silent: true);
     });
     prepare();
   }
