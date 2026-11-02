@@ -793,10 +793,10 @@ class _ChatScreenState extends State<ChatScreen> {
         chatId: chatId,
       );
       final cached = await widget.session.loadCachedMessages(chatId);
+      // Local encrypted history is authoritative after the server purges a
+      // read message. Never hide a cached message based on its delivery state.
       for (final message in cached) {
-        if (message['deliveryState'] != 'read-hidden') {
-          await _addLocalMessage(message);
-        }
+        await _addLocalMessage(message);
       }
       if (mounted) setState(() => loading = false);
       await loadMessages();
@@ -855,21 +855,9 @@ class _ChatScreenState extends State<ChatScreen> {
         await widget.session.api.acknowledgeMessages(
           chatId, messageIds: batch, status: status,
         );
-        if (status == 'read') {
-          // The receiver's encrypted envelope is already saved in secure storage.
-          // Mark it hidden locally only after the server confirms deletion.
-          for (final id in batch) {
-            await widget.session.updateCachedMessage(
-              chatId, id, deliveryState: 'read-hidden',
-            );
-          }
-          messageIds.removeWhere(batch.contains);
-          if (mounted) {
-            setState(() {
-              messages.removeWhere((message) => batch.contains(message['id']?.toString()));
-            });
-          }
-        }
+        // A successful read acknowledgement lets the backend purge its
+        // server-side payload. The encrypted local copy and ChatView entry
+        // must remain untouched so the conversation survives future launches.
       } catch (_) {
         // Keep the local copy if the server did not confirm the purge.
       }
@@ -899,20 +887,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final decodedEvent = jsonDecode(event.toString());
       if (decodedEvent is! Map) return;
       if (decodedEvent['type'] == 'message_deleted') {
-        final deletedIds = (decodedEvent['messageIds'] as List? ?? const [])
-            .whereType<String>().toSet();
-        if (deletedIds.isEmpty) return;
-        for (final id in deletedIds) {
-          await widget.session.updateCachedMessage(
-            chatId, id, deliveryState: 'read-hidden',
-          );
-        }
-        messageIds.removeWhere(deletedIds.contains);
-        if (mounted) {
-          setState(() {
-            messages.removeWhere((message) => deletedIds.contains(message['id']?.toString()));
-          });
-        }
+        // This event describes deletion of the remote Firebase copy only.
+        // Never propagate it into the receiver's durable local message history.
         return;
       }
       if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map) return;
@@ -1013,7 +989,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
 
-      unawaited(_scheduleReadPurge(receivedIds));
+      // Every received envelope above has been durably saved before the
+      // read acknowledgement can trigger server-side deletion.
+      await _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
       if (!silent) _scrollToBottom();
