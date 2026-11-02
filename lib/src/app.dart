@@ -792,15 +792,8 @@ class _ChatScreenState extends State<ChatScreen> {
         chatId: chatId,
       );
       final cached = await widget.session.loadCachedMessages(chatId);
-      List<String> purgedIds = [];
-      try {
-        purgedIds = await widget.session.api.getPurgedMessageIds(chatId);
-      } catch (_) {
-        // Offline: show the encrypted local cache until server receipts can sync.
-      }
       for (final message in cached) {
-        final cachedId = message['id']?.toString();
-        if (cachedId != null && !purgedIds.contains(cachedId)) {
+        if (message['deliveryState'] != 'read-hidden') {
           await _addLocalMessage(message);
         }
       }
@@ -862,8 +855,13 @@ class _ChatScreenState extends State<ChatScreen> {
           chatId, messageIds: batch, status: status,
         );
         if (status == 'read') {
-          // Keep the encrypted local envelope for offline/private local storage.
-          // Only remove the plaintext in-memory message after server confirmation.
+          // The receiver's encrypted envelope is already saved in secure storage.
+          // Mark it hidden locally only after the server confirms deletion.
+          for (final id in batch) {
+            await widget.session.updateCachedMessage(
+              chatId, id, deliveryState: 'read-hidden',
+            );
+          }
           messageIds.removeWhere(batch.contains);
           if (mounted) {
             setState(() {
@@ -878,42 +876,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _scheduleReadPurge(List<String> ids) async {
-    if (ids.isEmpty) { return; }
-
-    // The encrypted envelope is written to secure local storage before this
-    // method is called. A read is therefore the purge trigger, not a timer.
+    if (ids.isEmpty) return;
+    // Both realtime and history paths save the encrypted envelope successfully
+    // before calling this method. No read request is sent before that save.
     await _acknowledgeIncoming(ids, status: 'read');
-
-    // Verify server-side deletion after four seconds. If the receipt is absent,
-    // retry the acknowledgement instead of silently leaving the message online.
-    await Future<void>.delayed(const Duration(seconds: 4));
-    if (!mounted) { return; }
-    try {
-      final purged = await widget.session.api.getPurgedMessageIds(chatId);
-      final missing = ids.where((id) => !purged.contains(id)).toList();
-      if (missing.isNotEmpty) {
-        await _acknowledgeIncoming(missing, status: 'read');
-      }
-    } catch (_) {
-      // The next conversation sync retries verification and acknowledgement.
-    }
-  }
-
-  Future<void> _syncPurges() async {
-    try {
-      final purgedIds = await widget.session.api.getPurgedMessageIds(chatId);
-      if (purgedIds.isEmpty) { return; }
-      // Keep the encrypted local envelope as an offline/private archive.
-      // Purge receipts only remove the message from the live conversation UI.
-      messageIds.removeWhere(purgedIds.contains);
-      if (mounted) {
-        setState(() {
-          messages.removeWhere((message) => purgedIds.contains(message['id']?.toString()));
-        });
-      }
-    } catch (_) {
-      // A temporary network error is retried during the next conversation sync.
-    }
   }
 
   String _outgoingState(Map<String, dynamic> message) {
@@ -930,10 +896,25 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _handleRealtimeEvent(dynamic event) async {
     try {
       final decodedEvent = jsonDecode(event.toString());
-      if (decodedEvent is! Map || decodedEvent['type'] != 'message' ||
-          decodedEvent['message'] is! Map) {
+      if (decodedEvent is! Map) return;
+      if (decodedEvent['type'] == 'message_deleted') {
+        final deletedIds = (decodedEvent['messageIds'] as List? ?? const [])
+            .whereType<String>().toSet();
+        if (deletedIds.isEmpty) return;
+        for (final id in deletedIds) {
+          await widget.session.updateCachedMessage(
+            chatId, id, deliveryState: 'read-hidden',
+          );
+        }
+        messageIds.removeWhere(deletedIds.contains);
+        if (mounted) {
+          setState(() {
+            messages.removeWhere((message) => deletedIds.contains(message['id']?.toString()));
+          });
+        }
         return;
       }
+      if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map) return;
       final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
       final id = message['id']?.toString();
       if (id == null || message['senderId'] == widget.session.userId ||
@@ -992,7 +973,6 @@ class _ChatScreenState extends State<ChatScreen> {
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
-      await _syncPurges();
       final messageResponse = await widget.session.api.getMessages(
         chatId,
         since: lastMessageAt == null ? null : lastMessageAt! - 1,
