@@ -857,9 +857,11 @@ class _ChatScreenState extends State<ChatScreen> {
             await widget.session.deleteCachedMessage(chatId, id);
             messageIds.remove(id);
           }
-          if (mounted) setState(() {
-            messages.removeWhere((message) => batch.contains(message['id']?.toString()));
-          });
+          if (mounted) {
+            setState(() {
+              messages.removeWhere((message) => batch.contains(message['id']?.toString()));
+            });
+          }
         }
       } catch (_) {
         // Keep the local copy if the server did not confirm the purge.
