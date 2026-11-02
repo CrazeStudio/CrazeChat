@@ -810,9 +810,9 @@ class _ChatScreenState extends State<ChatScreen> {
     oldSubscription?.cancel();
     oldSocket?.close();
     if (!mounted || reconnectTimer?.isActive == true) return;
-    final seconds = 2 * (1 << reconnectAttempt.clamp(0, 5));
-    reconnectAttempt = (reconnectAttempt + 1).clamp(0, 6);
-    reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60)), () async {
+    final seconds = 2 * (1 << reconnectAttempt.clamp(0, 5).toInt());
+    reconnectAttempt = (reconnectAttempt + 1).clamp(0, 6).toInt();
+    reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60).toInt()), () async {
       if (!mounted) return;
       await _retryPendingMessages();
       await loadMessages(silent: true);
@@ -973,6 +973,16 @@ class _ChatScreenState extends State<ChatScreen> {
         final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
         await widget.session.updateCachedMessage(chatId, id,
           deliveryState: 'sent', serverMessage: serverMessage);
+        if (mounted) {
+          final index = messages.indexWhere((message) => message['id'] == id);
+          if (index >= 0) {
+            setState(() {
+              messages[index]['deliveryState'] = 'sent';
+              if (serverMessage.containsKey('deliveredTo')) messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
+              if (serverMessage.containsKey('readBy')) messages[index]['readBy'] = serverMessage['readBy'];
+            });
+          }
+        }
       } on ApiException catch (exception) {
         if (exception.statusCode != null && exception.statusCode! >= 400 &&
             exception.statusCode! < 500 && exception.statusCode != 429 && mounted) {
