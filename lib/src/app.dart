@@ -723,6 +723,7 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
   bool connectingRealtime = false;
+  int reconnectAttempt = 0;
 
   String get chatId => widget.chat['id'] as String;
   Map<String, dynamic>? get peer {
@@ -785,6 +786,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final socket = await widget.session.api.connectRealtime(chatId);
       if (!mounted) { await socket.close(); return; }
       realtime = socket;
+      reconnectAttempt = 0;
       reconnectTimer?.cancel();
       realtimeSubscription = socket.listen(
         (event) => _handleRealtimeEvent(event),
@@ -801,14 +803,46 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scheduleRealtimeReconnect() {
-    realtime = null;
+    final oldSubscription = realtimeSubscription;
+    final oldSocket = realtime;
     realtimeSubscription = null;
+    realtime = null;
+    oldSubscription?.cancel();
+    oldSocket?.close();
     if (!mounted || reconnectTimer?.isActive == true) return;
-    reconnectTimer = Timer(const Duration(seconds: 5), () async {
+    final seconds = 2 * (1 << reconnectAttempt.clamp(0, 5));
+    reconnectAttempt = (reconnectAttempt + 1).clamp(0, 6);
+    reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60)), () async {
       if (!mounted) return;
+      await _retryPendingMessages();
       await loadMessages(silent: true);
       _connectRealtime();
     });
+  }
+
+  Future<void> _acknowledgeIncoming(List<String> ids, {required String status}) async {
+    if (ids.isEmpty) return;
+    for (var start = 0; start < ids.length; start += 100) {
+      final batch = ids.skip(start).take(100).toList();
+      try {
+        await widget.session.api.acknowledgeMessages(
+          chatId, messageIds: batch, status: status,
+        );
+      } catch (_) {
+        // The next history sync/realtime reconnect retries the acknowledgement.
+      }
+    }
+  }
+
+  String _outgoingState(Map<String, dynamic> message) {
+    final local = message['deliveryState']?.toString() ?? '';
+    if (local == 'queued') return 'queued';
+    final recipientId = peer?['id']?.toString();
+    final readBy = message['readBy'];
+    if (recipientId != null && readBy is Map && readBy.containsKey(recipientId)) return 'read';
+    final deliveredTo = message['deliveredTo'];
+    if (recipientId != null && deliveredTo is Map && deliveredTo.containsKey(recipientId)) return 'delivered';
+    return 'sent';
   }
 
   Future<void> _handleRealtimeEvent(dynamic event) async {
@@ -829,6 +863,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ...message,
         'deliveryState': 'saved',
       });
+      await _acknowledgeIncoming([id], status: 'read');
+      message['deliveryState'] = 'saved';
       messageIds.add(id);
       final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
@@ -883,6 +919,7 @@ class _ChatScreenState extends State<ChatScreen> {
           .map((value) => Map<String, dynamic>.from(value))
           .toList();
 
+      final receivedIds = <String>[];
       for (final message in raw) {
         final id = message['id']?.toString();
         if (id == null) continue;
@@ -894,6 +931,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ...message,
             'deliveryState': mine ? 'sent' : 'saved',
           });
+          if (!mine) receivedIds.add(id);
           final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
           if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           if (!messageIds.contains(id)) {
@@ -910,6 +948,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
 
+      await _acknowledgeIncoming(receivedIds, status: 'read');
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
       if (!silent) _scrollToBottom();
@@ -1165,7 +1204,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemBuilder: (context, index) {
                   final message = visible[index];
                   final mine = message['senderId'] == widget.session.userId;
-                  final state = message['deliveryState']?.toString() ?? '';
+                  final state = mine ? _outgoingState(message) : (message['deliveryState']?.toString() ?? '');
                   return Align(
                     alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                     child: ConstrainedBox(
@@ -1194,12 +1233,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               const SizedBox(height: 8),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(
-                                  state == 'queued' ? Icons.schedule_rounded : Icons.check_circle_outline_rounded,
+                                  state == 'queued' ? Icons.schedule_rounded : state == 'read' ? Icons.done_all_rounded : state == 'delivered' ? Icons.done_all_rounded : Icons.check_rounded,
                                   size: 12, color: _brand,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  state == 'queued' ? 'WAITING TO SEND' : 'SENT',
+                                  state == 'queued' ? 'WAITING TO SEND' : state == 'read' ? 'READ' : state == 'delivered' ? 'DELIVERED' : 'SENT',
                                   style: const TextStyle(fontSize: 9, color: _brand, fontWeight: FontWeight.w800, letterSpacing: .3),
                                 ),
                               ]),
