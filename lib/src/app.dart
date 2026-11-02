@@ -12,7 +12,6 @@ import 'push_notifications.dart';
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
 const _canvas = Color(0xFFF3F7F5);
-const _muted = Color(0xFF71817C);
 
 class CrazeChatApp extends StatefulWidget {
   const CrazeChatApp({super.key});
@@ -662,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Icon(Icons.cloud_off_rounded, size: 48, color: colors.onSurfaceVariant),
                           const SizedBox(height: 14),
                           const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
-                          const Center(child: Text(
+                          Center(child: Text(
                             'Reconnecting automatically…',
                             style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
                           )),
@@ -1604,9 +1603,9 @@ class _ChatScreenState extends State<ChatScreen> {
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(peerName ?? 'Conversation', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            const Row(children: [
-              Icon(Icons.shield_outlined, size: 12, color: _brand),
-              SizedBox(width: 4),
+            Row(children: [
+              const Icon(Icons.shield_outlined, size: 12, color: _brand),
+              const SizedBox(width: 4),
               Text('Private channel', style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
             ]),
           ])),
