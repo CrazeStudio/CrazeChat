@@ -3,24 +3,14 @@ set -euo pipefail
 flutter create --platforms=android --project-name crazechat --org com.crazestudio .
 rm -f test/widget_test.dart
 
-# Firebase configuration is optional for development, but required for
-# background push notifications. CI can supply the same file as a base64
-# GitHub Actions secret named FIREBASE_ANDROID_CONFIG_B64.
+# google-services.json is checked into the repository and pinned by the
+# Android CI workflow's SHA-256 verification step. It is public Firebase
+# client configuration, not a service-account credential.
 python3 - <<'PY'
 from pathlib import Path
-import base64
 import json
-import os
 
 firebase_file = Path("android/app/google-services.json")
-encoded = os.environ.get("FIREBASE_ANDROID_CONFIG_B64", "").strip()
-if encoded:
-    try:
-        firebase_file.parent.mkdir(parents=True, exist_ok=True)
-        firebase_file.write_bytes(base64.b64decode(encoded, validate=True))
-    except Exception as exc:
-        raise SystemExit(f"FIREBASE_ANDROID_CONFIG_B64 is not valid base64: {exc}")
-
 options_file = Path("lib/src/firebase_options.dart")
 if firebase_file.exists():
     try:
@@ -54,19 +44,13 @@ const FirebaseOptions? defaultFirebaseOptions = FirebaseOptions(
     except Exception as exc:
         raise SystemExit(f"Could not generate Firebase Android options: {exc}")
 else:
-    options_file.write_text("""import 'package:firebase_core/firebase_core.dart';
-
-// Safe fallback used when no Android Firebase app has been configured.
-const bool firebasePushConfigured = false;
-const FirebaseOptions? defaultFirebaseOptions = null;
-""")
-    print("No google-services.json supplied: push notifications will remain disabled.")
+    raise SystemExit("Required android/app/google-services.json is missing.")
 PY
+
 python3 - <<'PY'
 from pathlib import Path
 import re
 
-firebase_file = Path("android/app/google-services.json")
 manifest = Path("android/app/src/main/AndroidManifest.xml")
 s = manifest.read_text()
 if 'android:allowBackup=' in s:
@@ -96,20 +80,16 @@ gradle = Path("android/app/build.gradle.kts")
 if gradle.exists():
     source = gradle.read_text()
     source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 24")
-    if firebase_file.exists():
-        if 'id("com.google.gms.google-services")' not in source:
-            if "plugins {" not in source:
-                raise SystemExit("Android app Gradle file has no plugins block.")
-            source = source.replace(
-                "plugins {",
-                'plugins {\n    id("com.google.gms.google-services")',
-                1,
-            )
+    if 'id("com.google.gms.google-services")' not in source:
+        if "plugins {" not in source:
+            raise SystemExit("Android app Gradle file has no plugins block.")
+        source = source.replace(
+            "plugins {",
+            'plugins {\n    id("com.google.gms.google-services")',
+            1,
+        )
     gradle.write_text(source)
 
-# The Google Services plugin is required to generate native Android resources
-# used by Firebase Messaging's default background service. Declare it at the
-# root, but apply it to the app only when google-services.json is present.
 settings = Path("android/settings.gradle.kts")
 if settings.exists() and 'id("com.google.gms.google-services")' not in settings.read_text():
     source = settings.read_text()
@@ -122,7 +102,7 @@ if settings.exists() and 'id("com.google.gms.google-services")' not in settings.
     )
     settings.write_text(source)
 PY
-# Install notification channels before background FCM delivery can use them.
+
 python3 - <<'PY'
 from pathlib import Path
 
@@ -197,7 +177,7 @@ if "com.google.firebase.messaging.default_notification_channel_id" not in source
     source = source.replace("</application>", default_channel + "    </application>", 1)
 manifest.write_text(source)
 PY
-# Install CrazeChat's native launcher artwork after Flutter generates the Android project.
+
 python3 - <<'PY'
 from pathlib import Path
 
@@ -235,7 +215,6 @@ adaptive = """<?xml version="1.0" encoding="utf-8"?>
 </resources>
 """)
 
-# Vector fallback keeps the icon branded on Android versions before adaptive icons.
 legacy = """<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp"
