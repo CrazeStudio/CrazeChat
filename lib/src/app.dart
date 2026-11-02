@@ -299,33 +299,39 @@ class HomeScreen extends StatefulWidget {
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
   List<Map<String, dynamic>> chats = [];
   final Map<String, int> sentCounts = {};
   bool loading = true, failed = false, syncingChats = false;
-  Timer? chatsPoller;
+  bool refreshingChats = false;
   int page = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     search.addListener(_changed);
     loadChats();
-    chatsPoller = Timer.periodic(const Duration(seconds: 4), (_) => loadChats(silent: true));
   }
   @override
   void dispose() {
-    chatsPoller?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     search.removeListener(_changed);
     search.dispose();
     super.dispose();
   }
   void _changed() => setState(() {});
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) loadChats(silent: true);
+  }
+
   Future<void> loadChats({bool silent = false}) async {
     if (syncingChats) return;
     syncingChats = true;
+    if (mounted) setState(() => refreshingChats = true);
     try {
       final data = await widget.session.api.listChats();
       final list = (data['chats'] as List? ?? const []).whereType<Map>()
@@ -361,6 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } finally {
       syncingChats = false;
+      if (mounted) setState(() => refreshingChats = false);
     }
   }
 
@@ -436,6 +443,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Refresh conversations',
+                    onPressed: refreshingChats ? null : () => loadChats(silent: true),
+                    style: IconButton.styleFrom(
+                      backgroundColor: colors.surfaceContainerHighest,
+                      foregroundColor: colors.onSurface,
+                      fixedSize: const Size(44, 44),
+                    ),
+                    icon: refreshingChats
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh_rounded, size: 20),
+                  ),
+                  const SizedBox(width: 8),
                   IconButton(
                     tooltip: 'Account settings',
                     onPressed: () => setState(() => page = 1),
@@ -739,6 +759,8 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
   Timer? syncTimer;
+  Timer? readAckTimer;
+  final Set<String> pendingReadAcks = <String>{};
   bool connectingRealtime = false;
   bool retryingPending = false;
   int reconnectAttempt = 0;
@@ -769,6 +791,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     reconnectTimer?.cancel();
     syncTimer?.cancel();
+    readAckTimer?.cancel();
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
@@ -799,7 +822,6 @@ class _ChatScreenState extends State<ChatScreen> {
         await _addLocalMessage(message);
       }
       if (mounted) setState(() => loading = false);
-      await loadMessages();
       _connectRealtime();
     } catch (exception) {
       if (mounted) setState(() { error = 'Could not establish the encrypted conversation: $exception'; loading = false; });
@@ -842,7 +864,6 @@ class _ChatScreenState extends State<ChatScreen> {
     reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60).toInt()), () async {
       if (!mounted) return;
       await _retryPendingMessages();
-      await loadMessages(silent: true);
       _connectRealtime();
     });
   }
@@ -866,9 +887,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _scheduleReadPurge(List<String> ids) async {
     if (ids.isEmpty) return;
-    // Both realtime and history paths save the encrypted envelope successfully
-    // before calling this method. No read request is sent before that save.
-    await _acknowledgeIncoming(ids, status: 'read');
+    // Coalesce realtime arrivals into one acknowledgement request. The IDs
+    // are queued only after their encrypted envelopes have been persisted.
+    pendingReadAcks.addAll(ids);
+    readAckTimer ??= Timer(const Duration(milliseconds: 350), () {
+      readAckTimer = null;
+      final batch = pendingReadAcks.toList();
+      pendingReadAcks.clear();
+      unawaited(_acknowledgeIncoming(batch, status: 'read'));
+    });
   }
 
   String _outgoingState(Map<String, dynamic> message) {
