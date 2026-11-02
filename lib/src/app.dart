@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'crypto_service.dart';
 import 'session.dart';
+import 'push_notifications.dart';
 
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
@@ -21,14 +22,33 @@ class CrazeChatApp extends StatefulWidget {
 class _CrazeChatAppState extends State<CrazeChatApp> {
   final session = ChatSession();
   @override
-  void initState() { super.initState(); session.restore(); }
+  void initState() {
+    super.initState();
+    session.addListener(_syncPushRegistration);
+    session.restore();
+  }
+
+  void _syncPushRegistration() {
+    if (session.signedIn) {
+      unawaited(PushNotificationService.configure(
+        session.api,
+        userId: session.userId,
+        enabled: session.notificationsEnabled,
+      ));
+    }
+  }
+
   @override
-  void dispose() { session.dispose(); super.dispose(); }
+  void dispose() {
+    session.removeListener(_syncPushRegistration);
+    session.dispose();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'CrazeChat',
     debugShowCheckedModeBanner: false,
-    themeMode: ThemeMode.system,
+    themeMode: session.themeMode,
     theme: ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(seedColor: _brand, surface: Colors.white),
@@ -45,9 +65,49 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     ),
     darkTheme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: _brand, brightness: Brightness.dark),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _brand,
+        brightness: Brightness.dark,
+      ).copyWith(
+        primary: const Color(0xFF62D6AE),
+        onPrimary: const Color(0xFF06251D),
+        surface: const Color(0xFF0B1513),
+        surfaceContainer: const Color(0xFF14211E),
+        surfaceContainerHighest: const Color(0xFF20312D),
+        onSurface: const Color(0xFFF1F7F4),
+        onSurfaceVariant: const Color(0xFFB5C6BF),
+        outlineVariant: const Color(0xFF344841),
+      ),
       scaffoldBackgroundColor: const Color(0xFF0B1513),
-      cardTheme: CardThemeData(color: const Color(0xFF14211E), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF0B1513),
+        foregroundColor: Color(0xFFF1F7F4),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Color(0xFF1B2B27),
+        hintStyle: TextStyle(color: Color(0xFF9AAEA5)),
+        labelStyle: TextStyle(color: Color(0xFFB5C6BF)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide(color: Color(0xFF62D6AE), width: 1.2),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: const Color(0xFF14211E),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
     ),
     home: AnimatedBuilder(
       animation: session,
@@ -68,8 +128,13 @@ class _LoadingScreen extends StatelessWidget {
 }
 
 void showMessage(BuildContext context, String message) {
+  final colors = Theme.of(context).colorScheme;
   ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(
-    SnackBar(content: Text(message), behavior: SnackBarBehavior.floating, backgroundColor: _ink),
+    SnackBar(
+      content: Text(message, style: TextStyle(color: colors.onInverseSurface)),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: colors.inverseSurface,
+    ),
   );
 }
 
@@ -120,7 +185,12 @@ class _Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
-    style: const TextStyle(color: _muted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5),
+    style: TextStyle(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontSize: 10,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.5,
+    ),
   );
 }
 
