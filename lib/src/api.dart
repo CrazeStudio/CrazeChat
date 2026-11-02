@@ -93,6 +93,16 @@ class CrazeChatApi {
     }).timeout(const Duration(seconds: 15));
   }
 
+  Future<List<String>> getPurgedMessageIds(String chatId) async {
+    _validateId(chatId, 'conversation');
+    final result = await _request('GET', 'chats/$chatId/purges');
+    return (result['purges'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => item['id']?.toString() ?? '')
+        .where((id) => RegExp(_idPattern).hasMatch(id))
+        .toList();
+  }
+
   Future<Map<String, dynamic>> acknowledgeMessages(
     String chatId, {
     required List<String> messageIds,
