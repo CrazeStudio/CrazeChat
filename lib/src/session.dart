@@ -86,16 +86,16 @@ class ChatSession extends ChangeNotifier {
     }
   }
 
-  Future<void> acceptSession(Map<String, dynamic> response, KeyPair keyPair) async {
+  Future<void> acceptSession(Map<String, dynamic> response, IdentityMaterial material) async {
     final user = Map<String, dynamic>.from(response['user'] as Map);
     token = response['token'] as String;
     username = user['username'] as String;
     userId = user['id'] as String;
     identityEnvelope = Map<String, dynamic>.from(response['identityEnvelope'] as Map);
-    identity = keyPair;
+    identity = material.keyPair;
     await _storage.write(
       key: 'identityPrivateKey_$userId',
-      value: base64Encode(await keyPair.extractPrivateKeyBytes()),
+      value: base64Encode(material.privateKeyBytes),
     );
     api.token = token;
     await _persistActive();
@@ -114,11 +114,12 @@ class ChatSession extends ChangeNotifier {
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
     if (envelope == null) throw const FormatException('No encrypted identity was saved.');
-    identity = await CryptoService.unlockIdentity(envelope, password);
+    final material = await CryptoService.unlockIdentityMaterial(envelope, password);
+    identity = material.keyPair;
     if (userId != null) {
       await _storage.write(
         key: 'identityPrivateKey_$userId',
-        value: base64Encode(await identity!.extractPrivateKeyBytes()),
+        value: base64Encode(material.privateKeyBytes),
       );
     }
     notifyListeners();
