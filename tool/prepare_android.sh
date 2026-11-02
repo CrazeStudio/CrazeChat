@@ -32,7 +32,7 @@ if firebase_file.exists():
 
 // Generated from android/app/google-services.json. Do not edit by hand.
 const bool firebasePushConfigured = true;
-const FirebaseOptions? defaultFirebaseOptions = FirebaseOptions(
+const FirebaseOptions defaultFirebaseOptions = FirebaseOptions(
   apiKey: {json.dumps(api_key)},
   appId: {json.dumps(app_id)},
   messagingSenderId: {json.dumps(sender_id)},
