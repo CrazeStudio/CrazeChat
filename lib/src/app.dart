@@ -1286,44 +1286,81 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> send() async {
     final text = input.text.trim();
     if (text.isEmpty || sending || chatKey == null) return;
+    final reply = replyTarget == null
+        ? null
+        : <String, dynamic>{
+            'id': replyTarget!['id'],
+            'senderId': replyTarget!['senderId'],
+            'text': replyTarget!['clearText']?.toString() ?? '',
+          };
+    final encryptedText = jsonEncode({
+      '__cc_type': 'message',
+      'text': text,
+      'replyTo': reply,
+    });
     setState(() => sending = true);
     input.clear();
     final id = widget.session.api.createMessageId();
     final createdAt = DateTime.now().millisecondsSinceEpoch;
     try {
       final encrypted = await CryptoService.encryptMessage(
-        text: text, chatKey: chatKey!, chatId: chatId, senderId: widget.session.userId!,
+        text: encryptedText,
+        chatKey: chatKey!,
+        chatId: chatId,
+        senderId: widget.session.userId!,
       );
       final queued = <String, dynamic>{
-        'id': id, 'senderId': widget.session.userId, ...encrypted,
-        'createdAt': createdAt, 'deliveryState': 'queued',
+        'id': id,
+        'senderId': widget.session.userId,
+        ...encrypted,
+        'createdAt': createdAt,
+        'deliveryState': 'queued',
       };
-      // Sender cache is durable before the server makes the message visible,
-      // preventing a fast receiver acknowledgement from racing the sender save.
+      // Persist the encrypted envelope before the server can expose it.
       await widget.session.saveCachedMessage(chatId, queued);
       if (mounted) {
         setState(() {
-          messages.add({...queued, 'clearText': text});
-        messageIds.add(id);
+          messages.add({
+            ...queued,
+            'messageKind': 'text',
+            'clearText': text,
+            if (reply != null) 'replyTo': reply,
+          });
+          messageIds.add(id);
           lastMessageAt = createdAt;
+          replyTarget = null;
         });
       }
       _scrollToBottom();
-      SystemSound.play(SystemSoundType.click);
+      if (widget.session.soundEffectsEnabled) {
+        SystemSound.play(SystemSoundType.click);
+      }
+      if (widget.session.vibrationEnabled) {
+        HapticFeedback.selectionClick();
+      }
       try {
         final response = await widget.session.api.sendMessage(chatId, {
-          'id': id, 'format': encrypted['format'], 'ciphertext': encrypted['ciphertext'],
-          'nonce': encrypted['nonce'], 'mac': encrypted['mac'],
+          'id': id,
+          'format': encrypted['format'],
+          'ciphertext': encrypted['ciphertext'],
+          'nonce': encrypted['nonce'],
+          'mac': encrypted['mac'],
         });
         final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
-        await widget.session.updateCachedMessage(chatId, id,
-          deliveryState: 'sent', serverMessage: serverMessage);
+        await widget.session.updateCachedMessage(
+          chatId,
+          id,
+          deliveryState: 'sent',
+          serverMessage: serverMessage,
+        );
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
           if (index >= 0) setState(() => messages[index]['deliveryState'] = 'sent');
         }
       } catch (_) {
-        if (mounted) showMessage(context, 'Saved to your outbox. CrazeChat will retry when the connection returns.');
+        if (mounted) {
+          showMessage(context, 'Saved to your outbox. CrazeChat will retry when the connection returns.');
+        }
       }
     } catch (exception) {
       input.text = text;
@@ -1331,6 +1368,91 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => sending = false);
     }
+  }
+
+  Future<void> reactToMessage(Map<String, dynamic> target, String emoji) async {
+    if (chatKey == null || sending) return;
+    final targetId = target['id']?.toString();
+    final senderId = widget.session.userId;
+    if (targetId == null || senderId == null) return;
+    final current = Map<String, dynamic>.from(
+      target['reactionsByUser'] is Map
+          ? target['reactionsByUser'] as Map
+          : const {},
+    );
+    final nextEmoji = current[senderId] == emoji ? '' : emoji;
+    final payload = jsonEncode({
+      '__cc_type': 'reaction',
+      'targetId': targetId,
+      'emoji': nextEmoji,
+    });
+    final id = widget.session.api.createMessageId();
+    final createdAt = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final encrypted = await CryptoService.encryptMessage(
+        text: payload,
+        chatKey: chatKey!,
+        chatId: chatId,
+        senderId: senderId,
+      );
+      final queued = <String, dynamic>{
+        'id': id,
+        'senderId': senderId,
+        ...encrypted,
+        'createdAt': createdAt,
+        'deliveryState': 'queued',
+      };
+      await widget.session.saveCachedMessage(chatId, queued);
+      if (!mounted) return;
+      setState(() {
+        messageIds.add(id);
+        _applyDecodedMessage({
+          ...queued,
+          'messageKind': 'reaction',
+          'reactionTargetId': targetId,
+          'reactionEmoji': nextEmoji,
+        });
+        lastMessageAt = createdAt;
+      });
+      if (widget.session.soundEffectsEnabled) {
+        SystemSound.play(SystemSoundType.click);
+      }
+      if (widget.session.vibrationEnabled) {
+        HapticFeedback.selectionClick();
+      }
+      try {
+        final response = await widget.session.api.sendMessage(chatId, {
+          'id': id,
+          'format': encrypted['format'],
+          'ciphertext': encrypted['ciphertext'],
+          'nonce': encrypted['nonce'],
+          'mac': encrypted['mac'],
+        });
+        final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
+        await widget.session.updateCachedMessage(
+          chatId,
+          id,
+          deliveryState: 'sent',
+          serverMessage: serverMessage,
+        );
+      } catch (_) {
+        if (mounted) showMessage(context, 'Reaction queued until the connection returns.');
+      }
+    } catch (exception) {
+      if (mounted) showMessage(context, 'Could not save reaction: $exception');
+    }
+  }
+
+  void _startReply(Map<String, dynamic> message) {
+    if (message['messageKind'] == 'reaction') return;
+    setState(() {
+      replyTarget = {
+        'id': message['id'],
+        'senderId': message['senderId'],
+        'clearText': message['clearText']?.toString() ?? '',
+      };
+    });
+    FocusScope.of(context).requestFocus(FocusNode());
   }
 
   Future<void> deleteMessage(Map<String, dynamic> message) async {
