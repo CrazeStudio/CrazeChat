@@ -891,6 +891,7 @@ class ChatScreen extends StatefulWidget {
 }
 class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
+  final composerFocus = FocusNode();
   final scroll = ScrollController();
   final search = TextEditingController();
   List<Map<String, dynamic>> messages = [];
@@ -940,6 +941,7 @@ class _ChatScreenState extends State<ChatScreen> {
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
+    composerFocus.dispose();
     search.removeListener(_searchChanged);
     search.dispose();
     scroll.dispose();
@@ -1452,7 +1454,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'clearText': message['clearText']?.toString() ?? '',
       };
     });
-    FocusScope.of(context).requestFocus(FocusNode());
+    FocusScope.of(context).requestFocus(composerFocus);
   }
 
   Future<void> deleteMessage(Map<String, dynamic> message) async {
@@ -1491,6 +1493,34 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          leading: const Icon(Icons.reply_rounded),
+          title: const Text('Reply'),
+          onTap: () {
+            Navigator.pop(sheetContext);
+            _startReply(message);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: ['❤️', '😂', '😮', '😢', '🙏', '👍'].map((emoji) =>
+              InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  reactToMessage(message, emoji);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                ),
+              ),
+            ).toList(),
+          ),
+        ),
+        const Divider(height: 1),
         ListTile(
           leading: const Icon(Icons.copy_rounded),
           title: const Text('Copy message'),
@@ -1531,7 +1561,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final visible = messages.where((message) =>
+      message['messageKind'] != 'reaction' &&
       (message['clearText']?.toString().toLowerCase() ?? '').contains(search.text.trim().toLowerCase())
     ).toList();
     return Scaffold(
@@ -1615,6 +1647,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ]),
               ))
             : ListView.builder(
+                key: const PageStorageKey<String>('chat-message-list'),
                 controller: scroll,
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
                 itemCount: visible.length,
@@ -1622,41 +1655,118 @@ class _ChatScreenState extends State<ChatScreen> {
                   final message = visible[index];
                   final mine = message['senderId'] == widget.session.userId;
                   final state = mine ? _outgoingState(message) : (message['deliveryState']?.toString() ?? '');
+                  final reactions = Map<String, dynamic>.from(
+                    message['reactionsByUser'] is Map ? message['reactionsByUser'] as Map : const {},
+                  );
+                  final reactionCounts = <String, int>{};
+                  for (final value in reactions.values.whereType<String>()) {
+                    reactionCounts[value] = (reactionCounts[value] ?? 0) + 1;
+                  }
+                  final reply = message['replyTo'] is Map
+                      ? Map<String, dynamic>.from(message['replyTo'] as Map)
+                      : null;
+                  final isDark = Theme.of(context).brightness == Brightness.dark;
+                  final bubbleColor = mine
+                      ? (isDark ? const Color(0xFF17483D) : const Color(0xFFE0F1E8))
+                      : (isDark ? const Color(0xFF1A2925) : Colors.white);
+                  final bubbleBorder = isDark
+                      ? const Color(0xFF2E4840)
+                      : (mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8));
                   return Align(
                     alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .84),
                       child: GestureDetector(
                         onLongPress: () => messageActions(message),
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.fromLTRB(15, 13, 15, 11),
                           decoration: BoxDecoration(
-                            color: mine ? const Color(0xFFE0F1E8) : Colors.white,
+                            color: bubbleColor,
                             borderRadius: BorderRadius.circular(19),
-                            border: Border.all(color: mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8)),
+                            border: Border.all(color: bubbleBorder),
                           ),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Row(mainAxisSize: MainAxisSize.min, children: [
                               Text(mine ? 'YOU' : (peerName ?? 'CONTACT').toUpperCase(),
-                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _brand, letterSpacing: 1)),
+                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: colors.primary, letterSpacing: 1)),
                               const SizedBox(width: 9),
-                              Text(_clock(message['createdAt']), style: const TextStyle(fontSize: 10, color: _muted)),
+                              Text(_clock(message['createdAt']),
+                                style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
                             ]),
                             const SizedBox(height: 7),
+                            if (reply != null) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                decoration: BoxDecoration(
+                                  color: colors.surface.withValues(alpha: .72),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border(
+                                    left: BorderSide(color: colors.primary, width: 3),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      reply['senderId'] == widget.session.userId ? 'You' : (peerName ?? 'Contact'),
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      reply['text']?.toString() ?? '',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             Text(message['clearText']?.toString() ?? '',
-                              style: const TextStyle(fontSize: 14, height: 1.4, color: _ink)),
+                              style: TextStyle(fontSize: 14, height: 1.4, color: colors.onSurface)),
+                            if (reactionCounts.isNotEmpty) ...[
+                              const SizedBox(height: 9),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                child: Wrap(
+                                  spacing: 5,
+                                  runSpacing: 4,
+                                  children: reactionCounts.entries.map((reactionEntry) => InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => reactToMessage(message, reactionEntry.key),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: colors.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(color: colors.outlineVariant),
+                                      ),
+                                      child: Text(
+                                        '${reactionEntry.key} ${reactionEntry.value}',
+                                        style: TextStyle(fontSize: 12, color: colors.onSurface),
+                                      ),
+                                    ),
+                                  )).toList(),
+                                ),
+                              ),
+                            ],
                             if (mine && state.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(
                                   state == 'queued' ? Icons.schedule_rounded : state == 'read' ? Icons.done_all_rounded : state == 'delivered' ? Icons.done_all_rounded : Icons.check_rounded,
-                                  size: 12, color: _brand,
+                                  size: 12, color: colors.primary,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   state == 'queued' ? 'WAITING TO SEND' : state == 'read' ? 'READ' : state == 'delivered' ? 'DELIVERED' : 'SENT',
-                                  style: const TextStyle(fontSize: 9, color: _brand, fontWeight: FontWeight.w800, letterSpacing: .3),
+                                  style: TextStyle(fontSize: 9, color: colors.primary, fontWeight: FontWeight.w800, letterSpacing: .3),
                                 ),
                               ]),
                             ],
