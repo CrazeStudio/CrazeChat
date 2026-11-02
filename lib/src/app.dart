@@ -623,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             controller: search,
             decoration: InputDecoration(
               hintText: 'Search people or conversations',
-              prefixIcon: const Icon(Icons.search_rounded, color: _muted),
+              prefixIcon: Icon(Icons.search_rounded, color: colors.onSurfaceVariant),
               suffixIcon: search.text.isEmpty
                   ? null
                   : IconButton(onPressed: search.clear, icon: const Icon(Icons.close_rounded)),
@@ -659,12 +659,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ? ListView(
                         children: [
                           const SizedBox(height: 110),
-                          const Icon(Icons.cloud_off_rounded, size: 48, color: _muted),
+                          Icon(Icons.cloud_off_rounded, size: 48, color: colors.onSurfaceVariant),
                           const SizedBox(height: 14),
                           const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
                           const Center(child: Text(
                             'Reconnecting automatically…',
-                            style: TextStyle(color: _muted, fontSize: 12),
+                            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
                           )),
                         ],
                       )
@@ -677,10 +677,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 child: Container(
                                   width: 82, height: 82,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFE5F2EB),
+                                    color: colors.secondaryContainer,
                                     borderRadius: BorderRadius.circular(28),
                                   ),
-                                  child: const Icon(Icons.forum_rounded, size: 36, color: _brand),
+                                  child: Icon(Icons.forum_rounded, size: 36, color: colors.onSecondaryContainer),
                                 ),
                               ),
                               const SizedBox(height: 18),
@@ -761,7 +761,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildSettings(BuildContext context) => ListView(
+  Widget _buildSettings(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ListView(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
     children: [
       const _Eyebrow('Your account'),
@@ -776,7 +778,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('@${widget.session.username}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
             const SizedBox(height: 4),
-            const Text('End-to-end encrypted account', style: TextStyle(color: _muted, fontSize: 12)),
+            Text('End-to-end encrypted account', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
           ])),
         ]),
       )),
@@ -857,6 +859,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       const _SecurityNote(),
     ],
   );
+  }
 
   Future<void> _showAccounts() async {
     await showModalBottomSheet<void>(
@@ -1598,7 +1601,7 @@ class _ChatScreenState extends State<ChatScreen> {
             const Row(children: [
               Icon(Icons.shield_outlined, size: 12, color: _brand),
               SizedBox(width: 4),
-              Text('Private channel', style: TextStyle(fontSize: 10, color: _muted)),
+              Text('Private channel', style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
             ]),
           ])),
         ]),
