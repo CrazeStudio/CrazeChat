@@ -83,12 +83,18 @@ for permission in (
             '    <uses-permission android:name="' + permission + '" />\\n    <application',
             1,
         )
+if "firebase_messaging_installation_id_enabled" not in s:
+    metadata = """        <meta-data
+            android:name="firebase_messaging_installation_id_enabled"
+            android:value="true" />
+"""
+    s = s.replace("</application>", metadata + "    </application>", 1)
 manifest.write_text(s)
 
 gradle = Path("android/app/build.gradle.kts")
 if gradle.exists():
     source = gradle.read_text()
-    source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
+    source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 24")
     gradle.write_text(source)
 PY
 # Install CrazeChat's native launcher artwork after Flutter generates the Android project.
