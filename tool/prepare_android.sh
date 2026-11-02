@@ -101,7 +101,7 @@ if gradle.exists():
                 raise SystemExit("Android app Gradle file has no plugins block.")
             source = source.replace(
                 "plugins {",
-                'plugins {\\n    id("com.google.gms.google-services")',
+                'plugins {\n    id("com.google.gms.google-services")',
                 1,
             )
     gradle.write_text(source)
@@ -116,7 +116,7 @@ if settings.exists() and 'id("com.google.gms.google-services")' not in settings.
         raise SystemExit("Android settings Gradle file has no plugins block.")
     source = source.replace(
         "plugins {",
-        'plugins {\\n    id("com.google.gms.google-services") version "4.5.0" apply false',
+        'plugins {\n    id("com.google.gms.google-services") version "4.5.0" apply false',
         1,
     )
     settings.write_text(source)
