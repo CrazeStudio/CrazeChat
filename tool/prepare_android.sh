@@ -66,6 +66,7 @@ python3 - <<'PY'
 from pathlib import Path
 import re
 
+firebase_file = Path("android/app/google-services.json")
 manifest = Path("android/app/src/main/AndroidManifest.xml")
 s = manifest.read_text()
 if 'android:allowBackup=' in s:
