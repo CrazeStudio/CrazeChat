@@ -191,22 +191,30 @@ class PushNotificationService {
 
   static Future<void> unregister(CrazeChatApi api) async {
     final userId = _activeUserId ?? _registeredUserId;
-    final fid = _registeredFid ??
-        (userId == null ? null : await _storage.read(key: _fidKey(userId)));
+    String? fid = _registeredFid;
+    try {
+      fid ??= userId == null
+          ? null
+          : await _storage.read(key: _fidKey(userId));
+    } catch (_) {
+      // Do not block sign-out if secure storage is temporarily unavailable.
+    }
     _activeUserId = null;
     _enabled = false;
+    var removedOnServer = fid == null;
     try {
       if (fid != null) {
         await api.unregisterPushFid(fid);
+        removedOnServer = true;
       }
     } catch (_) {
-      // A stale association is harmless: notifications contain no message text.
+      // Keep the local FID so the same account can retry cleanup next sign-in.
     } finally {
-      if (userId != null) {
+      if (userId != null && removedOnServer) {
         await _storage.delete(key: _fidKey(userId));
       }
-      _registeredFid = null;
-      _registeredUserId = null;
+      _registeredFid = removedOnServer ? null : fid;
+      _registeredUserId = removedOnServer ? null : userId;
       _registeredSoundEnabled = true;
       _registeredVibrationEnabled = true;
     }
