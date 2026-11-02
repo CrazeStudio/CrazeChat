@@ -57,25 +57,31 @@ class PushNotificationService {
   static Future<void> _persistFid(String fid) async {
     final api = _api;
     final userId = _activeUserId;
-    if (!_enabled || api == null || userId == null || api.token == null) return;
+    final sessionToken = api?.token;
+    if (!_enabled || api == null || userId == null ||
+        sessionToken == null || sessionToken.isEmpty) return;
+    // Capture the JWT at registration start. ChatSession reuses its API
+    // object when switching accounts, so a pending operation must not adopt
+    // the next account's Authorization header midway through the request.
+    final registrationApi = CrazeChatApi(token: sessionToken);
     try {
       final previousFid = _registeredFid;
       final soundEnabled = _activeSoundEnabled;
       final vibrationEnabled = _activeVibrationEnabled;
       if (previousFid != null && previousFid != fid &&
           _registeredUserId == userId) {
-        await api.unregisterPushFid(previousFid);
+        await registrationApi.unregisterPushFid(previousFid);
       }
-      await api.registerPushFid(
+      await registrationApi.registerPushFid(
         fid,
         soundEnabled: soundEnabled,
         vibrationEnabled: vibrationEnabled,
       );
       // Sign-out or account switching may have happened while the network
-      // request was in flight. Remove this late association instead of
-      // attaching a device to the account that is no longer active.
+      // request was in flight. Remove the late registration with the captured
+      // old session, never with the next account's credentials.
       if (!_enabled || _activeUserId != userId) {
-        await api.unregisterPushFid(fid);
+        await registrationApi.unregisterPushFid(fid);
         return;
       }
       _registeredFid = fid;
