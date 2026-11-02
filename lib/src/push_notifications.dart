@@ -9,7 +9,7 @@ import 'firebase_options.dart';
 // decrypted text, reply quotes or reaction payloads.
 @pragma('vm:entry-point')
 Future<void> crazeChatFirebaseBackgroundHandler(RemoteMessage message) async {
-  if (!firebasePushConfigured || defaultFirebaseOptions == null) return;
+  if (!firebasePushConfigured) return;
   try {
     await Firebase.initializeApp(options: defaultFirebaseOptions);
   } catch (_) {
@@ -38,7 +38,7 @@ class PushNotificationService {
   static String? _pendingChatId;
   static String _fidKey(String userId) => 'cc_push_fid_$userId';
   static bool get isAvailable =>
-      firebasePushConfigured && defaultFirebaseOptions != null;
+      firebasePushConfigured;
   static Stream<String> get chatOpened => _chatOpenController.stream;
 
   static String? consumePendingChatId() {
