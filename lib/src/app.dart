@@ -722,7 +722,9 @@ class _ChatScreenState extends State<ChatScreen> {
   WebSocket? realtime;
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
+  Timer? syncTimer;
   bool connectingRealtime = false;
+  bool retryingPending = false;
   int reconnectAttempt = 0;
 
   String get chatId => widget.chat['id'] as String;
@@ -739,11 +741,17 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     search.addListener(_searchChanged);
+    syncTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (!mounted) return;
+      await _retryPendingMessages();
+      await loadMessages(silent: true);
+    });
     prepare();
   }
   @override
   void dispose() {
     reconnectTimer?.cancel();
+    syncTimer?.cancel();
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
@@ -960,8 +968,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _retryPendingMessages() async {
-    final cached = await widget.session.loadCachedMessages(chatId);
-    for (final item in cached) {
+    if (retryingPending || !mounted) return;
+    retryingPending = true;
+    try {
+      final cached = await widget.session.loadCachedMessages(chatId);
+      for (final item in cached) {
       if (item['senderId'] != widget.session.userId || item['deliveryState'] != 'queued') continue;
       final id = item['id']?.toString();
       if (id == null) continue;
@@ -989,6 +1000,9 @@ class _ChatScreenState extends State<ChatScreen> {
           showMessage(context, 'A queued message needs attention: ${exception.message}');
         }
       }
+      }
+    } finally {
+      retryingPending = false;
     }
   }
 
