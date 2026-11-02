@@ -999,6 +999,8 @@ class _ChatScreenState extends State<ChatScreen> {
             exception.statusCode! < 500 && exception.statusCode != 429 && mounted) {
           showMessage(context, 'A queued message needs attention: ${exception.message}');
         }
+      } catch (_) {
+        // Keep the encrypted item queued; the next sync cycle retries it.
       }
       }
     } finally {
