@@ -29,6 +29,7 @@ class PushNotificationService {
       StreamController<String>.broadcast();
 
   static String? _pendingChatId;
+  static bool get isAvailable => firebasePushConfigured && defaultFirebaseOptions != null;
   static Stream<String> get chatOpened => _chatOpenController.stream;
 
   static String? consumePendingChatId() {
@@ -62,6 +63,7 @@ class PushNotificationService {
       try {
         await api.registerPushToken(token);
         _registeredToken = token;
+        _registeredUserId = userId;
       } catch (_) {
         // The next app resume or sign-in retries registration.
       }
