@@ -4,7 +4,7 @@ CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is e
 
 ## Read-to-purge messages
 
-Incoming messages remain visible for 10 seconds after being displayed in an open conversation. The client then sends a read acknowledgement; the backend writes a minimal purge receipt and removes the encrypted server message. Both participants synchronize purge receipts and remove the local cached copy. If the read acknowledgement cannot reach the server, the encrypted local copy remains and the next sync retries.
+When an incoming message is displayed in the open conversation, the client first persists its encrypted envelope in Android secure storage, then immediately sends a read acknowledgement. The backend atomically writes a minimal purge receipt and removes the encrypted server message. Both participants synchronize the receipt and remove the message from the live conversation UI. The encrypted local envelope is deliberately retained on each device for private offline storage; it is not deleted by server purge synchronization. Four seconds after the read acknowledgement, the client checks for the purge receipt and retries the acknowledgement if the server has not recorded it.
 
 Message send/receive actions use the platform's short system sound. Profile avatars currently use generated initials and stable colors; uploaded photo avatars are not supported yet.
 
