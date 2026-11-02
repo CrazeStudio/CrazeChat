@@ -1225,51 +1225,73 @@ class _ChatScreenState extends State<ChatScreen> {
       final raw = (messageResponse['messages'] as List? ?? const [])
           .whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value))
+          .where((message) => message['id'] is String)
           .toList();
 
-      final receivedIds = <String>[];
-      for (final message in raw) {
-        final id = message['id']?.toString();
-        if (id == null) continue;
-        final mine = message['senderId'] == widget.session.userId;
-        try {
-          // Decrypt first, then persist the encrypted envelope locally.
-          final decoded = await _decodeMessage(message);
-          await widget.session.saveCachedMessage(chatId, {
-            ...message,
-            'deliveryState': mine ? 'sent' : 'saved',
-          });
-          if (!mine) receivedIds.add(id);
-          final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-          if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
-          if (!messageIds.contains(id)) {
-            messageIds.add(id);
-            _applyDecodedMessage(decoded);
-          } else {
-            final index = messages.indexWhere((item) => item['id'] == id);
-            if (index >= 0) {
-              final priorReactions = messages[index]['reactionsByUser'];
-              messages[index] = {
-                ...decoded,
-                if (priorReactions is Map) 'reactionsByUser': priorReactions,
-              };
-            }
+      // Decrypt independently in parallel instead of waiting for each message
+      // before starting the next one. Secure-storage writes remain serialized.
+      final decodedResults = await Future.wait(
+        raw.map((message) async {
+          try {
+            return await _decodeMessage(message);
+          } catch (_) {
+            return null;
           }
-        } catch (exception) {
-          if (!silent && mounted) showMessage(context, 'Could not save message $id locally: $exception');
+        }),
+      );
+
+      final cacheBatch = <Map<String, dynamic>>[];
+      final receivedIds = <String>[];
+      final validMessages = <Map<String, dynamic>>[];
+      for (var index = 0; index < raw.length; index++) {
+        final message = raw[index];
+        final decoded = decodedResults[index];
+        if (decoded == null) continue;
+        final id = message['id'] as String;
+        final mine = message['senderId'] == widget.session.userId;
+        cacheBatch.add({
+          ...message,
+          'deliveryState': mine ? 'sent' : 'saved',
+        });
+        validMessages.add(decoded);
+        if (!mine) receivedIds.add(id);
+      }
+
+      // One index update per sync batch, rather than one read/write per message.
+      // If persistence fails, do not acknowledge: the server copy remains safe.
+      await widget.session.saveCachedMessages(chatId, cacheBatch);
+
+      for (var index = 0; index < validMessages.length; index++) {
+        final decoded = validMessages[index];
+        final id = decoded['id'] as String;
+        final timestamp = (decoded['createdAt'] as num?)?.toInt() ?? 0;
+        if (lastMessageAt == null || timestamp > lastMessageAt!) {
+          lastMessageAt = timestamp;
+        }
+        if (!messageIds.contains(id)) {
+          messageIds.add(id);
+          _applyDecodedMessage(decoded);
+        } else {
+          final existingIndex = messages.indexWhere((item) => item['id'] == id);
+          if (existingIndex >= 0) {
+            final priorReactions = messages[existingIndex]['reactionsByUser'];
+            messages[existingIndex] = {
+              ...decoded,
+              if (priorReactions is Map) 'reactionsByUser': priorReactions,
+            };
+          }
         }
       }
 
-
-
-      // Every received envelope above has been durably saved before the
-      // read acknowledgement can trigger server-side deletion.
+      // Every received encrypted envelope is safely cached before server purge.
       await _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
       if (!silent) _scrollToBottom();
     } catch (exception) {
-      if (mounted && !silent) setState(() { error = exception.toString(); loading = false; });
+      if (mounted && !silent) {
+        setState(() { error = exception.toString(); loading = false; });
+      }
     } finally {
       syncing = false;
     }
