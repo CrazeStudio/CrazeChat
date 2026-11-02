@@ -248,38 +248,59 @@ class ChatSession extends ChangeNotifier {
   String _messageIndexKey(String chatId) => 'cc_msg_index_${userId}_$chatId';
   String _messageKey(String chatId, String messageId) => 'cc_msg_${userId}_${chatId}_$messageId';
 
-  /// Persists only the encrypted envelope and delivery metadata. The receipt
-  /// endpoint must not be called until this Future completes successfully.
-  Future<void> saveCachedMessage(String chatId, Map<String, dynamic> message) async {
+  /// Persists a batch of encrypted envelopes and updates the chat index once.
+  /// The caller must await this before acknowledging messages to the server.
+  Future<void> saveCachedMessages(
+    String chatId,
+    List<Map<String, dynamic>> messages,
+  ) async {
     final uid = userId;
-    final id = message['id'];
-    if (uid == null || id is! String ||
-        !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId) ||
-        !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) {
-      throw const FormatException('Invalid local message cache record.');
+    if (uid == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId)) {
+      throw const FormatException('Invalid local message cache chat.');
     }
-    const allowed = ['id', 'senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveryState', 'deliveredTo', 'readBy'];
-    final safe = <String, dynamic>{
-      for (final field in allowed)
-        if (message.containsKey(field)) field: message[field],
-    };
-    await _storage.write(key: _messageKey(chatId, id), value: jsonEncode(safe));
+    const allowed = [
+      'id', 'senderId', 'format', 'ciphertext', 'nonce', 'mac',
+      'createdAt', 'deliveryState', 'deliveredTo', 'readBy',
+    ];
+    final ids = <String>[];
+    for (final message in messages) {
+      final id = message['id'];
+      if (id is! String || !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) {
+        throw const FormatException('Invalid local message cache record.');
+      }
+      final safe = <String, dynamic>{
+        for (final field in allowed)
+          if (message.containsKey(field)) field: message[field],
+      };
+      await _storage.write(
+        key: _messageKey(chatId, id),
+        value: jsonEncode(safe),
+      );
+      ids.add(id);
+    }
+    if (ids.isEmpty) return;
 
     final indexKey = _messageIndexKey(chatId);
     final encodedIndex = await _storage.read(key: indexKey);
-    List<String> ids = [];
+    final existing = <String>[];
     if (encodedIndex != null) {
       try {
-        ids = (jsonDecode(encodedIndex) as List).whereType<String>().toList();
+        existing.addAll(
+          (jsonDecode(encodedIndex) as List).whereType<String>(),
+        );
       } catch (_) {
-        ids = [];
+        // Rebuild a damaged index from this successfully persisted batch.
       }
     }
-    if (!ids.contains(id)) {
-      ids.add(id);
-      await _storage.write(key: indexKey, value: jsonEncode(ids));
-    }
+    final merged = <String>{...existing, ...ids}.toList();
+    await _storage.write(key: indexKey, value: jsonEncode(merged));
   }
+
+  /// Single-message compatibility wrapper.
+  Future<void> saveCachedMessage(
+    String chatId,
+    Map<String, dynamic> message,
+  ) => saveCachedMessages(chatId, [message]);
 
   Future<List<Map<String, dynamic>>> loadCachedMessages(String chatId) async {
     if (userId == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId)) return [];
