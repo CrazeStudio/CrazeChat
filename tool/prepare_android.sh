@@ -80,7 +80,7 @@ for permission in (
     if permission not in s:
         s = s.replace(
             "<application",
-            '    <uses-permission android:name="' + permission + '" />\\n    <application',
+            '    <uses-permission android:name="' + permission + '" />\n    <application',
             1,
         )
 if "firebase_messaging_installation_id_enabled" not in s:
@@ -95,7 +95,31 @@ gradle = Path("android/app/build.gradle.kts")
 if gradle.exists():
     source = gradle.read_text()
     source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 24")
+    if firebase_file.exists():
+        if 'id("com.google.gms.google-services")' not in source:
+            if "plugins {" not in source:
+                raise SystemExit("Android app Gradle file has no plugins block.")
+            source = source.replace(
+                "plugins {",
+                'plugins {\\n    id("com.google.gms.google-services")',
+                1,
+            )
     gradle.write_text(source)
+
+# The Google Services plugin is required to generate native Android resources
+# used by Firebase Messaging's default background service. Declare it at the
+# root, but apply it to the app only when google-services.json is present.
+settings = Path("android/settings.gradle.kts")
+if settings.exists() and 'id("com.google.gms.google-services")' not in settings.read_text():
+    source = settings.read_text()
+    if "plugins {" not in source:
+        raise SystemExit("Android settings Gradle file has no plugins block.")
+    source = source.replace(
+        "plugins {",
+        'plugins {\\n    id("com.google.gms.google-services") version "4.5.0" apply false',
+        1,
+    )
+    settings.write_text(source)
 PY
 # Install notification channels before background FCM delivery can use them.
 python3 - <<'PY'
