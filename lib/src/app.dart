@@ -791,10 +791,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             SwitchListTile(
               secondary: const Icon(Icons.notifications_active_outlined),
               title: const Text('Push notifications'),
-              subtitle: const Text('Receive alerts when CrazeChat is in the background'),
+              subtitle: Text(
+                PushNotificationService.isAvailable
+                    ? 'Receive alerts when CrazeChat is in the background'
+                    : 'Add this Android app to Firebase to enable background alerts',
+              ),
               value: widget.session.notificationsEnabled,
               activeThumbColor: _brand,
-              onChanged: (value) => widget.session.setNotificationsEnabled(value),
+              onChanged: PushNotificationService.isAvailable
+                  ? (value) => widget.session.setNotificationsEnabled(value)
+                  : null,
             ),
             const Divider(height: 1),
             SwitchListTile(
