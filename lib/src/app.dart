@@ -897,6 +897,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> messageIds = <String>{};
   SecretKey? chatKey;
   String? peerName, error;
+  Map<String, dynamic>? replyTarget;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
   int? lastMessageAt;
   WebSocket? realtime;
@@ -1080,11 +1081,16 @@ class _ChatScreenState extends State<ChatScreen> {
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
       if (mounted) {
         setState(() {
-          messages.add(decoded);
+          _applyDecodedMessage(decoded);
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
         _scrollToBottom();
-        SystemSound.play(SystemSoundType.alert);
+        if (widget.session.soundEffectsEnabled) {
+          SystemSound.play(SystemSoundType.alert);
+        }
+        if (widget.session.vibrationEnabled) {
+          HapticFeedback.selectionClick();
+        }
       }
       unawaited(_scheduleReadPurge([id]));
     } catch (_) {
@@ -1093,8 +1099,65 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<Map<String, dynamic>> _decodeMessage(Map<String, dynamic> message) async {
-    final clear = await CryptoService.decryptMessage(message: message, chatKey: chatKey!, chatId: chatId);
-    return {...message, 'clearText': clear};
+    final clear = await CryptoService.decryptMessage(
+      message: message,
+      chatKey: chatKey!,
+      chatId: chatId,
+    );
+    try {
+      final payload = jsonDecode(clear);
+      if (payload is Map && payload['__cc_type'] == 'reaction') {
+        return {
+          ...message,
+          'messageKind': 'reaction',
+          'reactionTargetId': payload['targetId']?.toString(),
+          'reactionEmoji': payload['emoji']?.toString() ?? '',
+        };
+      }
+      if (payload is Map && payload['__cc_type'] == 'message') {
+        return {
+          ...message,
+          'messageKind': 'text',
+          'clearText': payload['text']?.toString() ?? '',
+          if (payload['replyTo'] is Map)
+            'replyTo': Map<String, dynamic>.from(payload['replyTo'] as Map),
+        };
+      }
+    } catch (_) {
+      // Plain-text payloads from earlier versions remain readable.
+    }
+    return {...message, 'messageKind': 'text', 'clearText': clear};
+  }
+
+  void _applyDecodedMessage(Map<String, dynamic> message) {
+    if (message['messageKind'] == 'reaction') {
+      final targetId = message['reactionTargetId']?.toString();
+      final senderId = message['senderId']?.toString();
+      if (targetId != null && senderId != null) {
+        final index = messages.indexWhere((item) => item['id'] == targetId);
+        if (index >= 0) {
+          final reactions = Map<String, dynamic>.from(
+            messages[index]['reactionsByUser'] is Map
+                ? messages[index]['reactionsByUser'] as Map
+                : const {},
+          );
+          final emoji = message['reactionEmoji']?.toString() ?? '';
+          if (emoji.isEmpty) {
+            reactions.remove(senderId);
+          } else {
+            reactions[senderId] = emoji;
+          }
+          messages[index]['reactionsByUser'] = reactions;
+        }
+      }
+      // Keep encrypted reaction events in the local timeline for replay after
+      // restart, but they are not rendered as standalone message bubbles.
+      messages.add(message);
+      return;
+    }
+    final id = message['id']?.toString();
+    if (id != null && messages.any((item) => item['id'] == id)) return;
+    messages.add(message);
   }
 
   Future<void> _addLocalMessage(Map<String, dynamic> message) async {
@@ -1107,7 +1170,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
       if (mounted) {
         setState(() {
-          messages.add(decoded);
+          _applyDecodedMessage(decoded);
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
       }
@@ -1148,10 +1211,16 @@ class _ChatScreenState extends State<ChatScreen> {
           if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           if (!messageIds.contains(id)) {
             messageIds.add(id);
-            messages.add(decoded);
+            _applyDecodedMessage(decoded);
           } else {
             final index = messages.indexWhere((item) => item['id'] == id);
-            if (index >= 0) messages[index] = decoded;
+            if (index >= 0) {
+              final priorReactions = messages[index]['reactionsByUser'];
+              messages[index] = {
+                ...decoded,
+                if (priorReactions is Map) 'reactionsByUser': priorReactions,
+              };
+            }
           }
         } catch (exception) {
           if (!silent && mounted) showMessage(context, 'Could not save message $id locally: $exception');
