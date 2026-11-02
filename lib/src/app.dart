@@ -792,8 +792,17 @@ class _ChatScreenState extends State<ChatScreen> {
         chatId: chatId,
       );
       final cached = await widget.session.loadCachedMessages(chatId);
+      List<String> purgedIds = [];
+      try {
+        purgedIds = await widget.session.api.getPurgedMessageIds(chatId);
+      } catch (_) {
+        // Offline: show the encrypted local cache until server receipts can sync.
+      }
       for (final message in cached) {
-        await _addLocalMessage(message);
+        final cachedId = message['id']?.toString();
+        if (cachedId != null && !purgedIds.contains(cachedId)) {
+          await _addLocalMessage(message);
+        }
       }
       if (mounted) setState(() => loading = false);
       await loadMessages();
