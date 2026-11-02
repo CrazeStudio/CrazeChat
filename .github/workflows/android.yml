@@ -13,14 +13,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify pinned Firebase Android configuration
+        env:
+          EXPECTED_SHA256: 132e05a7048900dffe26dd831f244142061e2533ee725a9b93ed05621fe261b2
+        run: |
+          set -euo pipefail
+          CONFIG="android/app/google-services.json"
+          test -s "$CONFIG"
+          ACTUAL_SHA256="$(sha256sum "$CONFIG" | cut -d ' ' -f 1)"
+          echo "Firebase config SHA-256: $ACTUAL_SHA256"
+          if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
+            echo "::error::google-services.json fingerprint mismatch. Refusing to build."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = json.loads(Path("android/app/google-services.json").read_text())
+          assert config["project_info"]["project_id"] == "gothic-sylph-454303-k5"
+          assert config["project_info"]["firebase_url"] == "https://gothic-sylph-454303-k5-default-rtdb.firebaseio.com"
+          matches = [
+              c for c in config["client"]
+              if c.get("client_info", {}).get("android_client_info", {}).get("package_name")
+              == "com.crazestudio.crazechat"
+          ]
+          assert len(matches) == 1, "Expected exactly one CrazeChat Android app entry"
+          print("Firebase project and Android package identity verified.")
+          PY
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
       - name: Generate Android platform project
-        env:
-          FIREBASE_ANDROID_CONFIG_B64: ${{ secrets.FIREBASE_ANDROID_CONFIG_B64 }}
         run: bash tool/prepare_android.sh
 
       - name: Install Flutter packages
