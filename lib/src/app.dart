@@ -7,11 +7,11 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'crypto_service.dart';
 import 'session.dart';
+import 'push_notifications.dart';
 
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
 const _canvas = Color(0xFFF3F7F5);
-const _muted = Color(0xFF71817C);
 
 class CrazeChatApp extends StatefulWidget {
   const CrazeChatApp({super.key});
@@ -21,14 +21,36 @@ class CrazeChatApp extends StatefulWidget {
 class _CrazeChatAppState extends State<CrazeChatApp> {
   final session = ChatSession();
   @override
-  void initState() { super.initState(); session.restore(); }
+  void initState() {
+    super.initState();
+    session.addListener(_syncPushRegistration);
+    session.restore();
+  }
+
+  void _syncPushRegistration() {
+    if (mounted) setState(() {});
+    if (session.signedIn) {
+      unawaited(PushNotificationService.configure(
+        session.api,
+        userId: session.userId,
+        enabled: session.notificationsEnabled,
+        soundEnabled: session.soundEffectsEnabled,
+        vibrationEnabled: session.vibrationEnabled,
+      ));
+    }
+  }
+
   @override
-  void dispose() { session.dispose(); super.dispose(); }
+  void dispose() {
+    session.removeListener(_syncPushRegistration);
+    session.dispose();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'CrazeChat',
     debugShowCheckedModeBanner: false,
-    themeMode: ThemeMode.system,
+    themeMode: session.themeMode,
     theme: ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(seedColor: _brand, surface: Colors.white),
@@ -45,9 +67,49 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     ),
     darkTheme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: _brand, brightness: Brightness.dark),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _brand,
+        brightness: Brightness.dark,
+      ).copyWith(
+        primary: const Color(0xFF62D6AE),
+        onPrimary: const Color(0xFF06251D),
+        surface: const Color(0xFF0B1513),
+        surfaceContainer: const Color(0xFF14211E),
+        surfaceContainerHighest: const Color(0xFF20312D),
+        onSurface: const Color(0xFFF1F7F4),
+        onSurfaceVariant: const Color(0xFFB5C6BF),
+        outlineVariant: const Color(0xFF344841),
+      ),
       scaffoldBackgroundColor: const Color(0xFF0B1513),
-      cardTheme: CardThemeData(color: const Color(0xFF14211E), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF0B1513),
+        foregroundColor: Color(0xFFF1F7F4),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      inputDecorationTheme: const InputDecorationTheme(
+        filled: true,
+        fillColor: Color(0xFF1B2B27),
+        hintStyle: TextStyle(color: Color(0xFF9AAEA5)),
+        labelStyle: TextStyle(color: Color(0xFFB5C6BF)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderSide: BorderSide(color: Color(0xFF62D6AE), width: 1.2),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: const Color(0xFF14211E),
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
     ),
     home: AnimatedBuilder(
       animation: session,
@@ -68,8 +130,13 @@ class _LoadingScreen extends StatelessWidget {
 }
 
 void showMessage(BuildContext context, String message) {
+  final colors = Theme.of(context).colorScheme;
   ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(
-    SnackBar(content: Text(message), behavior: SnackBarBehavior.floating, backgroundColor: _ink),
+    SnackBar(
+      content: Text(message, style: TextStyle(color: colors.onInverseSurface)),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: colors.inverseSurface,
+    ),
   );
 }
 
@@ -120,7 +187,12 @@ class _Eyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
-    style: const TextStyle(color: _muted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5),
+    style: TextStyle(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontSize: 10,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.5,
+    ),
   );
 }
 
@@ -299,33 +371,46 @@ class HomeScreen extends StatefulWidget {
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
+  StreamSubscription<String>? pushOpenSubscription;
   List<Map<String, dynamic>> chats = [];
   final Map<String, int> sentCounts = {};
   bool loading = true, failed = false, syncingChats = false;
-  Timer? chatsPoller;
+  bool refreshingChats = false;
   int page = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     search.addListener(_changed);
+    pushOpenSubscription = PushNotificationService.chatOpened.listen(_openNotificationChat);
+    final pendingChatId = PushNotificationService.consumePendingChatId();
+    if (pendingChatId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openNotificationChat(pendingChatId));
+    }
     loadChats();
-    chatsPoller = Timer.periodic(const Duration(seconds: 4), (_) => loadChats(silent: true));
   }
   @override
   void dispose() {
-    chatsPoller?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    pushOpenSubscription?.cancel();
     search.removeListener(_changed);
     search.dispose();
     super.dispose();
   }
   void _changed() => setState(() {});
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) loadChats(silent: true);
+  }
+
   Future<void> loadChats({bool silent = false}) async {
     if (syncingChats) return;
     syncingChats = true;
+    if (mounted) setState(() => refreshingChats = true);
     try {
       final data = await widget.session.api.listChats();
       final list = (data['chats'] as List? ?? const []).whereType<Map>()
@@ -361,6 +446,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } finally {
       syncingChats = false;
+      if (mounted) setState(() => refreshingChats = false);
     }
   }
 
@@ -388,8 +474,37 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> openChat(Map<String, dynamic> chat) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(session: widget.session, chat: chat)));
+    await Navigator.of(context).push(PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 230),
+      reverseTransitionDuration: const Duration(milliseconds: 190),
+      pageBuilder: (_, __, ___) => ChatScreen(session: widget.session, chat: chat),
+      transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.035, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    ));
     if (mounted) loadChats(silent: true);
+  }
+
+  Future<void> _openNotificationChat(String chatId) async {
+    await loadChats(silent: true);
+    if (!mounted) return;
+    for (final chat in chats) {
+      if (chat['id']?.toString() == chatId) {
+        await openChat(chat);
+        return;
+      }
+    }
+    showMessage(context, 'Open CrazeChat to sync this conversation.');
   }
 
   Map<String, dynamic>? _peer(Map<String, dynamic> chat) {
@@ -436,6 +551,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Refresh conversations',
+                    onPressed: refreshingChats ? null : () => loadChats(silent: true),
+                    style: IconButton.styleFrom(
+                      backgroundColor: colors.surfaceContainerHighest,
+                      foregroundColor: colors.onSurface,
+                      fixedSize: const Size(44, 44),
+                    ),
+                    icon: refreshingChats
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh_rounded, size: 20),
+                  ),
+                  const SizedBox(width: 8),
                   IconButton(
                     tooltip: 'Account settings',
                     onPressed: () => setState(() => page = 1),
@@ -497,7 +625,7 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: search,
             decoration: InputDecoration(
               hintText: 'Search people or conversations',
-              prefixIcon: const Icon(Icons.search_rounded, color: _muted),
+              prefixIcon: Icon(Icons.search_rounded, color: colors.onSurfaceVariant),
               suffixIcon: search.text.isEmpty
                   ? null
                   : IconButton(onPressed: search.clear, icon: const Icon(Icons.close_rounded)),
@@ -533,12 +661,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? ListView(
                         children: [
                           const SizedBox(height: 110),
-                          const Icon(Icons.cloud_off_rounded, size: 48, color: _muted),
+                          Icon(Icons.cloud_off_rounded, size: 48, color: colors.onSurfaceVariant),
                           const SizedBox(height: 14),
                           const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
-                          const Center(child: Text(
+                          Center(child: Text(
                             'Reconnecting automatically…',
-                            style: TextStyle(color: _muted, fontSize: 12),
+                            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
                           )),
                         ],
                       )
@@ -551,16 +679,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: Container(
                                   width: 82, height: 82,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFE5F2EB),
+                                    color: colors.secondaryContainer,
                                     borderRadius: BorderRadius.circular(28),
                                   ),
-                                  child: const Icon(Icons.forum_rounded, size: 36, color: _brand),
+                                  child: Icon(Icons.forum_rounded, size: 36, color: colors.onSecondaryContainer),
                                 ),
                               ),
                               const SizedBox(height: 18),
                               Center(child: Text(
                                 search.text.isEmpty ? 'Your chats start here' : 'No conversations found',
-                                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink),
+                                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: colors.onSurface),
                               )),
                               const SizedBox(height: 7),
                               Center(child: Text(
@@ -568,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? 'Find someone and start a private conversation.'
                                     : 'Try another name or username.',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: _muted, fontSize: 13),
+                                style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
                               )),
                             ],
                           )
@@ -635,7 +763,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSettings(BuildContext context) => ListView(
+  Widget _buildSettings(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ListView(
     padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
     children: [
       const _Eyebrow('Your account'),
@@ -650,10 +780,71 @@ class _HomeScreenState extends State<HomeScreen> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('@${widget.session.username}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
             const SizedBox(height: 4),
-            const Text('End-to-end encrypted account', style: TextStyle(color: _muted, fontSize: 12)),
+            Text('End-to-end encrypted account', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
           ])),
         ]),
       )),
+      const SizedBox(height: 14),
+      const _Eyebrow('Experience'),
+      const SizedBox(height: 8),
+      Card(
+        child: Column(
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: const Text('Push notifications'),
+              subtitle: Text(
+                PushNotificationService.isAvailable
+                    ? 'Receive alerts when CrazeChat is in the background'
+                    : 'Add this Android app to Firebase to enable background alerts',
+              ),
+              value: widget.session.notificationsEnabled,
+              activeThumbColor: _brand,
+              onChanged: PushNotificationService.isAvailable
+                  ? (value) => widget.session.setNotificationsEnabled(value)
+                  : null,
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined),
+              title: const Text('Sound effects'),
+              subtitle: const Text('Play a short sound when messages arrive or send'),
+              value: widget.session.soundEffectsEnabled,
+              activeThumbColor: _brand,
+              onChanged: (value) => widget.session.setSoundEffectsEnabled(value),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.vibration_outlined),
+              title: const Text('Vibration'),
+              subtitle: const Text('Use light haptic feedback for message actions'),
+              value: widget.session.vibrationEnabled,
+              activeThumbColor: _brand,
+              onChanged: (value) => widget.session.setVibrationEnabled(value),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 10),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.brightness_auto_outlined)),
+                      ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
+                      ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+                    ],
+                    selected: {widget.session.themeMode},
+                    onSelectionChanged: (values) => widget.session.setThemeMode(values.first),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       const SizedBox(height: 14),
       _SettingsAction(icon: Icons.lock_outline_rounded, title: 'Lock CrazeChat',
         subtitle: 'Lock the local encryption identity', onTap: widget.session.lock),
@@ -676,6 +867,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const _SecurityNote(),
     ],
   );
+  }
 
   Future<void> _showAccounts() async {
     await showModalBottomSheet<void>(
@@ -706,16 +898,19 @@ class _SettingsAction extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Card(child: ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
-    leading: Container(width: 42, height: 42,
-      decoration: BoxDecoration(color: const Color(0xFFE7F2EC), borderRadius: BorderRadius.circular(13)),
-      child: Icon(icon, color: _brand)),
-    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-    subtitle: Text(subtitle),
-    trailing: const Icon(Icons.chevron_right_rounded),
-    onTap: onTap,
-  ));
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card(child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
+      leading: Container(width: 42, height: 42,
+        decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(13)),
+        child: Icon(icon, color: colors.onSecondaryContainer)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      trailing: Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
+      onTap: onTap,
+    ));
+  }
 }
 
 class ChatScreen extends StatefulWidget {
@@ -727,18 +922,22 @@ class ChatScreen extends StatefulWidget {
 }
 class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
+  final composerFocus = FocusNode();
   final scroll = ScrollController();
   final search = TextEditingController();
   List<Map<String, dynamic>> messages = [];
   final Set<String> messageIds = <String>{};
   SecretKey? chatKey;
   String? peerName, error;
+  Map<String, dynamic>? replyTarget;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
   int? lastMessageAt;
   WebSocket? realtime;
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
   Timer? syncTimer;
+  Timer? readAckTimer;
+  final Set<String> pendingReadAcks = <String>{};
   bool connectingRealtime = false;
   bool retryingPending = false;
   int reconnectAttempt = 0;
@@ -769,9 +968,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     reconnectTimer?.cancel();
     syncTimer?.cancel();
+    readAckTimer?.cancel();
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
+    composerFocus.dispose();
     search.removeListener(_searchChanged);
     search.dispose();
     scroll.dispose();
@@ -799,7 +1000,6 @@ class _ChatScreenState extends State<ChatScreen> {
         await _addLocalMessage(message);
       }
       if (mounted) setState(() => loading = false);
-      await loadMessages();
       _connectRealtime();
     } catch (exception) {
       if (mounted) setState(() { error = 'Could not establish the encrypted conversation: $exception'; loading = false; });
@@ -842,7 +1042,6 @@ class _ChatScreenState extends State<ChatScreen> {
     reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60).toInt()), () async {
       if (!mounted) return;
       await _retryPendingMessages();
-      await loadMessages(silent: true);
       _connectRealtime();
     });
   }
@@ -866,9 +1065,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _scheduleReadPurge(List<String> ids) async {
     if (ids.isEmpty) return;
-    // Both realtime and history paths save the encrypted envelope successfully
-    // before calling this method. No read request is sent before that save.
-    await _acknowledgeIncoming(ids, status: 'read');
+    // Coalesce realtime arrivals into one acknowledgement request. The IDs
+    // are queued only after their encrypted envelopes have been persisted.
+    pendingReadAcks.addAll(ids);
+    readAckTimer ??= Timer(const Duration(milliseconds: 350), () {
+      readAckTimer = null;
+      final batch = pendingReadAcks.toList();
+      pendingReadAcks.clear();
+      unawaited(_acknowledgeIncoming(batch, status: 'read'));
+    });
   }
 
   String _outgoingState(Map<String, dynamic> message) {
@@ -909,11 +1114,16 @@ class _ChatScreenState extends State<ChatScreen> {
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
       if (mounted) {
         setState(() {
-          messages.add(decoded);
+          _applyDecodedMessage(decoded);
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
         _scrollToBottom();
-        SystemSound.play(SystemSoundType.alert);
+        if (widget.session.soundEffectsEnabled) {
+          SystemSound.play(SystemSoundType.alert);
+        }
+        if (widget.session.vibrationEnabled) {
+          HapticFeedback.selectionClick();
+        }
       }
       unawaited(_scheduleReadPurge([id]));
     } catch (_) {
@@ -922,8 +1132,65 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<Map<String, dynamic>> _decodeMessage(Map<String, dynamic> message) async {
-    final clear = await CryptoService.decryptMessage(message: message, chatKey: chatKey!, chatId: chatId);
-    return {...message, 'clearText': clear};
+    final clear = await CryptoService.decryptMessage(
+      message: message,
+      chatKey: chatKey!,
+      chatId: chatId,
+    );
+    try {
+      final payload = jsonDecode(clear);
+      if (payload is Map && payload['__cc_type'] == 'reaction') {
+        return {
+          ...message,
+          'messageKind': 'reaction',
+          'reactionTargetId': payload['targetId']?.toString(),
+          'reactionEmoji': payload['emoji']?.toString() ?? '',
+        };
+      }
+      if (payload is Map && payload['__cc_type'] == 'message') {
+        return {
+          ...message,
+          'messageKind': 'text',
+          'clearText': payload['text']?.toString() ?? '',
+          if (payload['replyTo'] is Map)
+            'replyTo': Map<String, dynamic>.from(payload['replyTo'] as Map),
+        };
+      }
+    } catch (_) {
+      // Plain-text payloads from earlier versions remain readable.
+    }
+    return {...message, 'messageKind': 'text', 'clearText': clear};
+  }
+
+  void _applyDecodedMessage(Map<String, dynamic> message) {
+    if (message['messageKind'] == 'reaction') {
+      final targetId = message['reactionTargetId']?.toString();
+      final senderId = message['senderId']?.toString();
+      if (targetId != null && senderId != null) {
+        final index = messages.indexWhere((item) => item['id'] == targetId);
+        if (index >= 0) {
+          final reactions = Map<String, dynamic>.from(
+            messages[index]['reactionsByUser'] is Map
+                ? messages[index]['reactionsByUser'] as Map
+                : const {},
+          );
+          final emoji = message['reactionEmoji']?.toString() ?? '';
+          if (emoji.isEmpty) {
+            reactions.remove(senderId);
+          } else {
+            reactions[senderId] = emoji;
+          }
+          messages[index]['reactionsByUser'] = reactions;
+        }
+      }
+      // Keep encrypted reaction events in the local timeline for replay after
+      // restart, but they are not rendered as standalone message bubbles.
+      messages.add(message);
+      return;
+    }
+    final id = message['id']?.toString();
+    if (id != null && messages.any((item) => item['id'] == id)) return;
+    messages.add(message);
   }
 
   Future<void> _addLocalMessage(Map<String, dynamic> message) async {
@@ -936,7 +1203,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
       if (mounted) {
         setState(() {
-          messages.add(decoded);
+          _applyDecodedMessage(decoded);
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
       }
@@ -977,10 +1244,16 @@ class _ChatScreenState extends State<ChatScreen> {
           if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
           if (!messageIds.contains(id)) {
             messageIds.add(id);
-            messages.add(decoded);
+            _applyDecodedMessage(decoded);
           } else {
             final index = messages.indexWhere((item) => item['id'] == id);
-            if (index >= 0) messages[index] = decoded;
+            if (index >= 0) {
+              final priorReactions = messages[index]['reactionsByUser'];
+              messages[index] = {
+                ...decoded,
+                if (priorReactions is Map) 'reactionsByUser': priorReactions,
+              };
+            }
           }
         } catch (exception) {
           if (!silent && mounted) showMessage(context, 'Could not save message $id locally: $exception');
@@ -1046,44 +1319,81 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> send() async {
     final text = input.text.trim();
     if (text.isEmpty || sending || chatKey == null) return;
+    final reply = replyTarget == null
+        ? null
+        : <String, dynamic>{
+            'id': replyTarget!['id'],
+            'senderId': replyTarget!['senderId'],
+            'text': replyTarget!['clearText']?.toString() ?? '',
+          };
+    final encryptedText = jsonEncode({
+      '__cc_type': 'message',
+      'text': text,
+      'replyTo': reply,
+    });
     setState(() => sending = true);
     input.clear();
     final id = widget.session.api.createMessageId();
     final createdAt = DateTime.now().millisecondsSinceEpoch;
     try {
       final encrypted = await CryptoService.encryptMessage(
-        text: text, chatKey: chatKey!, chatId: chatId, senderId: widget.session.userId!,
+        text: encryptedText,
+        chatKey: chatKey!,
+        chatId: chatId,
+        senderId: widget.session.userId!,
       );
       final queued = <String, dynamic>{
-        'id': id, 'senderId': widget.session.userId, ...encrypted,
-        'createdAt': createdAt, 'deliveryState': 'queued',
+        'id': id,
+        'senderId': widget.session.userId,
+        ...encrypted,
+        'createdAt': createdAt,
+        'deliveryState': 'queued',
       };
-      // Sender cache is durable before the server makes the message visible,
-      // preventing a fast receiver acknowledgement from racing the sender save.
+      // Persist the encrypted envelope before the server can expose it.
       await widget.session.saveCachedMessage(chatId, queued);
       if (mounted) {
         setState(() {
-          messages.add({...queued, 'clearText': text});
-        messageIds.add(id);
+          messages.add({
+            ...queued,
+            'messageKind': 'text',
+            'clearText': text,
+            if (reply != null) 'replyTo': reply,
+          });
+          messageIds.add(id);
           lastMessageAt = createdAt;
+          replyTarget = null;
         });
       }
       _scrollToBottom();
-      SystemSound.play(SystemSoundType.click);
+      if (widget.session.soundEffectsEnabled) {
+        SystemSound.play(SystemSoundType.click);
+      }
+      if (widget.session.vibrationEnabled) {
+        HapticFeedback.selectionClick();
+      }
       try {
         final response = await widget.session.api.sendMessage(chatId, {
-          'id': id, 'format': encrypted['format'], 'ciphertext': encrypted['ciphertext'],
-          'nonce': encrypted['nonce'], 'mac': encrypted['mac'],
+          'id': id,
+          'format': encrypted['format'],
+          'ciphertext': encrypted['ciphertext'],
+          'nonce': encrypted['nonce'],
+          'mac': encrypted['mac'],
         });
         final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
-        await widget.session.updateCachedMessage(chatId, id,
-          deliveryState: 'sent', serverMessage: serverMessage);
+        await widget.session.updateCachedMessage(
+          chatId,
+          id,
+          deliveryState: 'sent',
+          serverMessage: serverMessage,
+        );
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
           if (index >= 0) setState(() => messages[index]['deliveryState'] = 'sent');
         }
       } catch (_) {
-        if (mounted) showMessage(context, 'Saved to your outbox. CrazeChat will retry when the connection returns.');
+        if (mounted) {
+          showMessage(context, 'Saved to your outbox. CrazeChat will retry when the connection returns.');
+        }
       }
     } catch (exception) {
       input.text = text;
@@ -1091,6 +1401,91 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => sending = false);
     }
+  }
+
+  Future<void> reactToMessage(Map<String, dynamic> target, String emoji) async {
+    if (chatKey == null || sending) return;
+    final targetId = target['id']?.toString();
+    final senderId = widget.session.userId;
+    if (targetId == null || senderId == null) return;
+    final current = Map<String, dynamic>.from(
+      target['reactionsByUser'] is Map
+          ? target['reactionsByUser'] as Map
+          : const {},
+    );
+    final nextEmoji = current[senderId] == emoji ? '' : emoji;
+    final payload = jsonEncode({
+      '__cc_type': 'reaction',
+      'targetId': targetId,
+      'emoji': nextEmoji,
+    });
+    final id = widget.session.api.createMessageId();
+    final createdAt = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final encrypted = await CryptoService.encryptMessage(
+        text: payload,
+        chatKey: chatKey!,
+        chatId: chatId,
+        senderId: senderId,
+      );
+      final queued = <String, dynamic>{
+        'id': id,
+        'senderId': senderId,
+        ...encrypted,
+        'createdAt': createdAt,
+        'deliveryState': 'queued',
+      };
+      await widget.session.saveCachedMessage(chatId, queued);
+      if (!mounted) return;
+      setState(() {
+        messageIds.add(id);
+        _applyDecodedMessage({
+          ...queued,
+          'messageKind': 'reaction',
+          'reactionTargetId': targetId,
+          'reactionEmoji': nextEmoji,
+        });
+        lastMessageAt = createdAt;
+      });
+      if (widget.session.soundEffectsEnabled) {
+        SystemSound.play(SystemSoundType.click);
+      }
+      if (widget.session.vibrationEnabled) {
+        HapticFeedback.selectionClick();
+      }
+      try {
+        final response = await widget.session.api.sendMessage(chatId, {
+          'id': id,
+          'format': encrypted['format'],
+          'ciphertext': encrypted['ciphertext'],
+          'nonce': encrypted['nonce'],
+          'mac': encrypted['mac'],
+        });
+        final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
+        await widget.session.updateCachedMessage(
+          chatId,
+          id,
+          deliveryState: 'sent',
+          serverMessage: serverMessage,
+        );
+      } catch (_) {
+        if (mounted) showMessage(context, 'Reaction queued until the connection returns.');
+      }
+    } catch (exception) {
+      if (mounted) showMessage(context, 'Could not save reaction: $exception');
+    }
+  }
+
+  void _startReply(Map<String, dynamic> message) {
+    if (message['messageKind'] == 'reaction') return;
+    setState(() {
+      replyTarget = {
+        'id': message['id'],
+        'senderId': message['senderId'],
+        'clearText': message['clearText']?.toString() ?? '',
+      };
+    });
+    FocusScope.of(context).requestFocus(composerFocus);
   }
 
   Future<void> deleteMessage(Map<String, dynamic> message) async {
@@ -1129,6 +1524,34 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          leading: const Icon(Icons.reply_rounded),
+          title: const Text('Reply'),
+          onTap: () {
+            Navigator.pop(sheetContext);
+            _startReply(message);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: ['❤️', '😂', '😮', '😢', '🙏', '👍'].map((emoji) =>
+              InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  reactToMessage(message, emoji);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                ),
+              ),
+            ).toList(),
+          ),
+        ),
+        const Divider(height: 1),
         ListTile(
           leading: const Icon(Icons.copy_rounded),
           title: const Text('Copy message'),
@@ -1169,7 +1592,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final visible = messages.where((message) =>
+      message['messageKind'] != 'reaction' &&
       (message['clearText']?.toString().toLowerCase() ?? '').contains(search.text.trim().toLowerCase())
     ).toList();
     return Scaffold(
@@ -1181,10 +1606,10 @@ class _ChatScreenState extends State<ChatScreen> {
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(peerName ?? 'Conversation', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            const Row(children: [
-              Icon(Icons.shield_outlined, size: 12, color: _brand),
-              SizedBox(width: 4),
-              Text('Private channel', style: TextStyle(fontSize: 10, color: _muted)),
+            Row(children: [
+              const Icon(Icons.shield_outlined, size: 12, color: _brand),
+              const SizedBox(width: 4),
+              Text('Private channel', style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
             ]),
           ])),
         ]),
@@ -1201,13 +1626,16 @@ class _ChatScreenState extends State<ChatScreen> {
         Container(
           margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          decoration: BoxDecoration(color: const Color(0xFFE5F2EB), borderRadius: BorderRadius.circular(14)),
-          child: const Row(children: [
-            Icon(Icons.auto_awesome_rounded, color: _brand, size: 17),
-            SizedBox(width: 8),
+          decoration: BoxDecoration(
+            color: colors.secondaryContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Icon(Icons.auto_awesome_rounded, color: colors.onSecondaryContainer, size: 17),
+            const SizedBox(width: 8),
             Expanded(child: Text(
               'END-TO-END ENCRYPTED · Messages stay available in your conversation',
-              style: TextStyle(color: Color(0xFF175C4B), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
+              style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
             )),
           ]),
         ),
@@ -1219,11 +1647,12 @@ class _ChatScreenState extends State<ChatScreen> {
         if (error != null && !loading) Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Material(
-            color: const Color(0xFFFFEDE9), borderRadius: BorderRadius.circular(12),
+            color: colors.errorContainer,
+            borderRadius: BorderRadius.circular(12),
             child: ListTile(
               dense: true,
-              leading: const Icon(Icons.cloud_off_outlined, color: Color(0xFF9B3D35)),
-              title: Text(error!, style: const TextStyle(fontSize: 12)),
+              leading: Icon(Icons.cloud_off_outlined, color: colors.onErrorContainer),
+              title: Text(error!, style: TextStyle(fontSize: 12, color: colors.onErrorContainer)),
               trailing: IconButton(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded)),
             ),
           ),
@@ -1233,9 +1662,9 @@ class _ChatScreenState extends State<ChatScreen> {
             : error != null && messages.isEmpty ? Center(child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.lock_clock_outlined, size: 48, color: _muted),
+                  Icon(Icons.lock_clock_outlined, size: 48, color: colors.onSurfaceVariant),
                   const SizedBox(height: 12),
-                  const Text('Conversation not synced'),
+                  Text('Conversation not synced', style: TextStyle(color: colors.onSurface)),
                   const SizedBox(height: 8),
                   FilledButton.icon(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded), label: const Text('Retry')),
                 ]),
@@ -1248,11 +1677,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   Text(search.text.isEmpty ? 'This channel is yours.' : 'No matching messages.',
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  const Text('Encrypted before sending. Saved on your device.',
-                    textAlign: TextAlign.center, style: TextStyle(color: _muted, fontSize: 12)),
+                  Text('Encrypted before sending. Saved on your device.',
+                    textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
                 ]),
               ))
             : ListView.builder(
+                key: const PageStorageKey<String>('chat-message-list'),
                 controller: scroll,
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
                 itemCount: visible.length,
@@ -1260,41 +1690,118 @@ class _ChatScreenState extends State<ChatScreen> {
                   final message = visible[index];
                   final mine = message['senderId'] == widget.session.userId;
                   final state = mine ? _outgoingState(message) : (message['deliveryState']?.toString() ?? '');
+                  final reactions = Map<String, dynamic>.from(
+                    message['reactionsByUser'] is Map ? message['reactionsByUser'] as Map : const {},
+                  );
+                  final reactionCounts = <String, int>{};
+                  for (final value in reactions.values.whereType<String>()) {
+                    reactionCounts[value] = (reactionCounts[value] ?? 0) + 1;
+                  }
+                  final reply = message['replyTo'] is Map
+                      ? Map<String, dynamic>.from(message['replyTo'] as Map)
+                      : null;
+                  final isDark = Theme.of(context).brightness == Brightness.dark;
+                  final bubbleColor = mine
+                      ? (isDark ? const Color(0xFF17483D) : const Color(0xFFE0F1E8))
+                      : (isDark ? const Color(0xFF1A2925) : Colors.white);
+                  final bubbleBorder = isDark
+                      ? const Color(0xFF2E4840)
+                      : (mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8));
                   return Align(
                     alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .84),
                       child: GestureDetector(
                         onLongPress: () => messageActions(message),
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.fromLTRB(15, 13, 15, 11),
                           decoration: BoxDecoration(
-                            color: mine ? const Color(0xFFE0F1E8) : Colors.white,
+                            color: bubbleColor,
                             borderRadius: BorderRadius.circular(19),
-                            border: Border.all(color: mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8)),
+                            border: Border.all(color: bubbleBorder),
                           ),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Row(mainAxisSize: MainAxisSize.min, children: [
                               Text(mine ? 'YOU' : (peerName ?? 'CONTACT').toUpperCase(),
-                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _brand, letterSpacing: 1)),
+                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: colors.primary, letterSpacing: 1)),
                               const SizedBox(width: 9),
-                              Text(_clock(message['createdAt']), style: const TextStyle(fontSize: 10, color: _muted)),
+                              Text(_clock(message['createdAt']),
+                                style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
                             ]),
                             const SizedBox(height: 7),
+                            if (reply != null) ...[
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                decoration: BoxDecoration(
+                                  color: colors.surface.withValues(alpha: .72),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border(
+                                    left: BorderSide(color: colors.primary, width: 3),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      reply['senderId'] == widget.session.userId ? 'You' : (peerName ?? 'Contact'),
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      reply['text']?.toString() ?? '',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             Text(message['clearText']?.toString() ?? '',
-                              style: const TextStyle(fontSize: 14, height: 1.4, color: _ink)),
+                              style: TextStyle(fontSize: 14, height: 1.4, color: colors.onSurface)),
+                            if (reactionCounts.isNotEmpty) ...[
+                              const SizedBox(height: 9),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                child: Wrap(
+                                  spacing: 5,
+                                  runSpacing: 4,
+                                  children: reactionCounts.entries.map((reactionEntry) => InkWell(
+                                    borderRadius: BorderRadius.circular(18),
+                                    onTap: () => reactToMessage(message, reactionEntry.key),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: colors.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(color: colors.outlineVariant),
+                                      ),
+                                      child: Text(
+                                        '${reactionEntry.key} ${reactionEntry.value}',
+                                        style: TextStyle(fontSize: 12, color: colors.onSurface),
+                                      ),
+                                    ),
+                                  )).toList(),
+                                ),
+                              ),
+                            ],
                             if (mine && state.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(
                                   state == 'queued' ? Icons.schedule_rounded : state == 'read' ? Icons.done_all_rounded : state == 'delivered' ? Icons.done_all_rounded : Icons.check_rounded,
-                                  size: 12, color: _brand,
+                                  size: 12, color: colors.primary,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   state == 'queued' ? 'WAITING TO SEND' : state == 'read' ? 'READ' : state == 'delivered' ? 'DELIVERED' : 'SENT',
-                                  style: const TextStyle(fontSize: 9, color: _brand, fontWeight: FontWeight.w800, letterSpacing: .3),
+                                  style: TextStyle(fontSize: 9, color: colors.primary, fontWeight: FontWeight.w800, letterSpacing: .3),
                                 ),
                               ]),
                             ],
@@ -1310,34 +1817,94 @@ class _ChatScreenState extends State<ChatScreen> {
           top: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(13, 9, 13, 12),
-            decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE5ECE8)))),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Expanded(child: TextField(
-                controller: input, minLines: 1, maxLines: 5,
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => send(),
-                decoration: const InputDecoration(
-                  hintText: 'Write something…',
-                  prefixIcon: Icon(Icons.edit_note_rounded),
-                  fillColor: _canvas,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              border: Border(top: BorderSide(color: colors.outlineVariant)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: replyTarget == null
+                      ? const SizedBox.shrink()
+                      : Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 9),
+                          padding: const EdgeInsets.fromLTRB(12, 9, 7, 9),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(13),
+                            border: Border(left: BorderSide(color: colors.primary, width: 3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      replyTarget!['senderId'] == widget.session.userId ? 'Replying to yourself' : 'Replying to ${peerName ?? 'contact'}',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      replyTarget!['clearText']?.toString() ?? '',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Cancel reply',
+                                onPressed: () => setState(() => replyTarget = null),
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
-              )),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 48, height: 48,
-                child: FilledButton(
-                  onPressed: sending ? null : send,
-                  style: FilledButton.styleFrom(
-                    padding: EdgeInsets.zero, backgroundColor: _brand,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(child: TextField(
+                    controller: input,
+                    focusNode: composerFocus,
+                    minLines: 1,
+                    maxLines: 5,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => send(),
+                    decoration: const InputDecoration(
+                      hintText: 'Write something…',
+                      prefixIcon: Icon(Icons.edit_note_rounded),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  )),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 48, height: 48,
+                    child: AnimatedScale(
+                      scale: sending ? .94 : 1,
+                      duration: const Duration(milliseconds: 140),
+                      child: FilledButton(
+                        onPressed: sending ? null : send,
+                        style: FilledButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.onPrimary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: sending
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.arrow_upward_rounded),
+                      ),
+                    ),
                   ),
-                  child: sending ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.arrow_upward_rounded),
-                ),
-              ),
-            ]),
+                ]),
+              ],
+            ),
           ),
         ),
       ]),

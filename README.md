@@ -103,6 +103,17 @@ flutter build apk --release \
 
 For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow has this origin as a fallback) and configure repository secret `KEY` with exactly the same value as backend `ACCESS_KEY`. The workflow compiles both values into the APK. `ACCESS_KEY` itself remains a backend environment variable and is not the Flutter build-variable name.
 
+### Background notifications (FCM)
+
+Background notifications use Firebase Cloud Messaging HTTP v1. Add an Android app in the **same Firebase project** used by CrazeStudio-Web, with package name `com.crazestudio.crazechat`, then download its `google-services.json`.
+
+- Local build: place the file at `android/app/google-services.json` before running `bash tool/prepare_android.sh`.
+- GitHub Actions: base64-encode the file and add the result as the repository secret `FIREBASE_ANDROID_CONFIG_B64`. The Android setup script generates the Dart Firebase options from it.
+- Enable the Firebase Cloud Messaging API for the Google Cloud project used by Firebase. The backend service account must be allowed to send FCM messages.
+- Keep `google-services.json` out of Git. It is ignored by `.gitignore`.
+
+The server sends a generic notification (no message text) and opaque chat/message IDs. The user opens the app to decrypt and view the locally synchronized message. Replies and reactions also travel as encrypted message envelopes. When the Firebase Android app config is absent, the app still builds but the Push notifications setting is disabled and background alerts are unavailable. Android notification permission must also be allowed by the device user.
+
 ## Database and privacy
 
 - Accounts are stored under `Users/{sha256-lowercase-username}`.
@@ -119,14 +130,16 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 - Username/password registration and login.
 - Device-encrypted identity backup and local unlock.
 - Server-verified JWT sessions and account switching.
-- Direct conversations, push-only incoming WebSocket delivery, and history sync on connect/reconnect.
-- X25519 + HKDF-SHA256 + AES-256-GCM message encryption.
+- Direct conversations, WebSocket foreground delivery, and Firebase Cloud Messaging background alerts.
+- X25519 + HKDF-SHA256 + AES-256-GCM message encryption for text, replies, and reaction events.
 - Encrypted local message cache and offline send retry.
-- Read acknowledgement triggers server-side payload deletion while retaining the encrypted local copy.
+- Read acknowledgement triggers server-side payload deletion while retaining the encrypted local copy and local reply/reaction history.
+- WhatsApp-style quoted replies and emoji reactions.
 - In-conversation search, copy, and sender-side deletion.
+- Configurable push notifications, sound effects, vibration, and System/Light/Dark appearance.
 - Local account locking and secure-storage-backed session persistence.
 
-Attachments, voice messages, reactions, group chats, and calls are not implemented in this release.
+Attachments, voice messages, group chats, and calls are not implemented in this release.
 
 ## Architecture
 
