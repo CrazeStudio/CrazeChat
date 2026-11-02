@@ -4,8 +4,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'api.dart';
 import 'firebase_options.dart';
 
-// FCM notification payloads carry only opaque routing identifiers. The
-// background OS notification never contains decrypted message text.
+// FCM notifications are generic. The background OS notification never carries
+// decrypted text, reply quotes or reaction payloads.
 @pragma('vm:entry-point')
 Future<void> crazeChatFirebaseBackgroundHandler(RemoteMessage message) async {
   if (!firebasePushConfigured || defaultFirebaseOptions == null) return;
@@ -21,15 +21,17 @@ class PushNotificationService {
 
   static bool _initialized = false;
   static bool _enabled = true;
-  static String? _registeredToken;
+  static String? _registeredFid;
   static String? _registeredUserId;
+  static String? _activeUserId;
   static CrazeChatApi? _api;
-  static StreamSubscription<String>? _tokenRefreshSubscription;
+  static Future<void>? _initializing;
   static final StreamController<String> _chatOpenController =
       StreamController<String>.broadcast();
 
   static String? _pendingChatId;
-  static bool get isAvailable => firebasePushConfigured && defaultFirebaseOptions != null;
+  static bool get isAvailable =>
+      firebasePushConfigured && defaultFirebaseOptions != null;
   static Stream<String> get chatOpened => _chatOpenController.stream;
 
   static String? consumePendingChatId() {
@@ -48,27 +50,42 @@ class PushNotificationService {
     }
   }
 
+  static Future<void> _persistFid(String fid) async {
+    final api = _api;
+    final userId = _activeUserId;
+    if (!_enabled || api == null || userId == null || api.token == null) return;
+    try {
+      await api.registerPushFid(fid);
+      _registeredFid = fid;
+      _registeredUserId = userId;
+    } catch (_) {
+      // Re-run configure/register on the next app resume or session change.
+    }
+  }
+
   static Future<void> _initializeFirebase() async {
     if (_initialized) return;
-    if (!firebasePushConfigured || defaultFirebaseOptions == null) return;
-    FirebaseMessaging.onBackgroundMessage(crazeChatFirebaseBackgroundHandler);
-    await Firebase.initializeApp(options: defaultFirebaseOptions);
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-    final initial = await FirebaseMessaging.instance.getInitialMessage();
-    if (initial != null) _handleNotificationTap(initial);
-    _tokenRefreshSubscription =
-        FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
-      final api = _api;
-      if (!_enabled || api == null) return;
-      try {
-        await api.registerPushToken(token);
-        _registeredToken = token;
-        _registeredUserId = userId;
-      } catch (_) {
-        // The next app resume or sign-in retries registration.
-      }
-    });
-    _initialized = true;
+    if (_initializing != null) return _initializing;
+    if (!isAvailable) return;
+    _initializing = () async {
+      FirebaseMessaging.onBackgroundMessage(crazeChatFirebaseBackgroundHandler);
+      await Firebase.initializeApp(options: defaultFirebaseOptions);
+      final messaging = FirebaseMessaging.instance;
+      // Listen before calling register(); FCM emits the installation ID
+      // asynchronously through onRegistered.
+      messaging.onRegistered.listen((fid) {
+        unawaited(_persistFid(fid));
+      });
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) _handleNotificationTap(initial);
+      _initialized = true;
+    }();
+    try {
+      await _initializing;
+    } finally {
+      _initializing = null;
+    }
   }
 
   static Future<void> configure(
@@ -76,8 +93,9 @@ class PushNotificationService {
     required String? userId,
     required bool enabled,
   }) async {
-    if (!firebasePushConfigured || defaultFirebaseOptions == null) return;
+    if (!isAvailable) return;
     _api = api;
+    _activeUserId = userId;
     _enabled = enabled;
     try {
       await _initializeFirebase();
@@ -88,34 +106,40 @@ class PushNotificationService {
         await messaging.setAutoInitEnabled(false);
         return;
       }
+
       await messaging.setAutoInitEnabled(true);
-      await messaging.requestPermission(
+      final permission = await messaging.requestPermission(
         alert: true,
         badge: true,
         sound: true,
       );
-      final token = await messaging.getToken();
-      if (token == null || token.isEmpty) return;
-      if (_registeredUserId == userId && _registeredToken == token) return;
-      await api.registerPushToken(token);
-      _registeredUserId = userId;
-      _registeredToken = token;
+      final permitted =
+          permission.authorizationStatus == AuthorizationStatus.authorized ||
+          permission.authorizationStatus == AuthorizationStatus.provisional;
+      if (!permitted) {
+        await unregister(api);
+        return;
+      }
+
+      if (_registeredUserId == userId && _registeredFid != null) return;
+      await messaging.register();
     } catch (_) {
-      // Push setup is optional; authentication and chat must continue to work.
+      // Push setup is optional; authentication and chat keep working.
     }
   }
 
   static Future<void> unregister(CrazeChatApi api) async {
-    final token = _registeredToken;
+    final fid = _registeredFid;
+    _activeUserId = null;
+    _enabled = false;
     try {
-      final actualToken = token ?? await FirebaseMessaging.instance.getToken();
-      if (actualToken != null && actualToken.isNotEmpty) {
-        await api.unregisterPushToken(actualToken);
+      if (fid != null) {
+        await api.unregisterPushFid(fid);
       }
     } catch (_) {
-      // A stale token will be refreshed/replaced on the next successful sign-in.
+      // A stale association is harmless: notifications contain no message text.
     } finally {
-      _registeredToken = null;
+      _registeredFid = null;
       _registeredUserId = null;
     }
   }
