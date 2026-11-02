@@ -19,6 +19,8 @@ jobs:
           cache: true
 
       - name: Generate Android platform project
+        env:
+          FIREBASE_ANDROID_CONFIG_B64: ${{ secrets.FIREBASE_ANDROID_CONFIG_B64 }}
         run: bash tool/prepare_android.sh
 
       - name: Install Flutter packages
