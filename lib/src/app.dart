@@ -578,13 +578,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             Expanded(
-              child: switch (page) {
-                0 => _buildInbox(context, chats.where((chat) {
-                  final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
-                  return name.contains(search.text.trim().toLowerCase());
-                }).toList()),
-                _ => _buildSettings(context),
-              },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                reverseDuration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.025),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: KeyedSubtree(
+                  key: ValueKey<int>(page),
+                  child: switch (page) {
+                    0 => _buildInbox(context, chats.where((chat) {
+                      final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
+                      return name.contains(search.text.trim().toLowerCase());
+                    }).toList()),
+                    _ => _buildSettings(context),
+                  },
+                ),
+              ),
             ),
           ],
         ),
