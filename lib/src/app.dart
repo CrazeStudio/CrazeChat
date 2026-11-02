@@ -868,7 +868,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scheduleReadPurge(List<String> ids) {
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) { return; }
     Future<void>.delayed(const Duration(seconds: 10), () async {
       if (!mounted) { return; }
       await _acknowledgeIncoming(ids, status: 'read');
@@ -883,9 +883,11 @@ class _ChatScreenState extends State<ChatScreen> {
         await widget.session.deleteCachedMessage(chatId, id);
         messageIds.remove(id);
       }
-      if (mounted) setState(() {
-        messages.removeWhere((message) => purgedIds.contains(message['id']?.toString()));
-      });
+      if (mounted) {
+        setState(() {
+          messages.removeWhere((message) => purgedIds.contains(message['id']?.toString()));
+        });
+      }
     } catch (_) {
       // A temporary network error is retried during the next conversation sync.
     }
