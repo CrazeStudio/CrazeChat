@@ -148,20 +148,19 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => busy = true);
     try {
       late final Map<String, dynamic> result;
-      late final KeyPair keyPair;
+      late final IdentityMaterial material;
       if (creating) {
-        final material = await CryptoService.createIdentity(pass);
+        material = await CryptoService.createIdentity(pass);
         result = await widget.session.api.register(
           username: name, password: pass, identityEnvelope: material.envelope,
         );
-        keyPair = material.keyPair;
       } else {
         result = await widget.session.api.login(username: name, password: pass);
-        keyPair = await CryptoService.unlockIdentity(
+        material = await CryptoService.unlockIdentityMaterial(
           Map<String, dynamic>.from(result['identityEnvelope'] as Map), pass,
         );
       }
-      await widget.session.acceptSession(result, keyPair);
+      await widget.session.acceptSession(result, material);
     } on ApiException catch (error) {
       if (mounted) { showMessage(context, error.message); }
     } catch (_) {
