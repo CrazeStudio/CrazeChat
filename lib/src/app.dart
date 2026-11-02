@@ -99,7 +99,10 @@ class _ProfileAvatar extends StatelessWidget {
       Color(0xFF9A6238), Color(0xFF536B36), Color(0xFF6A5AA6),
     ];
     final normalized = username.trim();
-    final color = palette[normalized.hashCode.abs() % palette.length];
+    final stableHash = normalized.codeUnits.fold<int>(
+      0, (value, unit) => (value * 31 + unit) & 0x7fffffff,
+    );
+    final color = palette[stableHash % palette.length];
     final initial = normalized.isEmpty ? '?' : normalized.substring(0, 1).toUpperCase();
     return CircleAvatar(
       radius: size / 2,
@@ -579,7 +582,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               final chat = filtered[index];
                               final peer = _peer(chat);
                               final name = peer?['username']?.toString() ?? 'Unknown user';
-                              final initial = name.isEmpty ? '?' : name[0].toUpperCase();
                               return Material(
                                 color: colors.surfaceContainer,
                                 borderRadius: BorderRadius.circular(19),
