@@ -2,17 +2,19 @@
 
 CrazeChat is a Flutter direct-messaging app by CrazeStudio. Message content is encrypted on the device with X25519, HKDF-SHA256, and AES-256-GCM. The API stores encrypted message envelopes and never receives plaintext message content.
 
-## Read-to-hide messages
+## Local message retention and server purge
 
-An incoming message is decrypted and its encrypted envelope is saved to Android secure storage before the client sends a read acknowledgement. After the backend confirms the read, the message is removed from the active conversation and marked hidden in the local encrypted cache. The backend deletes the server-side message payload directly; it does not create a Firebase `purges` collection or persist deletion tombstones. Connected participants receive a realtime deletion event so their active conversation also hides the message.
+Incoming messages are decrypted for display, then their **encrypted envelopes** are durably written to Android secure storage before a read acknowledgement is sent. The backend deletes its Firebase message payload after the read acknowledgement succeeds. That server-side deletion never removes or hides the receiver's local copy: ChatView reloads the encrypted local history on every open, including after an app restart.
 
-There is no four-second polling request. If another device is offline when the deletion event is broadcast, it cannot receive that transient event until it reconnects; its already-cached copy may remain visible. This design deliberately avoids a persistent deletion ledger in Firebase.
+The `message_deleted` WebSocket event describes remote server-copy deletion only; the client deliberately ignores it for local history. Local messages are scoped by authenticated user ID and chat ID, so switching accounts does not mix their caches. Message content is decrypted only in memory for display.
+
+There is no persistent Firebase `purges` collection or deletion tombstone. Incoming delivery is push-only over the authenticated WebSocket; message history is fetched on initial connection/reconnection. The 20-second timer retries queued outgoing messages only.
+
+**Device-retention limitation:** uninstalling the app, clearing its data, or losing the device without a backup permanently loses that device's locally retained message history after the server copy has been purged. Android secure storage protects individual cache records, but this per-message key/value cache is not a substitute for a scalable encrypted database.
 
 Message send/receive actions use the platform's short system sound. Profile avatars currently use generated initials and stable colors; uploaded photo avatars are not supported yet.
 
 The signed-in session and identity key are stored using Android secure storage backed by the platform keystore. Reopening the app restores the session and key automatically while the JWT remains valid; an expired/revoked session still requires sign-in.
-
-signed-in session and identity key are stored using Android secure storage backed by the platform keystore. Reopening the app restores the session and key automatically while the JWT remains valid; an expired/revoked session still requires sign-in.
 
 ## Architecture
 
@@ -47,8 +49,7 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | GET | `/db/chats/{chatId}/messages` | Synchronize encrypted messages |
 | POST | `/db/chats/{chatId}/messages` | Send an encrypted message |
 | DELETE | `/db/chats/{chatId}/messages/{messageId}` | Delete a message sent by the current user |
-| GET | `/db/chats/{chatId}/purges` | Synchronize CloudPurge receipts |
-| POST | `/db/chats/{chatId}/purges/{messageId}/acknowledge` | Acknowledge a received message |
+| POST | `/db/chats/{chatId}/messages/acknowledge` | Acknowledge delivery/read; a read acknowledgement purges the server payload |
 
 Every request sends `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key. The existing `POST /db` operation dispatcher and generic Firebase path operations use the same shared-key check.
 
@@ -108,7 +109,7 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 - Direct conversations are stored under `Massages/chats/{chatId}`.
 - Participants are recorded in the existing `participents` node for compatibility.
 - Encrypted messages are stored under `Massages/chats/{chatId}/massages/{messageId}`.
-- CloudPurge receipts are stored under `Massages/chats/{chatId}/purges/{messageId}`.
+- Read acknowledgements delete the server-side message payload directly; no purge receipts or tombstones are stored.
 - Firebase direct-client reads and writes must remain denied. CrazeStudio-Web accesses Firebase using its server-side service account.
 - The API validates JWT sessions and verifies conversation membership before returning or mutating conversation data.
 - The current key agreement does not yet provide forward secrecy or out-of-band public-key verification; the cryptographic design has not been independently audited.
@@ -118,10 +119,10 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 - Username/password registration and login.
 - Device-encrypted identity backup and local unlock.
 - Server-verified JWT sessions and account switching.
-- Direct conversations and periodic inbox/message synchronization.
+- Direct conversations, push-only incoming WebSocket delivery, and history sync on connect/reconnect.
 - X25519 + HKDF-SHA256 + AES-256-GCM message encryption.
 - Encrypted local message cache and offline send retry.
-- CloudPurge receipt synchronization.
+- Read acknowledgement triggers server-side payload deletion while retaining the encrypted local copy.
 - In-conversation search, copy, and sender-side deletion.
 - Local account locking and secure-storage-backed session persistence.
 
@@ -160,8 +161,7 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | GET | `/db/chats/{chatId}/messages` | Synchronize encrypted messages |
 | POST | `/db/chats/{chatId}/messages` | Send an encrypted message |
 | DELETE | `/db/chats/{chatId}/messages/{messageId}` | Delete a message sent by the current user |
-| GET | `/db/chats/{chatId}/purges` | Synchronize CloudPurge receipts |
-| POST | `/db/chats/{chatId}/purges/{messageId}/acknowledge` | Acknowledge a received message |
+| POST | `/db/chats/{chatId}/messages/acknowledge` | Acknowledge delivery/read; a read acknowledgement purges the server payload |
 
 Every request sends `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key. The existing `POST /db` operation dispatcher and generic Firebase path operations use the same shared-key check.
 
@@ -221,7 +221,7 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 - Direct conversations are stored under `Massages/chats/{chatId}`.
 - Participants are recorded in the existing `participents` node for compatibility.
 - Encrypted messages are stored under `Massages/chats/{chatId}/massages/{messageId}`.
-- CloudPurge receipts are stored under `Massages/chats/{chatId}/purges/{messageId}`.
+- Read acknowledgements delete the server-side message payload directly; no purge receipts or tombstones are stored.
 - Firebase direct-client reads and writes must remain denied. CrazeStudio-Web accesses Firebase using its server-side service account.
 - The API validates JWT sessions and verifies conversation membership before returning or mutating conversation data.
 - The current key agreement does not yet provide forward secrecy or out-of-band public-key verification; the cryptographic design has not been independently audited.
@@ -231,10 +231,10 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 - Username/password registration and login.
 - Device-encrypted identity backup and local unlock.
 - Server-verified JWT sessions and account switching.
-- Direct conversations and periodic inbox/message synchronization.
+- Direct conversations, push-only incoming WebSocket delivery, and history sync on connect/reconnect.
 - X25519 + HKDF-SHA256 + AES-256-GCM message encryption.
 - Encrypted local message cache and offline send retry.
-- CloudPurge receipt synchronization.
+- Read acknowledgement triggers server-side payload deletion while retaining the encrypted local copy.
 - In-conversation search, copy, and sender-side deletion.
 - Local account locking and secure-storage-backed session persistence.
 
