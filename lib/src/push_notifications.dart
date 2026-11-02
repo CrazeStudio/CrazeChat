@@ -122,19 +122,6 @@ class PushNotificationService {
       }
 
       await messaging.setAutoInitEnabled(true);
-      final permission = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      final permitted =
-          permission.authorizationStatus == AuthorizationStatus.authorized ||
-          permission.authorizationStatus == AuthorizationStatus.provisional;
-      if (!permitted) {
-        await unregister(api);
-        return;
-      }
-
       if (_registeredUserId == userId && _registeredFid != null) {
         if (_registeredSoundEnabled != soundEnabled ||
             _registeredVibrationEnabled != vibrationEnabled) {
@@ -148,6 +135,21 @@ class PushNotificationService {
         }
         return;
       }
+
+      final permission = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      final permitted =
+          permission.authorizationStatus == AuthorizationStatus.authorized ||
+          permission.authorizationStatus == AuthorizationStatus.provisional;
+      if (!permitted) {
+        await unregister(api);
+        await messaging.setAutoInitEnabled(false);
+        return;
+      }
+
       await messaging.register();
     } catch (_) {
       // Push setup is optional; authentication and chat keep working.
