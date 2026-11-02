@@ -28,6 +28,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
   }
 
   void _syncPushRegistration() {
+    if (mounted) setState(() {});
     if (session.signedIn) {
       unawaited(PushNotificationService.configure(
         session.api,
