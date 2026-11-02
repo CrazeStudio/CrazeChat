@@ -3,9 +3,14 @@ import 'dart:math';
 import 'package:cryptography/cryptography.dart';
 
 class IdentityMaterial {
-  const IdentityMaterial({required this.keyPair, required this.envelope});
+  const IdentityMaterial({
+    required this.keyPair,
+    required this.envelope,
+    required this.privateKeyBytes,
+  });
   final KeyPair keyPair;
   final Map<String, dynamic> envelope;
+  final List<int> privateKeyBytes;
 }
 
 class CryptoService {
@@ -83,7 +88,11 @@ class CryptoService {
       'publicKey': publicKeyBase64,
     };
     validateIdentityEnvelope(envelope);
-    return IdentityMaterial(keyPair: keyPair, envelope: envelope);
+    return IdentityMaterial(
+      keyPair: keyPair,
+      envelope: envelope,
+      privateKeyBytes: privateBytes,
+    );
   }
 
   static Future<KeyPair> restoreIdentityFromPrivateBytes(
@@ -101,7 +110,10 @@ class CryptoService {
     return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
   }
 
-  static Future<KeyPair> unlockIdentity(Map<String, dynamic> envelope, String password) async {
+  static Future<IdentityMaterial> unlockIdentityMaterial(
+    Map<String, dynamic> envelope,
+    String password,
+  ) async {
     validateIdentityEnvelope(envelope);
     final publicKeyBase64 = envelope['publicKey'] as String;
     final salt = _decodeExact(envelope, 'salt', 16);
@@ -116,9 +128,26 @@ class CryptoService {
       secretKey: wrappingKey,
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
-    final publicKey = SimplePublicKey(_decodeExact(envelope, 'publicKey', 32), type: KeyPairType.x25519);
-    return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
+    final publicKey = SimplePublicKey(
+      _decodeExact(envelope, 'publicKey', 32),
+      type: KeyPairType.x25519,
+    );
+    final keyPair = SimpleKeyPairData(
+      privateBytes,
+      publicKey: publicKey,
+      type: KeyPairType.x25519,
+    );
+    return IdentityMaterial(
+      keyPair: keyPair,
+      envelope: envelope,
+      privateKeyBytes: privateBytes,
+    );
   }
+
+  static Future<KeyPair> unlockIdentity(
+    Map<String, dynamic> envelope,
+    String password,
+  ) async => (await unlockIdentityMaterial(envelope, password)).keyPair;
 
   static Future<SecretKey> deriveChatKey({
     required KeyPair myKeyPair,
