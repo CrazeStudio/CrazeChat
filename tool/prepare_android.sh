@@ -97,6 +97,81 @@ if gradle.exists():
     source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 24")
     gradle.write_text(source)
 PY
+# Install notification channels before background FCM delivery can use them.
+python3 - <<'PY'
+from pathlib import Path
+
+activity = Path("android/app/src/main/kotlin/com/crazestudio/crazechat/MainActivity.kt")
+activity.parent.mkdir(parents=True, exist_ok=True)
+activity.write_text("""package com.crazestudio.crazechat
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.os.Build
+import android.os.Bundle
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        createCrazeChatNotificationChannels()
+        super.onCreate(savedInstanceState)
+    }
+
+    private fun createCrazeChatNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        createMessageChannel(manager, "crazechat_messages_default", true, true)
+        createMessageChannel(manager, "crazechat_messages_sound_only", true, false)
+        createMessageChannel(manager, "crazechat_messages_vibrate_only", false, true)
+        createMessageChannel(manager, "crazechat_messages_silent", false, false)
+    }
+
+    private fun createMessageChannel(
+        manager: NotificationManager,
+        id: String,
+        soundEnabled: Boolean,
+        vibrationEnabled: Boolean
+    ) {
+        val channel = NotificationChannel(
+            id,
+            "CrazeChat messages",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "New encrypted CrazeChat messages"
+            enableVibration(vibrationEnabled)
+            if (soundEnabled) {
+                val attributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .build()
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    attributes
+                )
+            } else {
+                setSound(null, null)
+            }
+            if (vibrationEnabled) {
+                vibrationPattern = longArrayOf(0, 180, 100, 180)
+            }
+        }
+        manager.createNotificationChannel(channel)
+    }
+}
+""")
+
+manifest = Path("android/app/src/main/AndroidManifest.xml")
+source = manifest.read_text()
+default_channel = """        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="crazechat_messages_default" />
+"""
+if "com.google.firebase.messaging.default_notification_channel_id" not in source:
+    source = source.replace("</application>", default_channel + "    </application>", 1)
+manifest.write_text(source)
+PY
 # Install CrazeChat's native launcher artwork after Flutter generates the Android project.
 python3 - <<'PY'
 from pathlib import Path
