@@ -62,7 +62,9 @@ class PushNotificationService {
     final userId = _activeUserId;
     final sessionToken = api?.token;
     if (!_enabled || api == null || userId == null ||
-        sessionToken == null || sessionToken.isEmpty) return;
+        sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
     // Capture the JWT at registration start. ChatSession reuses its API
     // object when switching accounts, so a pending operation must not adopt
     // the next account's Authorization header midway through the request.
