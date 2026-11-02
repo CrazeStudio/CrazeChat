@@ -845,7 +845,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _acknowledgeIncoming(List<String> ids, {required String status}) async {
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) { return; }
     for (var start = 0; start < ids.length; start += 100) {
       final batch = ids.skip(start).take(100).toList();
       try {
@@ -870,7 +870,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _scheduleReadPurge(List<String> ids) {
     if (ids.isEmpty) return;
     Future<void>.delayed(const Duration(seconds: 10), () async {
-      if (!mounted) return;
+      if (!mounted) { return; }
       await _acknowledgeIncoming(ids, status: 'read');
     });
   }
@@ -878,7 +878,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _syncPurges() async {
     try {
       final purgedIds = await widget.session.api.getPurgedMessageIds(chatId);
-      if (purgedIds.isEmpty) return;
+      if (purgedIds.isEmpty) { return; }
       for (final id in purgedIds) {
         await widget.session.deleteCachedMessage(chatId, id);
         messageIds.remove(id);
