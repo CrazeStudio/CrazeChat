@@ -59,15 +59,29 @@ class PushNotificationService {
     final userId = _activeUserId;
     if (!_enabled || api == null || userId == null || api.token == null) return;
     try {
+      final previousFid = _registeredFid;
+      final soundEnabled = _activeSoundEnabled;
+      final vibrationEnabled = _activeVibrationEnabled;
+      if (previousFid != null && previousFid != fid &&
+          _registeredUserId == userId) {
+        await api.unregisterPushFid(previousFid);
+      }
       await api.registerPushFid(
         fid,
-        soundEnabled: _activeSoundEnabled,
-        vibrationEnabled: _activeVibrationEnabled,
+        soundEnabled: soundEnabled,
+        vibrationEnabled: vibrationEnabled,
       );
+      // Sign-out or account switching may have happened while the network
+      // request was in flight. Remove this late association instead of
+      // attaching a device to the account that is no longer active.
+      if (!_enabled || _activeUserId != userId) {
+        await api.unregisterPushFid(fid);
+        return;
+      }
       _registeredFid = fid;
       _registeredUserId = userId;
-      _registeredSoundEnabled = _activeSoundEnabled;
-      _registeredVibrationEnabled = _activeVibrationEnabled;
+      _registeredSoundEnabled = soundEnabled;
+      _registeredVibrationEnabled = vibrationEnabled;
     } catch (_) {
       // Re-run configure/register on the next app resume or session change.
     }
