@@ -93,6 +93,28 @@ class CrazeChatApi {
     }).timeout(const Duration(seconds: 15));
   }
 
+  Future<Map<String, dynamic>> acknowledgeMessages(
+    String chatId, {
+    required List<String> messageIds,
+    required String status,
+  }) {
+    _validateId(chatId, 'conversation');
+    if (status != 'delivered' && status != 'read') {
+      throw const ApiException('Acknowledgement status must be delivered or read.', statusCode: 400);
+    }
+    final ids = messageIds.toSet().toList();
+    if (ids.isEmpty || ids.length > 100) {
+      throw const ApiException('Acknowledge between 1 and 100 messages.', statusCode: 400);
+    }
+    for (final id in ids) {
+      _validateId(id, 'message');
+    }
+    return _request('POST', 'chats/$chatId/messages/acknowledge', body: {
+      'status': status,
+      'messageIds': ids,
+    });
+  }
+
   Future<Map<String, dynamic>> deleteMessage(String chatId, String messageId) {
     _validateId(chatId, 'conversation');
     _validateId(messageId, 'message');
