@@ -24,6 +24,10 @@ class PushNotificationService {
   static String? _registeredFid;
   static String? _registeredUserId;
   static String? _activeUserId;
+  static bool _registeredSoundEnabled = true;
+  static bool _registeredVibrationEnabled = true;
+  static bool _activeSoundEnabled = true;
+  static bool _activeVibrationEnabled = true;
   static CrazeChatApi? _api;
   static Future<void>? _initializing;
   static final StreamController<String> _chatOpenController =
@@ -55,9 +59,15 @@ class PushNotificationService {
     final userId = _activeUserId;
     if (!_enabled || api == null || userId == null || api.token == null) return;
     try {
-      await api.registerPushFid(fid);
+      await api.registerPushFid(
+        fid,
+        soundEnabled: _activeSoundEnabled,
+        vibrationEnabled: _activeVibrationEnabled,
+      );
       _registeredFid = fid;
       _registeredUserId = userId;
+      _registeredSoundEnabled = _activeSoundEnabled;
+      _registeredVibrationEnabled = _activeVibrationEnabled;
     } catch (_) {
       // Re-run configure/register on the next app resume or session change.
     }
@@ -92,11 +102,15 @@ class PushNotificationService {
     CrazeChatApi api, {
     required String? userId,
     required bool enabled,
+    required bool soundEnabled,
+    required bool vibrationEnabled,
   }) async {
     if (!isAvailable) return;
     _api = api;
     _activeUserId = userId;
     _enabled = enabled;
+    _activeSoundEnabled = soundEnabled;
+    _activeVibrationEnabled = vibrationEnabled;
     try {
       await _initializeFirebase();
       if (!_initialized) return;
@@ -121,7 +135,19 @@ class PushNotificationService {
         return;
       }
 
-      if (_registeredUserId == userId && _registeredFid != null) return;
+      if (_registeredUserId == userId && _registeredFid != null) {
+        if (_registeredSoundEnabled != soundEnabled ||
+            _registeredVibrationEnabled != vibrationEnabled) {
+          await api.registerPushFid(
+            _registeredFid!,
+            soundEnabled: soundEnabled,
+            vibrationEnabled: vibrationEnabled,
+          );
+          _registeredSoundEnabled = soundEnabled;
+          _registeredVibrationEnabled = vibrationEnabled;
+        }
+        return;
+      }
       await messaging.register();
     } catch (_) {
       // Push setup is optional; authentication and chat keep working.
@@ -141,6 +167,8 @@ class PushNotificationService {
     } finally {
       _registeredFid = null;
       _registeredUserId = null;
+      _registeredSoundEnabled = true;
+      _registeredVibrationEnabled = true;
     }
   }
 }
