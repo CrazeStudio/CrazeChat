@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
+import 'push_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api.dart';
 import 'crypto_service.dart';
@@ -11,6 +13,10 @@ class ChatSession extends ChangeNotifier {
   final CrazeChatApi api;
 
   bool ready = false;
+  bool notificationsEnabled = true;
+  bool soundEffectsEnabled = true;
+  bool vibrationEnabled = true;
+  ThemeMode themeMode = ThemeMode.system;
   String? token, username, userId;
   Map<String, dynamic>? identityEnvelope;
   KeyPair? identity;
@@ -22,6 +28,14 @@ class ChatSession extends ChangeNotifier {
 
   Future<void> restore() async {
     try {
+      notificationsEnabled = (await _storage.read(key: 'pref_notifications')) != 'false';
+      soundEffectsEnabled = (await _storage.read(key: 'pref_sound_effects')) != 'false';
+      vibrationEnabled = (await _storage.read(key: 'pref_vibration')) != 'false';
+      themeMode = switch (await _storage.read(key: 'pref_theme_mode')) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
       final saved = await _storage.read(key: _accountsKey);
       if (saved != null) {
         savedAccounts = (jsonDecode(saved) as List)
@@ -126,6 +140,7 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<void> switchAccount(String targetId) async {
+    await PushNotificationService.unregister(api);
     Map<String, dynamic>? account;
     for (final item in savedAccounts) {
       if (item['userId'] == targetId) {
@@ -156,6 +171,7 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<void> addAccount() async {
+    await PushNotificationService.unregister(api);
     identity = null;
     token = null;
     username = null;
@@ -167,6 +183,7 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await PushNotificationService.unregister(api);
     if (userId != null) await _storage.delete(key: 'identityPrivateKey_$userId');
     savedAccounts.removeWhere((account) => account['userId'] == userId);
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
@@ -198,6 +215,34 @@ class ChatSession extends ChangeNotifier {
     await _storage.write(key: 'username', value: username);
     await _storage.write(key: 'userId', value: userId);
     await _storage.write(key: 'identityEnvelope', value: jsonEncode(identityEnvelope));
+  }
+
+  Future<void> setNotificationsEnabled(bool value) async {
+    notificationsEnabled = value;
+    await _storage.write(key: 'pref_notifications', value: value.toString());
+    notifyListeners();
+  }
+
+  Future<void> setSoundEffectsEnabled(bool value) async {
+    soundEffectsEnabled = value;
+    await _storage.write(key: 'pref_sound_effects', value: value.toString());
+    notifyListeners();
+  }
+
+  Future<void> setVibrationEnabled(bool value) async {
+    vibrationEnabled = value;
+    await _storage.write(key: 'pref_vibration', value: value.toString());
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(ThemeMode value) async {
+    themeMode = value;
+    await _storage.write(key: 'pref_theme_mode', value: switch (value) {
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
+      ThemeMode.system => 'system',
+    });
+    notifyListeners();
   }
 
   String _messageIndexKey(String chatId) => 'cc_msg_index_${userId}_$chatId';
