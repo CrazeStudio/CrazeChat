@@ -371,6 +371,7 @@ class HomeScreen extends StatefulWidget {
 }
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
+  StreamSubscription<String>? pushOpenSubscription;
   List<Map<String, dynamic>> chats = [];
   final Map<String, int> sentCounts = {};
   bool loading = true, failed = false, syncingChats = false;
@@ -382,11 +383,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     search.addListener(_changed);
+    pushOpenSubscription = PushNotificationService.chatOpened.listen(_openNotificationChat);
+    final pendingChatId = PushNotificationService.consumePendingChatId();
+    if (pendingChatId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openNotificationChat(pendingChatId));
+    }
     loadChats();
   }
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    pushOpenSubscription?.cancel();
     search.removeListener(_changed);
     search.dispose();
     super.dispose();
@@ -467,6 +474,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> openChat(Map<String, dynamic> chat) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(session: widget.session, chat: chat)));
     if (mounted) loadChats(silent: true);
+  }
+
+  Future<void> _openNotificationChat(String chatId) async {
+    await loadChats(silent: true);
+    if (!mounted) return;
+    for (final chat in chats) {
+      if (chat['id']?.toString() == chatId) {
+        await openChat(chat);
+        return;
+      }
+    }
+    showMessage(context, 'Open CrazeChat to sync this conversation.');
   }
 
   Map<String, dynamic>? _peer(Map<String, dynamic> chat) {
@@ -744,6 +763,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ])),
         ]),
       )),
+      const SizedBox(height: 14),
+      const _Eyebrow('Experience'),
+      const SizedBox(height: 8),
+      Card(
+        child: Column(
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: const Text('Push notifications'),
+              subtitle: const Text('Receive alerts when CrazeChat is in the background'),
+              value: widget.session.notificationsEnabled,
+              activeThumbColor: _brand,
+              onChanged: (value) => widget.session.setNotificationsEnabled(value),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined),
+              title: const Text('Sound effects'),
+              subtitle: const Text('Play a short sound when messages arrive or send'),
+              value: widget.session.soundEffectsEnabled,
+              activeThumbColor: _brand,
+              onChanged: (value) => widget.session.setSoundEffectsEnabled(value),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.vibration_outlined),
+              title: const Text('Vibration'),
+              subtitle: const Text('Use light haptic feedback for message actions'),
+              value: widget.session.vibrationEnabled,
+              activeThumbColor: _brand,
+              onChanged: (value) => widget.session.setVibrationEnabled(value),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 10),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.brightness_auto_outlined)),
+                      ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
+                      ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+                    ],
+                    selected: {widget.session.themeMode},
+                    onSelectionChanged: (values) => widget.session.setThemeMode(values.first),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       const SizedBox(height: 14),
       _SettingsAction(icon: Icons.lock_outline_rounded, title: 'Lock CrazeChat',
         subtitle: 'Lock the local encryption identity', onTap: widget.session.lock),
