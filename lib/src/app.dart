@@ -472,7 +472,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> openChat(Map<String, dynamic> chat) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(session: widget.session, chat: chat)));
+    await Navigator.of(context).push(PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 230),
+      reverseTransitionDuration: const Duration(milliseconds: 190),
+      pageBuilder: (_, __, ___) => ChatScreen(session: widget.session, chat: chat),
+      transitionsBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.035, 0),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    ));
     if (mounted) loadChats(silent: true);
   }
 
@@ -669,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               const SizedBox(height: 18),
                               Center(child: Text(
                                 search.text.isEmpty ? 'Your chats start here' : 'No conversations found',
-                                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink),
+                                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: colors.onSurface),
                               )),
                               const SizedBox(height: 7),
                               Center(child: Text(
@@ -677,7 +694,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ? 'Find someone and start a private conversation.'
                                     : 'Try another name or username.',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(color: _muted, fontSize: 13),
+                                style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
                               )),
                             ],
                           )
