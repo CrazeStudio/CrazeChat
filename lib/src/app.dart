@@ -870,16 +870,19 @@ class _SettingsAction extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Card(child: ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
-    leading: Container(width: 42, height: 42,
-      decoration: BoxDecoration(color: const Color(0xFFE7F2EC), borderRadius: BorderRadius.circular(13)),
-      child: Icon(icon, color: _brand)),
-    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-    subtitle: Text(subtitle),
-    trailing: const Icon(Icons.chevron_right_rounded),
-    onTap: onTap,
-  ));
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card(child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
+      leading: Container(width: 42, height: 42,
+        decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(13)),
+        child: Icon(icon, color: colors.onSecondaryContainer)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      trailing: Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
+      onTap: onTap,
+    ));
+  }
 }
 
 class ChatScreen extends StatefulWidget {
@@ -1595,13 +1598,16 @@ class _ChatScreenState extends State<ChatScreen> {
         Container(
           margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          decoration: BoxDecoration(color: const Color(0xFFE5F2EB), borderRadius: BorderRadius.circular(14)),
-          child: const Row(children: [
-            Icon(Icons.auto_awesome_rounded, color: _brand, size: 17),
-            SizedBox(width: 8),
+          decoration: BoxDecoration(
+            color: colors.secondaryContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Icon(Icons.auto_awesome_rounded, color: colors.onSecondaryContainer, size: 17),
+            const SizedBox(width: 8),
             Expanded(child: Text(
               'END-TO-END ENCRYPTED · Messages stay available in your conversation',
-              style: TextStyle(color: Color(0xFF175C4B), fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
+              style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
             )),
           ]),
         ),
@@ -1613,11 +1619,12 @@ class _ChatScreenState extends State<ChatScreen> {
         if (error != null && !loading) Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
           child: Material(
-            color: const Color(0xFFFFEDE9), borderRadius: BorderRadius.circular(12),
+            color: colors.errorContainer,
+            borderRadius: BorderRadius.circular(12),
             child: ListTile(
               dense: true,
-              leading: const Icon(Icons.cloud_off_outlined, color: Color(0xFF9B3D35)),
-              title: Text(error!, style: const TextStyle(fontSize: 12)),
+              leading: Icon(Icons.cloud_off_outlined, color: colors.onErrorContainer),
+              title: Text(error!, style: TextStyle(fontSize: 12, color: colors.onErrorContainer)),
               trailing: IconButton(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded)),
             ),
           ),
@@ -1627,9 +1634,9 @@ class _ChatScreenState extends State<ChatScreen> {
             : error != null && messages.isEmpty ? Center(child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.lock_clock_outlined, size: 48, color: _muted),
+                  Icon(Icons.lock_clock_outlined, size: 48, color: colors.onSurfaceVariant),
                   const SizedBox(height: 12),
-                  const Text('Conversation not synced'),
+                  Text('Conversation not synced', style: TextStyle(color: colors.onSurface)),
                   const SizedBox(height: 8),
                   FilledButton.icon(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded), label: const Text('Retry')),
                 ]),
@@ -1642,8 +1649,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   Text(search.text.isEmpty ? 'This channel is yours.' : 'No matching messages.',
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  const Text('Encrypted before sending. Saved on your device.',
-                    textAlign: TextAlign.center, style: TextStyle(color: _muted, fontSize: 12)),
+                  Text('Encrypted before sending. Saved on your device.',
+                    textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
                 ]),
               ))
             : ListView.builder(
@@ -1782,34 +1789,94 @@ class _ChatScreenState extends State<ChatScreen> {
           top: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(13, 9, 13, 12),
-            decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE5ECE8)))),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Expanded(child: TextField(
-                controller: input, minLines: 1, maxLines: 5,
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => send(),
-                decoration: const InputDecoration(
-                  hintText: 'Write something…',
-                  prefixIcon: Icon(Icons.edit_note_rounded),
-                  fillColor: _canvas,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              border: Border(top: BorderSide(color: colors.outlineVariant)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: replyTarget == null
+                      ? const SizedBox.shrink()
+                      : Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 9),
+                          padding: const EdgeInsets.fromLTRB(12, 9, 7, 9),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(13),
+                            border: Border(left: BorderSide(color: colors.primary, width: 3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      replyTarget!['senderId'] == widget.session.userId ? 'Replying to yourself' : 'Replying to ${peerName ?? 'contact'}',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      replyTarget!['clearText']?.toString() ?? '',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Cancel reply',
+                                onPressed: () => setState(() => replyTarget = null),
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
-              )),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 48, height: 48,
-                child: FilledButton(
-                  onPressed: sending ? null : send,
-                  style: FilledButton.styleFrom(
-                    padding: EdgeInsets.zero, backgroundColor: _brand,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Expanded(child: TextField(
+                    controller: input,
+                    focusNode: composerFocus,
+                    minLines: 1,
+                    maxLines: 5,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => send(),
+                    decoration: const InputDecoration(
+                      hintText: 'Write something…',
+                      prefixIcon: Icon(Icons.edit_note_rounded),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  )),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 48, height: 48,
+                    child: AnimatedScale(
+                      scale: sending ? .94 : 1,
+                      duration: const Duration(milliseconds: 140),
+                      child: FilledButton(
+                        onPressed: sending ? null : send,
+                        style: FilledButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.onPrimary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: sending
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.arrow_upward_rounded),
+                      ),
+                    ),
                   ),
-                  child: sending ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.arrow_upward_rounded),
-                ),
-              ),
-            ]),
+                ]),
+              ],
+            ),
           ),
         ),
       ]),
