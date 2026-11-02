@@ -177,7 +177,7 @@ class ChatSession extends ChangeNotifier {
         !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) {
       throw const FormatException('Invalid local message cache record.');
     }
-    const allowed = ['id', 'senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveryState'];
+    const allowed = ['id', 'senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveryState', 'deliveredTo', 'readBy'];
     final safe = <String, dynamic>{
       for (final field in allowed)
         if (message.containsKey(field)) field: message[field],
@@ -230,7 +230,7 @@ class ChatSession extends ChangeNotifier {
     if (existing == null) return;
     final message = Map<String, dynamic>.from(jsonDecode(existing) as Map);
     if (serverMessage != null) {
-      for (final field in ['senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt']) {
+      for (final field in ['senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveredTo', 'readBy']) {
         if (serverMessage.containsKey(field)) message[field] = serverMessage[field];
       }
     }
