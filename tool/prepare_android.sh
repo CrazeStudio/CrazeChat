@@ -80,7 +80,7 @@ for permission in (
     if permission not in s:
         s = s.replace(
             "<application",
-            f'    <uses-permission android:name="{permission}" />\\n    <application',
+            '    <uses-permission android:name="' + permission + '" />\\n    <application',
             1,
         )
 manifest.write_text(s)
