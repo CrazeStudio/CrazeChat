@@ -56,7 +56,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
       scaffoldBackgroundColor: _canvas,
       appBarTheme: const AppBarTheme(backgroundColor: _canvas, surfaceTintColor: _canvas, elevation: 0, foregroundColor: _ink),
       cardTheme: CardThemeData(color: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
-      inputDecorationTheme: const InputDecorationTheme(
+      inputDecorationTheme: InputDecorationTheme(
         filled: true, fillColor: const Color(0xFFEAF1ED),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
@@ -86,7 +86,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
       ),
-      inputDecorationTheme: InputDecorationTheme(
+      inputDecorationTheme: const InputDecorationTheme(
         filled: true,
         fillColor: Color(0xFF1B2B27),
         hintStyle: TextStyle(color: Color(0xFF9AAEA5)),
