@@ -87,6 +87,30 @@ class _BrandMark extends StatelessWidget {
   );
 }
 
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.username, this.size = 52});
+  final String username;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    const palette = [
+      Color(0xFF176B5B), Color(0xFF315D9B), Color(0xFF8A4F83),
+      Color(0xFF9A6238), Color(0xFF536B36), Color(0xFF6A5AA6),
+    ];
+    final normalized = username.trim();
+    final color = palette[normalized.hashCode.abs() % palette.length];
+    final initial = normalized.isEmpty ? '?' : normalized.substring(0, 1).toUpperCase();
+    return CircleAvatar(
+      radius: size / 2,
+      backgroundColor: color,
+      child: Text(initial, style: TextStyle(
+        color: Colors.white, fontSize: size * .39, fontWeight: FontWeight.w900,
+      )),
+    );
+  }
+}
+
 class _Eyebrow extends StatelessWidget {
   const _Eyebrow(this.text);
   final String text;
@@ -566,16 +590,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
                                     child: Row(
                                       children: [
-                                        Container(
-                                          width: 54, height: 54,
-                                          decoration: BoxDecoration(
-                                            color: colors.secondaryContainer,
-                                            borderRadius: BorderRadius.circular(19),
-                                          ),
-                                          child: Center(child: Text(initial, style: TextStyle(
-                                            color: colors.onSecondaryContainer, fontSize: 21, fontWeight: FontWeight.w900,
-                                          ))),
-                                        ),
+                                        _ProfileAvatar(username: name, size: 54),
                                         const SizedBox(width: 13),
                                         Expanded(
                                           child: Column(
@@ -629,7 +644,7 @@ class _HomeScreenState extends State<HomeScreen> {
       Card(child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(children: [
-          const _BrandMark(size: 50),
+          _ProfileAvatar(username: widget.session.username ?? 'user', size: 54),
           const SizedBox(width: 13),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('@${widget.session.username}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
@@ -836,9 +851,42 @@ class _ChatScreenState extends State<ChatScreen> {
         await widget.session.api.acknowledgeMessages(
           chatId, messageIds: batch, status: status,
         );
+        if (status == 'read') {
+          for (final id in batch) {
+            await widget.session.deleteCachedMessage(chatId, id);
+            messageIds.remove(id);
+          }
+          if (mounted) setState(() {
+            messages.removeWhere((message) => batch.contains(message['id']?.toString()));
+          });
+        }
       } catch (_) {
-        // The next history sync/realtime reconnect retries the acknowledgement.
+        // Keep the local copy if the server did not confirm the purge.
       }
+    }
+  }
+
+  void _scheduleReadPurge(List<String> ids) {
+    if (ids.isEmpty) return;
+    Future<void>.delayed(const Duration(seconds: 10), () async {
+      if (!mounted) return;
+      await _acknowledgeIncoming(ids, status: 'read');
+    });
+  }
+
+  Future<void> _syncPurges() async {
+    try {
+      final purgedIds = await widget.session.api.getPurgedMessageIds(chatId);
+      if (purgedIds.isEmpty) return;
+      for (final id in purgedIds) {
+        await widget.session.deleteCachedMessage(chatId, id);
+        messageIds.remove(id);
+      }
+      if (mounted) setState(() {
+        messages.removeWhere((message) => purgedIds.contains(message['id']?.toString()));
+      });
+    } catch (_) {
+      // A temporary network error is retried during the next conversation sync.
     }
   }
 
@@ -871,7 +919,6 @@ class _ChatScreenState extends State<ChatScreen> {
         ...message,
         'deliveryState': 'saved',
       });
-      await _acknowledgeIncoming([id], status: 'read');
       message['deliveryState'] = 'saved';
       messageIds.add(id);
       final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
@@ -882,7 +929,9 @@ class _ChatScreenState extends State<ChatScreen> {
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
         _scrollToBottom();
+        SystemSound.play(SystemSoundType.alert);
       }
+      _scheduleReadPurge([id]);
     } catch (_) {
       // The next reconnect sync recovers any event that could not be processed.
     }
@@ -917,6 +966,7 @@ class _ChatScreenState extends State<ChatScreen> {
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
+      await _syncPurges();
       final messageResponse = await widget.session.api.getMessages(
         chatId,
         since: lastMessageAt == null ? null : lastMessageAt! - 1,
@@ -956,7 +1006,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
 
-      await _acknowledgeIncoming(receivedIds, status: 'read');
+      _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() { loading = false; error = null; });
       if (!silent) _scrollToBottom();
@@ -1034,6 +1084,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
       _scrollToBottom();
+      SystemSound.play(SystemSoundType.click);
       try {
         final response = await widget.session.api.sendMessage(chatId, {
           'id': id, 'format': encrypted['format'], 'ciphertext': encrypted['ciphertext'],
@@ -1141,14 +1192,7 @@ class _ChatScreenState extends State<ChatScreen> {
         leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded)),
         titleSpacing: 0,
         title: Row(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: const Color(0xFFE1F1E9), borderRadius: BorderRadius.circular(14)),
-            child: Center(child: Text(
-              (peerName ?? '?').isEmpty ? '?' : peerName![0].toUpperCase(),
-              style: const TextStyle(color: _brand, fontWeight: FontWeight.w900),
-            )),
-          ),
+          _ProfileAvatar(username: peerName ?? 'contact', size: 40),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(peerName ?? 'Conversation', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
