@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api.dart';
 import 'firebase_options.dart';
 
@@ -19,6 +20,7 @@ Future<void> crazeChatFirebaseBackgroundHandler(RemoteMessage message) async {
 class PushNotificationService {
   PushNotificationService._();
 
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
   static bool _initialized = false;
   static bool _enabled = true;
   static String? _registeredFid;
@@ -34,6 +36,7 @@ class PushNotificationService {
       StreamController<String>.broadcast();
 
   static String? _pendingChatId;
+  static String _fidKey(String userId) => 'cc_push_fid_$userId';
   static bool get isAvailable =>
       firebasePushConfigured && defaultFirebaseOptions != null;
   static Stream<String> get chatOpened => _chatOpenController.stream;
@@ -84,6 +87,7 @@ class PushNotificationService {
         await registrationApi.unregisterPushFid(fid);
         return;
       }
+      await _storage.write(key: _fidKey(userId), value: fid);
       _registeredFid = fid;
       _registeredUserId = userId;
       _registeredSoundEnabled = soundEnabled;
@@ -141,6 +145,13 @@ class PushNotificationService {
         return;
       }
 
+      // Restore the device association after process death so sign-out and
+      // preference updates can still remove/update the correct account link.
+      if (_registeredUserId != userId || _registeredFid == null) {
+        _registeredFid = await _storage.read(key: _fidKey(userId));
+        _registeredUserId = _registeredFid == null ? null : userId;
+      }
+
       await messaging.setAutoInitEnabled(true);
       if (_registeredUserId == userId && _registeredFid != null) {
         if (_registeredSoundEnabled != soundEnabled ||
@@ -177,7 +188,9 @@ class PushNotificationService {
   }
 
   static Future<void> unregister(CrazeChatApi api) async {
-    final fid = _registeredFid;
+    final userId = _activeUserId ?? _registeredUserId;
+    final fid = _registeredFid ??
+        (userId == null ? null : await _storage.read(key: _fidKey(userId)));
     _activeUserId = null;
     _enabled = false;
     try {
@@ -187,6 +200,9 @@ class PushNotificationService {
     } catch (_) {
       // A stale association is harmless: notifications contain no message text.
     } finally {
+      if (userId != null) {
+        await _storage.delete(key: _fidKey(userId));
+      }
       _registeredFid = null;
       _registeredUserId = null;
       _registeredSoundEnabled = true;
