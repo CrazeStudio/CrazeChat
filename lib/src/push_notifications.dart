@@ -23,7 +23,7 @@ class PushNotificationService {
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
   static bool _initialized = false;
   static bool _enabled = true;
-  static String? _registeredFid;
+  static String? _registeredToken;
   static String? _registeredUserId;
   static String? _activeUserId;
   static bool _registeredSoundEnabled = true;
@@ -36,7 +36,7 @@ class PushNotificationService {
       StreamController<String>.broadcast();
 
   static String? _pendingChatId;
-  static String _fidKey(String userId) => 'cc_push_fid_$userId';
+  static String _tokenKey(String userId) => 'cc_push_token_$userId';
   static bool get isAvailable =>
       firebasePushConfigured;
   static Stream<String> get chatOpened => _chatOpenController.stream;
@@ -57,7 +57,7 @@ class PushNotificationService {
     }
   }
 
-  static Future<void> _persistFid(String fid) async {
+  static Future<void> _persistToken(String token) async {
     final api = _api;
     final userId = _activeUserId;
     final sessionToken = api?.token;
@@ -70,15 +70,15 @@ class PushNotificationService {
     // the next account's Authorization header midway through the request.
     final registrationApi = CrazeChatApi(token: sessionToken);
     try {
-      final previousFid = _registeredFid;
+      final previousToken = _registeredToken;
       final soundEnabled = _activeSoundEnabled;
       final vibrationEnabled = _activeVibrationEnabled;
-      if (previousFid != null && previousFid != fid &&
+      if (previousToken != null && previousToken != token &&
           _registeredUserId == userId) {
-        await registrationApi.unregisterPushFid(previousFid);
+        await registrationApi.unregisterPushToken(previousToken);
       }
-      await registrationApi.registerPushFid(
-        fid,
+      await registrationApi.registerPushToken(
+        token,
         soundEnabled: soundEnabled,
         vibrationEnabled: vibrationEnabled,
       );
@@ -86,11 +86,11 @@ class PushNotificationService {
       // request was in flight. Remove the late registration with the captured
       // old session, never with the next account's credentials.
       if (!_enabled || _activeUserId != userId) {
-        await registrationApi.unregisterPushFid(fid);
+        await registrationApi.unregisterPushToken(token);
         return;
       }
-      await _storage.write(key: _fidKey(userId), value: fid);
-      _registeredFid = fid;
+      await _storage.write(key: _tokenKey(userId), value: token);
+      _registeredToken = token;
       _registeredUserId = userId;
       _registeredSoundEnabled = soundEnabled;
       _registeredVibrationEnabled = vibrationEnabled;
@@ -107,10 +107,11 @@ class PushNotificationService {
       FirebaseMessaging.onBackgroundMessage(crazeChatFirebaseBackgroundHandler);
       await Firebase.initializeApp(options: defaultFirebaseOptions);
       final messaging = FirebaseMessaging.instance;
-      // Listen before calling register(); FCM emits the installation ID
-      // asynchronously through onRegistered.
-      messaging.onRegistered.listen((fid) {
-        unawaited(_persistFid(fid));
+      // Listen for token rotation so the backend always has a current send target.
+      messaging.onTokenRefresh.listen((token) {
+        unawaited(_persistToken(token));
+      }, onError: (Object error) {
+        // Retry token refresh registration on the next configure/resume.
       });
       FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
       final initial = await messaging.getInitialMessage();
@@ -149,26 +150,12 @@ class PushNotificationService {
 
       // Restore the device association after process death so sign-out and
       // preference updates can still remove/update the correct account link.
-      if (_registeredUserId != userId || _registeredFid == null) {
-        _registeredFid = await _storage.read(key: _fidKey(userId));
-        _registeredUserId = _registeredFid == null ? null : userId;
+      if (_registeredUserId != userId || _registeredToken == null) {
+        _registeredToken = await _storage.read(key: _tokenKey(userId));
+        _registeredUserId = _registeredToken == null ? null : userId;
       }
 
       await messaging.setAutoInitEnabled(true);
-      if (_registeredUserId == userId && _registeredFid != null) {
-        if (_registeredSoundEnabled != soundEnabled ||
-            _registeredVibrationEnabled != vibrationEnabled) {
-          await api.registerPushFid(
-            _registeredFid!,
-            soundEnabled: soundEnabled,
-            vibrationEnabled: vibrationEnabled,
-          );
-          _registeredSoundEnabled = soundEnabled;
-          _registeredVibrationEnabled = vibrationEnabled;
-        }
-        return;
-      }
-
       final permission = await messaging.requestPermission(
         alert: true,
         badge: true,
@@ -182,8 +169,25 @@ class PushNotificationService {
         await messaging.setAutoInitEnabled(false);
         return;
       }
+      if (_registeredUserId == userId && _registeredToken != null) {
+        if (_registeredSoundEnabled != soundEnabled ||
+            _registeredVibrationEnabled != vibrationEnabled) {
+          await api.registerPushToken(
+            _registeredToken!,
+            soundEnabled: soundEnabled,
+            vibrationEnabled: vibrationEnabled,
+          );
+          _registeredSoundEnabled = soundEnabled;
+          _registeredVibrationEnabled = vibrationEnabled;
+        }
+        return;
+      }
 
-      await messaging.register();
+      final token = await messaging.getToken();
+      if (token == null || token.isEmpty) {
+        throw StateError('Firebase did not provide an FCM registration token.');
+      }
+      await _persistToken(token);
     } catch (_) {
       // Push setup is optional; authentication and chat keep working.
     }
@@ -191,29 +195,29 @@ class PushNotificationService {
 
   static Future<void> unregister(CrazeChatApi api) async {
     final userId = _activeUserId ?? _registeredUserId;
-    String? fid = _registeredFid;
+    String? token = _registeredToken;
     try {
-      fid ??= userId == null
+      token ??= userId == null
           ? null
-          : await _storage.read(key: _fidKey(userId));
+          : await _storage.read(key: _tokenKey(userId));
     } catch (_) {
       // Do not block sign-out if secure storage is temporarily unavailable.
     }
     _activeUserId = null;
     _enabled = false;
-    var removedOnServer = fid == null;
+    var removedOnServer = token == null;
     try {
-      if (fid != null) {
-        await api.unregisterPushFid(fid);
+      if (token != null) {
+        await api.unregisterPushToken(token);
         removedOnServer = true;
       }
     } catch (_) {
       // Keep the local FID so the same account can retry cleanup next sign-in.
     } finally {
       if (userId != null && removedOnServer) {
-        await _storage.delete(key: _fidKey(userId));
+        await _storage.delete(key: _tokenKey(userId));
       }
-      _registeredFid = removedOnServer ? null : fid;
+      _registeredToken = removedOnServer ? null : token;
       _registeredUserId = removedOnServer ? null : userId;
       _registeredSoundEnabled = true;
       _registeredVibrationEnabled = true;
