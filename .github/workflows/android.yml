@@ -15,7 +15,7 @@ jobs:
 
       - name: Verify pinned Firebase Android configuration
         env:
-          EXPECTED_SHA256: fd8befced9cd8f072af74908b218ffd878a6c40f798bf93241fcfc8cce1ea95a
+          EXPECTED_SHA256: 132e05a7048900dffe26dd831f244142061e2533ee725a9b93ed05621fe261b2
         run: |
           set -euo pipefail
           CONFIG="android/app/google-services.json"
