@@ -50,7 +50,7 @@ class CrazeChatApi {
     'soundEnabled': soundEnabled,
     'vibrationEnabled': vibrationEnabled,
   });
-  Future<Map<String, dynamic>> unregisterPushToken(String fid) =>
+  Future<Map<String, dynamic>> unregisterPushToken(String token) =>
       _request('POST', 'push/unregister', body: {'token': token});
   Future<Map<String, dynamic>> listChats() => _request('GET', 'chats');
   Future<Map<String, dynamic>> createChat(String username) =>
