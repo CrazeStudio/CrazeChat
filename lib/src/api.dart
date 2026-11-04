@@ -41,17 +41,17 @@ class CrazeChatApi {
       _request('POST', 'auth/login', body: {'username': username, 'password': password});
 
   Future<Map<String, dynamic>> restoreSession() => _request('GET', 'auth/session');
-  Future<Map<String, dynamic>> registerPushToken(
-    String token, {
+  Future<Map<String, dynamic>> registerPushFid(
+    String fid, {
     required bool soundEnabled,
     required bool vibrationEnabled,
   }) => _request('POST', 'push/register', body: {
-    'token': token,
+    'fid': fid,
     'soundEnabled': soundEnabled,
     'vibrationEnabled': vibrationEnabled,
   });
-  Future<Map<String, dynamic>> unregisterPushToken(String token) =>
-      _request('POST', 'push/unregister', body: {'token': token});
+  Future<Map<String, dynamic>> unregisterPushFid(String token) =>
+      _request('POST', 'push/unregister', body: {'fid': fid});
   Future<Map<String, dynamic>> listChats() => _request('GET', 'chats');
   Future<Map<String, dynamic>> createChat(String username) =>
       _request('POST', 'chats', body: {'username': username});
