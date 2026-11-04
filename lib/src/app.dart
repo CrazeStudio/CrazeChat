@@ -1764,10 +1764,13 @@ class _ChatScreenState extends State<ChatScreen> {
                             ]),
                             const SizedBox(height: 7),
                             if (reply != null) ...[
-                              Container(
-                                width: double.infinity,
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.sizeOf(context).width * .68,
+                                ),
+                                child: Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
                                 decoration: BoxDecoration(
                                   color: colors.surface.withValues(alpha: .72),
                                   borderRadius: BorderRadius.circular(10),
@@ -1782,32 +1785,33 @@ class _ChatScreenState extends State<ChatScreen> {
                                       reply['senderId'] == widget.session.userId ? 'You' : (peerName ?? 'Contact'),
                                       style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
                                     ),
-                                    const SizedBox(height: 3),
+                                    const SizedBox(height: 2),
                                     Text(
                                       reply['text']?.toString() ?? '',
-                                      maxLines: 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
                                     ),
                                   ],
+                                ),
                                 ),
                               ),
                             ],
                             Text(message['clearText']?.toString() ?? '',
                               style: TextStyle(fontSize: 14, height: 1.4, color: colors.onSurface)),
                             if (reactionCounts.isNotEmpty) ...[
-                              const SizedBox(height: 9),
+                              const SizedBox(height: 5),
                               AnimatedSize(
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
                                 child: Wrap(
-                                  spacing: 5,
-                                  runSpacing: 4,
+                                  spacing: 4,
+                                  runSpacing: 3,
                                   children: reactionCounts.entries.map((reactionEntry) => InkWell(
                                     borderRadius: BorderRadius.circular(18),
                                     onTap: () => reactToMessage(message, reactionEntry.key),
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                       decoration: BoxDecoration(
                                         color: colors.surfaceContainerHighest,
                                         borderRadius: BorderRadius.circular(18),
@@ -1815,7 +1819,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       ),
                                       child: Text(
                                         '${reactionEntry.key} ${reactionEntry.value}',
-                                        style: TextStyle(fontSize: 12, color: colors.onSurface),
+                                        style: TextStyle(fontSize: 11, color: colors.onSurface),
                                       ),
                                     ),
                                   )).toList(),
