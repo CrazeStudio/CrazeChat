@@ -578,13 +578,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             Expanded(
-              child: switch (page) {
-                0 => _buildInbox(context, chats.where((chat) {
-                  final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
-                  return name.contains(search.text.trim().toLowerCase());
-                }).toList()),
-                _ => _buildSettings(context),
-              },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                reverseDuration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final slide = Tween<Offset>(
+                    begin: const Offset(0.025, 0),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(position: slide, child: child),
+                  );
+                },
+                child: KeyedSubtree(
+                  key: ValueKey<int>(page),
+                  child: switch (page) {
+                    0 => _buildInbox(context, chats.where((chat) {
+                      final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
+                      return name.contains(search.text.trim().toLowerCase());
+                    }).toList()),
+                    _ => _buildSettings(context),
+                  },
+                ),
+              ),
             ),
           ],
         ),
@@ -1122,7 +1141,7 @@ class _ChatScreenState extends State<ChatScreen> {
           SystemSound.play(SystemSoundType.alert);
         }
         if (widget.session.vibrationEnabled) {
-          HapticFeedback.selectionClick();
+          HapticFeedback.mediumImpact();
         }
       }
       unawaited(_scheduleReadPurge([id]));
@@ -1369,7 +1388,7 @@ class _ChatScreenState extends State<ChatScreen> {
         SystemSound.play(SystemSoundType.click);
       }
       if (widget.session.vibrationEnabled) {
-        HapticFeedback.selectionClick();
+        HapticFeedback.lightImpact();
       }
       try {
         final response = await widget.session.api.sendMessage(chatId, {
@@ -1707,7 +1726,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   final bubbleBorder = isDark
                       ? const Color(0xFF2E4840)
                       : (mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8));
-                  return Align(
+                  return TweenAnimationBuilder<double>(
+                    key: ValueKey(message['id']),
+                    tween: Tween<double>(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, progress, child) => Opacity(
+                      opacity: progress,
+                      child: Transform.translate(
+                        offset: Offset(0, (1 - progress) * 10),
+                        child: child,
+                      ),
+                    ),
+                    child: Align(
                     alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .84),
@@ -1808,6 +1839,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ]),
                         ),
                       ),
+                    ),
                     ),
                   );
                 },
