@@ -1,36 +1,62 @@
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show ThemeMode;
+
 import 'push_notifications.dart';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'api.dart';
 import 'crypto_service.dart';
 
 class ChatSession extends ChangeNotifier {
   ChatSession() : api = CrazeChatApi();
   static const _storage = FlutterSecureStorage();
+  static const autoLockDelay = Duration(minutes: 5);
+  static const _autoLockBackgroundedAtKey = 'pref_auto_lock_backgrounded_at';
+  static const _manualLockKey = 'pref_manual_lock';
   final CrazeChatApi api;
 
   bool ready = false;
   bool notificationsEnabled = true;
   bool soundEffectsEnabled = true;
   bool vibrationEnabled = true;
+  bool autoLockEnabled = true;
   ThemeMode themeMode = ThemeMode.system;
   String? token, username, userId;
   Map<String, dynamic>? identityEnvelope;
   KeyPair? identity;
   List<Map<String, dynamic>> savedAccounts = [];
   static const _accountsKey = 'savedAccounts';
+  static final _chatIdPattern = RegExp(r'^[a-f0-9]{32}$');
+  static final _messageIdPattern = RegExp(r'^[a-f0-9]{32}$');
+  final Map<String, Future<void>> _cacheWriteQueues = {};
 
   bool get signedIn => token != null && username != null;
   bool get unlocked => identity != null;
 
   Future<void> restore() async {
     try {
-      notificationsEnabled = (await _storage.read(key: 'pref_notifications')) != 'false';
-      soundEffectsEnabled = (await _storage.read(key: 'pref_sound_effects')) != 'false';
-      vibrationEnabled = (await _storage.read(key: 'pref_vibration')) != 'false';
+      notificationsEnabled =
+          (await _storage.read(key: 'pref_notifications')) != 'false';
+      soundEffectsEnabled =
+          (await _storage.read(key: 'pref_sound_effects')) != 'false';
+      vibrationEnabled =
+          (await _storage.read(key: 'pref_vibration')) != 'false';
+      autoLockEnabled = (await _storage.read(key: 'pref_auto_lock')) != 'false';
+      final backgroundedAt = int.tryParse(
+        await _storage.read(key: _autoLockBackgroundedAtKey) ?? '',
+      );
+      final autoLockExpired =
+          autoLockEnabled &&
+          backgroundedAt != null &&
+          DateTime.now().millisecondsSinceEpoch - backgroundedAt >=
+              autoLockDelay.inMilliseconds;
+      final manuallyLocked = await _storage.read(key: _manualLockKey) == 'true';
+      final requireIdentityUnlock = autoLockExpired || manuallyLocked;
       themeMode = switch (await _storage.read(key: 'pref_theme_mode')) {
         'light' => ThemeMode.light,
         'dark' => ThemeMode.dark,
@@ -47,9 +73,14 @@ class ChatSession extends ChangeNotifier {
       userId = await _storage.read(key: 'userId');
       final encoded = await _storage.read(key: 'identityEnvelope');
       if (encoded != null) {
-        identityEnvelope = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
+        identityEnvelope = Map<String, dynamic>.from(
+          jsonDecode(encoded) as Map,
+        );
       }
-      if (token == null || username == null || userId == null || identityEnvelope == null) {
+      if (token == null ||
+          username == null ||
+          userId == null ||
+          identityEnvelope == null) {
         await _clearActiveSession();
       } else {
         api.token = token;
@@ -62,15 +93,21 @@ class ChatSession extends ChangeNotifier {
           // or mismatched shared gateway credential. That is not proof that the
           // user's saved JWT is invalid; never erase local accounts on that response.
           if ((error.statusCode == 401 || error.statusCode == 403) &&
-              error.code != 'UNAUTHORIZED' && error.code != 'GATEWAY_NOT_CONFIGURED') {
+              error.code != 'UNAUTHORIZED' &&
+              error.code != 'GATEWAY_NOT_CONFIGURED') {
             savedAccounts.removeWhere((account) => account['userId'] == userId);
-            await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+            await _storage.write(
+              key: _accountsKey,
+              value: jsonEncode(savedAccounts),
+            );
             await _clearActiveSession();
           }
         }
         if (token != null && userId != null && identityEnvelope != null) {
-          final savedPrivateKey = await _storage.read(key: 'identityPrivateKey_$userId');
-          if (savedPrivateKey != null) {
+          final savedPrivateKey = await _storage.read(
+            key: 'identityPrivateKey_$userId',
+          );
+          if (savedPrivateKey != null && !requireIdentityUnlock) {
             try {
               identity = await CryptoService.restoreIdentityFromPrivateBytes(
                 identityEnvelope!,
@@ -81,15 +118,23 @@ class ChatSession extends ChangeNotifier {
             }
           }
         }
-        if (token != null && !savedAccounts.any((item) => item['userId'] == userId)) {
+        if (!autoLockExpired) {
+          await _storage.delete(key: _autoLockBackgroundedAtKey);
+        }
+        if (token != null &&
+            !savedAccounts.any((item) => item['userId'] == userId)) {
           savedAccounts.insert(0, {
             'token': token,
             'username': username,
             'userId': userId,
             'identityEnvelope': identityEnvelope,
           });
-          if (savedAccounts.length > 2) savedAccounts = savedAccounts.take(2).toList();
-          await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+          if (savedAccounts.length > 2)
+            savedAccounts = savedAccounts.take(2).toList();
+          await _storage.write(
+            key: _accountsKey,
+            value: jsonEncode(savedAccounts),
+          );
         }
       }
     } catch (_) {
@@ -100,13 +145,21 @@ class ChatSession extends ChangeNotifier {
     }
   }
 
-  Future<void> acceptSession(Map<String, dynamic> response, IdentityMaterial material) async {
+  Future<void> acceptSession(
+    Map<String, dynamic> response,
+    IdentityMaterial material,
+  ) async {
     final user = Map<String, dynamic>.from(response['user'] as Map);
     token = response['token'] as String;
     username = user['username'] as String;
     userId = user['id'] as String;
-    identityEnvelope = Map<String, dynamic>.from(response['identityEnvelope'] as Map);
+    identityEnvelope = Map<String, dynamic>.from(
+      response['identityEnvelope'] as Map,
+    );
+    _destroyIdentity();
     identity = material.keyPair;
+    await _storage.delete(key: _autoLockBackgroundedAtKey);
+    await _storage.delete(key: _manualLockKey);
     await _storage.write(
       key: 'identityPrivateKey_$userId',
       value: base64Encode(material.privateKeyBytes),
@@ -120,15 +173,21 @@ class ChatSession extends ChangeNotifier {
       'userId': userId,
       'identityEnvelope': identityEnvelope,
     });
-    if (savedAccounts.length > 2) savedAccounts = savedAccounts.take(2).toList();
+    if (savedAccounts.length > 2)
+      savedAccounts = savedAccounts.take(2).toList();
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
   }
 
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
-    if (envelope == null) throw const FormatException('No encrypted identity was saved.');
-    final material = await CryptoService.unlockIdentityMaterial(envelope, password);
+    if (envelope == null)
+      throw const FormatException('No encrypted identity was saved.');
+    final material = await CryptoService.unlockIdentityMaterial(
+      envelope,
+      password,
+    );
+    _destroyIdentity();
     identity = material.keyPair;
     if (userId != null) {
       await _storage.write(
@@ -136,7 +195,54 @@ class ChatSession extends ChangeNotifier {
         value: base64Encode(material.privateKeyBytes),
       );
     }
+    await _storage.delete(key: _autoLockBackgroundedAtKey);
+    await _storage.delete(key: _manualLockKey);
     notifyListeners();
+  }
+
+  Future<void> markAppBackgrounded() async {
+    if (!autoLockEnabled || !unlocked) return;
+    try {
+      await _storage.write(
+        key: _autoLockBackgroundedAtKey,
+        value: '${DateTime.now().millisecondsSinceEpoch}',
+      );
+    } catch (_) {
+      // A transient keystore error must not crash lifecycle handling.
+    }
+  }
+
+  Future<bool> lockIfBackgroundedLongEnough() async {
+    int? backgroundedAt;
+    try {
+      backgroundedAt = int.tryParse(
+        await _storage.read(key: _autoLockBackgroundedAtKey) ?? '',
+      );
+    } catch (_) {
+      return false;
+    }
+    final shouldLock =
+        autoLockEnabled &&
+        unlocked &&
+        backgroundedAt != null &&
+        DateTime.now().millisecondsSinceEpoch - backgroundedAt >=
+            autoLockDelay.inMilliseconds;
+    if (shouldLock) {
+      await lock();
+      return true;
+    }
+    try {
+      await _storage.delete(key: _autoLockBackgroundedAtKey);
+    } catch (_) {
+      // Leave the marker for the next resume attempt if storage is unavailable.
+    }
+    return false;
+  }
+
+  void _destroyIdentity() {
+    final current = identity;
+    identity = null;
+    current?.destroy();
   }
 
   Future<void> switchAccount(String targetId) async {
@@ -149,14 +255,18 @@ class ChatSession extends ChangeNotifier {
       }
     }
     if (account == null) return;
-    identity = null;
+    _destroyIdentity();
     token = account['token'] as String;
     username = account['username'] as String;
     userId = account['userId'] as String;
-    identityEnvelope = Map<String, dynamic>.from(account['identityEnvelope'] as Map);
+    identityEnvelope = Map<String, dynamic>.from(
+      account['identityEnvelope'] as Map,
+    );
     api.token = token;
     await _persistActive();
-    final savedPrivateKey = await _storage.read(key: 'identityPrivateKey_$targetId');
+    final savedPrivateKey = await _storage.read(
+      key: 'identityPrivateKey_$targetId',
+    );
     if (savedPrivateKey != null) {
       try {
         identity = await CryptoService.restoreIdentityFromPrivateBytes(
@@ -172,7 +282,7 @@ class ChatSession extends ChangeNotifier {
 
   Future<void> addAccount() async {
     await PushNotificationService.unregister(api);
-    identity = null;
+    _destroyIdentity();
     token = null;
     username = null;
     userId = null;
@@ -184,10 +294,11 @@ class ChatSession extends ChangeNotifier {
 
   Future<void> signOut() async {
     await PushNotificationService.unregister(api);
-    if (userId != null) await _storage.delete(key: 'identityPrivateKey_$userId');
+    if (userId != null)
+      await _storage.delete(key: 'identityPrivateKey_$userId');
     savedAccounts.removeWhere((account) => account['userId'] == userId);
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
-    identity = null;
+    _destroyIdentity();
     token = null;
     username = null;
     userId = null;
@@ -202,19 +313,24 @@ class ChatSession extends ChangeNotifier {
     username = null;
     userId = null;
     identityEnvelope = null;
-    identity = null;
+    _destroyIdentity();
     api.token = null;
     await _storage.delete(key: 'token');
     await _storage.delete(key: 'username');
     await _storage.delete(key: 'userId');
     await _storage.delete(key: 'identityEnvelope');
+    await _storage.delete(key: _autoLockBackgroundedAtKey);
+    await _storage.delete(key: _manualLockKey);
   }
 
   Future<void> _persistActive() async {
     await _storage.write(key: 'token', value: token);
     await _storage.write(key: 'username', value: username);
     await _storage.write(key: 'userId', value: userId);
-    await _storage.write(key: 'identityEnvelope', value: jsonEncode(identityEnvelope));
+    await _storage.write(
+      key: 'identityEnvelope',
+      value: jsonEncode(identityEnvelope),
+    );
   }
 
   Future<void> setNotificationsEnabled(bool value) async {
@@ -235,42 +351,119 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setThemeMode(ThemeMode value) async {
-    themeMode = value;
-    await _storage.write(key: 'pref_theme_mode', value: switch (value) {
-      ThemeMode.light => 'light',
-      ThemeMode.dark => 'dark',
-      ThemeMode.system => 'system',
-    });
+  Future<void> setAutoLockEnabled(bool value) async {
+    autoLockEnabled = value;
+    await _storage.write(key: 'pref_auto_lock', value: value.toString());
     notifyListeners();
   }
 
-  String _messageIndexKey(String chatId) => 'cc_msg_index_${userId}_$chatId';
-  String _messageKey(String chatId, String messageId) => 'cc_msg_${userId}_${chatId}_$messageId';
+  Future<void> setThemeMode(ThemeMode value) async {
+    themeMode = value;
+    await _storage.write(
+      key: 'pref_theme_mode',
+      value: switch (value) {
+        ThemeMode.light => 'light',
+        ThemeMode.dark => 'dark',
+        ThemeMode.system => 'system',
+      },
+    );
+    notifyListeners();
+  }
+
+  String _messageIndexKey(String uid, String chatId) =>
+      'cc_msg_index_${uid}_$chatId';
+  String _messageKey(String uid, String chatId, String messageId) =>
+      'cc_msg_${uid}_${chatId}_$messageId';
+  String _messageTombstoneKey(String uid, String chatId, String messageId) =>
+      'cc_msg_tombstone_${uid}_${chatId}_$messageId';
+
+  Future<void> _withCacheWriteLock(
+    String uid,
+    String chatId,
+    Future<void> Function() operation,
+  ) async {
+    final key = '$uid:$chatId';
+    final previous = _cacheWriteQueues[key] ?? Future<void>.value();
+    final release = Completer<void>();
+    final current = release.future;
+    _cacheWriteQueues[key] = current;
+    try {
+      try {
+        await previous;
+      } catch (_) {
+        // A failed write must not permanently block later cache operations.
+      }
+      await operation();
+    } finally {
+      release.complete();
+      if (identical(_cacheWriteQueues[key], current)) {
+        _cacheWriteQueues.remove(key);
+      }
+    }
+  }
 
   /// Persists only the encrypted envelope and delivery metadata. The receipt
   /// endpoint must not be called until this Future completes successfully.
-  Future<void> saveCachedMessage(String chatId, Map<String, dynamic> message) async {
+  Future<void> saveCachedMessage(
+    String chatId,
+    Map<String, dynamic> message,
+  ) async {
     final uid = userId;
     final id = message['id'];
-    if (uid == null || id is! String ||
-        !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId) ||
-        !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) {
+    if (uid == null ||
+        id is! String ||
+        !_chatIdPattern.hasMatch(chatId) ||
+        !_messageIdPattern.hasMatch(id)) {
       throw const FormatException('Invalid local message cache record.');
     }
-    const allowed = ['id', 'senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveryState', 'deliveredTo', 'readBy'];
+    await _withCacheWriteLock(uid, chatId, () async {
+      if (await _storage.read(key: _messageTombstoneKey(uid, chatId, id)) ==
+          'true')
+        return;
+      await _writeCachedMessage(uid, chatId, message);
+    });
+  }
+
+  Future<void> _writeCachedMessage(
+    String uid,
+    String chatId,
+    Map<String, dynamic> message,
+  ) async {
+    final id = message['id'] as String;
+    const allowed = [
+      'id',
+      'senderId',
+      'format',
+      'ciphertext',
+      'nonce',
+      'mac',
+      'createdAt',
+      'deliveryState',
+      'deliveredTo',
+      'readBy',
+    ];
     final safe = <String, dynamic>{
       for (final field in allowed)
         if (message.containsKey(field)) field: message[field],
     };
-    await _storage.write(key: _messageKey(chatId, id), value: jsonEncode(safe));
+    await _storage.write(
+      key: _messageKey(uid, chatId, id),
+      value: jsonEncode(safe),
+    );
 
-    final indexKey = _messageIndexKey(chatId);
+    final indexKey = _messageIndexKey(uid, chatId);
     final encodedIndex = await _storage.read(key: indexKey);
     List<String> ids = [];
     if (encodedIndex != null) {
       try {
-        ids = (jsonDecode(encodedIndex) as List).whereType<String>().toList();
+        final decoded = jsonDecode(encodedIndex);
+        if (decoded is List) {
+          ids = decoded
+              .whereType<String>()
+              .where(_messageIdPattern.hasMatch)
+              .toSet()
+              .toList();
+        }
       } catch (_) {
         ids = [];
       }
@@ -282,22 +475,52 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> loadCachedMessages(String chatId) async {
-    if (userId == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId)) return [];
-    final encodedIndex = await _storage.read(key: _messageIndexKey(chatId));
+    final uid = userId;
+    if (uid == null || !_chatIdPattern.hasMatch(chatId)) return [];
+    final encodedIndex = await _storage.read(
+      key: _messageIndexKey(uid, chatId),
+    );
     if (encodedIndex == null) return [];
-    final ids = (jsonDecode(encodedIndex) as List).whereType<String>();
+    List<dynamic> decodedIds;
+    try {
+      final decoded = jsonDecode(encodedIndex);
+      if (decoded is! List) return [];
+      decodedIds = decoded;
+    } catch (_) {
+      return [];
+    }
+    final ids = decodedIds
+        .whereType<String>()
+        .where(_messageIdPattern.hasMatch)
+        .toSet()
+        .toList();
     final records = <Map<String, dynamic>>[];
-    for (final id in ids) {
-      if (!RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) continue;
-      final encoded = await _storage.read(key: _messageKey(chatId, id));
-      if (encoded == null) continue;
-      try {
-        records.add(Map<String, dynamic>.from(jsonDecode(encoded) as Map));
-      } catch (_) {
-        // Ignore corrupt cache entries; the next sync can recover the message.
+    // Secure-storage platform-channel calls are expensive; bounded batches
+    // reduce chat-open latency without flooding the Android keystore bridge.
+    for (var start = 0; start < ids.length; start += 16) {
+      final batch = ids.skip(start).take(16).toList();
+      final encodedRecords = await Future.wait(
+        batch.map((id) async {
+          try {
+            return await _storage.read(key: _messageKey(uid, chatId, id));
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      for (final encoded in encodedRecords) {
+        if (encoded == null) continue;
+        try {
+          final decoded = jsonDecode(encoded);
+          if (decoded is Map) records.add(Map<String, dynamic>.from(decoded));
+        } catch (_) {
+          // Ignore corrupt cache entries; the next sync can recover the message.
+        }
       }
     }
-    records.sort((a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])));
+    records.sort(
+      (a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])),
+    );
     return records;
   }
 
@@ -307,41 +530,268 @@ class ChatSession extends ChangeNotifier {
     required String deliveryState,
     Map<String, dynamic>? serverMessage,
   }) async {
-    final existing = await _storage.read(key: _messageKey(chatId, messageId));
-    if (existing == null) return;
-    final message = Map<String, dynamic>.from(jsonDecode(existing) as Map);
-    if (serverMessage != null) {
-      for (final field in ['senderId', 'format', 'ciphertext', 'nonce', 'mac', 'createdAt', 'deliveredTo', 'readBy']) {
-        if (serverMessage.containsKey(field)) message[field] = serverMessage[field];
+    final uid = userId;
+    if (uid == null ||
+        !_chatIdPattern.hasMatch(chatId) ||
+        !_messageIdPattern.hasMatch(messageId))
+      return;
+    await _withCacheWriteLock(uid, chatId, () async {
+      if (await _storage.read(
+            key: _messageTombstoneKey(uid, chatId, messageId),
+          ) ==
+          'true')
+        return;
+      final existing = await _storage.read(
+        key: _messageKey(uid, chatId, messageId),
+      );
+      if (existing == null) return;
+      late final Map<String, dynamic> message;
+      try {
+        message = Map<String, dynamic>.from(jsonDecode(existing) as Map);
+      } catch (_) {
+        return;
       }
-    }
-    message['deliveryState'] = deliveryState;
-    await saveCachedMessage(chatId, message);
+      message['id'] = messageId;
+      if (serverMessage != null) {
+        for (final field in [
+          'senderId',
+          'format',
+          'ciphertext',
+          'nonce',
+          'mac',
+          'createdAt',
+          'deliveredTo',
+          'readBy',
+        ]) {
+          if (serverMessage.containsKey(field))
+            message[field] = serverMessage[field];
+        }
+      }
+      message['deliveryState'] = deliveryState;
+      await _writeCachedMessage(uid, chatId, message);
+    });
   }
 
   Future<void> deleteCachedMessage(String chatId, String messageId) async {
-    if (userId == null) return;
-    await _storage.delete(key: _messageKey(chatId, messageId));
-    final indexKey = _messageIndexKey(chatId);
-    final encoded = await _storage.read(key: indexKey);
-    if (encoded == null) return;
-    final ids = (jsonDecode(encoded) as List).whereType<String>()
-        .where((id) => id != messageId).toList();
-    await _storage.write(key: indexKey, value: jsonEncode(ids));
+    final uid = userId;
+    if (uid == null ||
+        !_chatIdPattern.hasMatch(chatId) ||
+        !_messageIdPattern.hasMatch(messageId))
+      return;
+    await _withCacheWriteLock(uid, chatId, () async {
+      await _storage.write(
+        key: _messageTombstoneKey(uid, chatId, messageId),
+        value: 'true',
+      );
+      await _storage.delete(key: _messageKey(uid, chatId, messageId));
+      final indexKey = _messageIndexKey(uid, chatId);
+      final encoded = await _storage.read(key: indexKey);
+      if (encoded == null) return;
+      List<String> ids = [];
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is List) ids = decoded.whereType<String>().toList();
+      } catch (_) {
+        // Rebuild an empty index if the stored one is malformed.
+      }
+      ids.removeWhere((id) => id == messageId);
+      await _storage.write(key: indexKey, value: jsonEncode(ids));
+    });
   }
 
   Future<int> getCachedMessageCount() async {
     final uid = userId;
     if (uid == null) return 0;
     final all = await _storage.readAll();
-    return all.keys.where((key) => key.startsWith('cc_msg_${uid}_') && !key.contains('index')).length;
+    return all.keys
+        .where(
+          (key) => key.startsWith('cc_msg_${uid}_') && !key.contains('index'),
+        )
+        .length;
+  }
+
+  /// Exports encrypted message envelopes only. Plaintext is never part of the
+  /// returned archive; DriveBackupService encrypts the whole archive again.
+  Future<Map<String, dynamic>> exportEncryptedDriveArchive() async {
+    final uid = userId;
+    if (uid == null || identity == null || identity!.hasBeenDestroyed) {
+      throw StateError(
+        'Unlock your CrazeChat identity before backing up messages.',
+      );
+    }
+    final all = await _storage.readAll();
+    if (userId != uid || identity == null || identity!.hasBeenDestroyed)
+      throw StateError('The active CrazeChat account changed during backup.');
+    final prefix = 'cc_msg_index_${uid}_';
+    final tombstonePrefix = 'cc_msg_tombstone_${uid}_';
+    final chatIds =
+        all.keys
+            .where(
+              (key) =>
+                  key.startsWith(prefix) || key.startsWith(tombstonePrefix),
+            )
+            .map(
+              (key) => key.startsWith(prefix)
+                  ? key.substring(prefix.length)
+                  : key.substring(
+                      tombstonePrefix.length,
+                      tombstonePrefix.length + 32,
+                    ),
+            )
+            .where(_chatIdPattern.hasMatch)
+            .toSet()
+            .toList()
+          ..sort();
+    final chats = <Map<String, dynamic>>[];
+    for (final chatId in chatIds) {
+      if (userId != uid || identity == null || identity!.hasBeenDestroyed) {
+        throw StateError('The active CrazeChat account changed during backup.');
+      }
+      final messages = await loadCachedMessages(chatId);
+      final tombstones =
+          all.keys
+              .where((key) => key.startsWith('$tombstonePrefix${chatId}_'))
+              .map(
+                (key) =>
+                    key.substring(tombstonePrefix.length + chatId.length + 1),
+              )
+              .where(_messageIdPattern.hasMatch)
+              .toSet()
+              .toList()
+            ..sort();
+      chats.add({
+        'chatId': chatId,
+        'messages': messages,
+        'deletedMessageIds': tombstones,
+      });
+    }
+    return {'version': 1, 'userId': uid, 'chats': chats};
+  }
+
+  /// Merges authenticated encrypted envelopes from Drive into this account's
+  /// local cache. Existing local records win if a message ID is already stored.
+  Future<int> mergeEncryptedDriveArchive(Map<String, dynamic> archive) async {
+    final uid = userId;
+    if (uid == null ||
+        identity == null ||
+        identity!.hasBeenDestroyed ||
+        archive['version'] != 1 ||
+        archive['userId'] != uid ||
+        archive['chats'] is! List) {
+      throw const FormatException(
+        'This encrypted backup does not match the active CrazeChat account.',
+      );
+    }
+    final rawChats = archive['chats'] as List;
+    if (rawChats.length > 2000) {
+      throw const FormatException(
+        'The Drive backup contains too many conversations.',
+      );
+    }
+    final validated =
+        <
+          ({
+            String chatId,
+            List<Map<String, dynamic>> messages,
+            List<String> tombstones,
+          })
+        >[];
+    var totalMessages = 0;
+    for (final rawChat in rawChats) {
+      if (rawChat is! Map)
+        throw const FormatException('Invalid conversation in Drive backup.');
+      final chatId = rawChat['chatId'];
+      final rawMessages = rawChat['messages'];
+      final rawTombstones = rawChat['deletedMessageIds'] ?? const [];
+      if (chatId is! String ||
+          !_chatIdPattern.hasMatch(chatId) ||
+          rawMessages is! List ||
+          rawTombstones is! List) {
+        throw const FormatException('Invalid conversation in Drive backup.');
+      }
+      if (rawMessages.length > 100000 ||
+          totalMessages + rawMessages.length > 200000) {
+        throw const FormatException(
+          'The Drive backup contains too many messages.',
+        );
+      }
+      final messages = <Map<String, dynamic>>[];
+      final tombstones = <String>{};
+      for (final rawId in rawTombstones) {
+        if (rawId is! String || !_messageIdPattern.hasMatch(rawId)) {
+          throw const FormatException(
+            'Invalid deletion marker in Drive backup.',
+          );
+        }
+        tombstones.add(rawId);
+      }
+      for (final rawMessage in rawMessages) {
+        if (rawMessage is! Map)
+          throw const FormatException('Invalid message in Drive backup.');
+        final message = Map<String, dynamic>.from(rawMessage);
+        final id = message['id'];
+        if (id is! String ||
+            !_messageIdPattern.hasMatch(id) ||
+            message['createdAt'] is! num) {
+          throw const FormatException('Invalid message in Drive backup.');
+        }
+        if (tombstones.contains(id)) continue;
+        CryptoService.validateMessageEnvelope(message);
+        messages.add(message);
+      }
+      totalMessages += messages.length;
+      validated.add((
+        chatId: chatId,
+        messages: messages,
+        tombstones: tombstones.toList(),
+      ));
+    }
+
+    var imported = 0;
+    for (final chat in validated) {
+      if (userId != uid || identity == null || identity!.hasBeenDestroyed) {
+        throw StateError(
+          'The active CrazeChat account changed during restore.',
+        );
+      }
+      for (final id in chat.tombstones) {
+        if (userId != uid || identity == null || identity!.hasBeenDestroyed) {
+          throw StateError(
+            'The active CrazeChat account changed during restore.',
+          );
+        }
+        await deleteCachedMessage(chat.chatId, id);
+      }
+      final existing = (await loadCachedMessages(chat.chatId))
+          .map((message) => message['id']?.toString())
+          .whereType<String>()
+          .toSet();
+      for (final message in chat.messages) {
+        if (userId != uid || identity == null || identity!.hasBeenDestroyed) {
+          throw StateError(
+            'The active CrazeChat account changed during restore.',
+          );
+        }
+        final id = message['id'] as String;
+        if (existing.add(id)) {
+          await saveCachedMessage(chat.chatId, message);
+          imported++;
+        }
+      }
+    }
+    return imported;
   }
 
   int _asInt(Object? value) =>
       value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
 
-  void lock() {
-    identity = null;
+  Future<void> lock() async {
+    _destroyIdentity();
     notifyListeners();
+    try {
+      await _storage.write(key: _manualLockKey, value: 'true');
+    } catch (_) {
+      // The in-memory key is still destroyed if persistent storage is unavailable.
+    }
   }
 }

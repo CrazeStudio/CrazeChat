@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+
 import 'package:cryptography/cryptography.dart';
 
 class IdentityMaterial {
@@ -15,35 +16,53 @@ class IdentityMaterial {
 
 class CryptoService {
   static const _identityAad = 'CrazeChat/identity-key/v1';
+  static const _driveBackupFormat = 'cc-drive-backup-v1';
   // Keep the wire format identical to the Cloudflare API validator:
   // AES-GCM nonce = 12 bytes, authentication tag = 16 bytes.
   static final _aes = AesGcm.with256bits(nonceLength: 12);
-  static final _identityKdf = Argon2id(memory: 32 * 1024, parallelism: 1, iterations: 2, hashLength: 32);
+  static final _driveBackupKdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+  static final _identityKdf = Argon2id(
+    memory: 32 * 1024,
+    parallelism: 1,
+    iterations: 2,
+    hashLength: 32,
+  );
 
   static List<int> _randomBytes(int length) {
     final random = Random.secure();
     return List<int>.generate(length, (_) => random.nextInt(256));
   }
 
-  static List<int> _decodeExact(Map<String, dynamic> envelope, String field, int length) {
+  static List<int> _decodeExact(
+    Map<String, dynamic> envelope,
+    String field,
+    int length,
+  ) {
     final value = envelope[field];
-    if (value is! String) throw FormatException('Encrypted identity field "$field" is missing.');
+    if (value is! String)
+      throw FormatException('Encrypted identity field "$field" is missing.');
     try {
       final decoded = base64Decode(value);
       if (decoded.length != length) {
-        throw FormatException('Encrypted identity field "$field" must contain exactly $length bytes.');
+        throw FormatException(
+          'Encrypted identity field "$field" must contain exactly $length bytes.',
+        );
       }
       return decoded;
     } on FormatException {
       rethrow;
     } catch (_) {
-      throw FormatException('Encrypted identity field "$field" is not valid base64.');
+      throw FormatException(
+        'Encrypted identity field "$field" is not valid base64.',
+      );
     }
   }
 
   static void validateIdentityEnvelope(Map<String, dynamic> envelope) {
     if (envelope['version'] != 1 || envelope['kdf'] != 'Argon2id') {
-      throw const FormatException('Unsupported encrypted identity version or KDF.');
+      throw const FormatException(
+        'Unsupported encrypted identity version or KDF.',
+      );
     }
     _decodeExact(envelope, 'salt', 16);
     _decodeExact(envelope, 'nonce', 12);
@@ -60,7 +79,9 @@ class CryptoService {
     } on FormatException {
       rethrow;
     } catch (_) {
-      throw const FormatException('Encrypted identity ciphertext is not valid base64.');
+      throw const FormatException(
+        'Encrypted identity ciphertext is not valid base64.',
+      );
     }
   }
 
@@ -70,7 +91,10 @@ class CryptoService {
     final publicKey = await keyPair.extractPublicKey();
     final publicKeyBase64 = base64Encode(publicKey.bytes);
     final salt = _randomBytes(16);
-    final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: password, nonce: salt);
+    final wrappingKey = await _identityKdf.deriveKeyFromPassword(
+      password: password,
+      nonce: salt,
+    );
     final box = await _aes.encrypt(
       privateBytes,
       secretKey: wrappingKey,
@@ -101,13 +125,19 @@ class CryptoService {
   ) async {
     validateIdentityEnvelope(envelope);
     if (privateBytes.length != 32) {
-      throw const FormatException('Stored private identity key has an invalid length.');
+      throw const FormatException(
+        'Stored private identity key has an invalid length.',
+      );
     }
     final publicKey = SimplePublicKey(
       _decodeExact(envelope, 'publicKey', 32),
       type: KeyPairType.x25519,
     );
-    return SimpleKeyPairData(privateBytes, publicKey: publicKey, type: KeyPairType.x25519);
+    return SimpleKeyPairData(
+      privateBytes,
+      publicKey: publicKey,
+      type: KeyPairType.x25519,
+    );
   }
 
   static Future<IdentityMaterial> unlockIdentityMaterial(
@@ -117,7 +147,10 @@ class CryptoService {
     validateIdentityEnvelope(envelope);
     final publicKeyBase64 = envelope['publicKey'] as String;
     final salt = _decodeExact(envelope, 'salt', 16);
-    final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: password, nonce: salt);
+    final wrappingKey = await _identityKdf.deriveKeyFromPassword(
+      password: password,
+      nonce: salt,
+    );
     final box = SecretBox(
       base64Decode(envelope['ciphertext'] as String),
       nonce: _decodeExact(envelope, 'nonce', 12),
@@ -154,8 +187,14 @@ class CryptoService {
     required String peerPublicKey,
     required String chatId,
   }) async {
-    final remote = SimplePublicKey(base64Decode(peerPublicKey), type: KeyPairType.x25519);
-    final sharedSecret = await X25519().sharedSecretKey(keyPair: myKeyPair, remotePublicKey: remote);
+    final remote = SimplePublicKey(
+      base64Decode(peerPublicKey),
+      type: KeyPairType.x25519,
+    );
+    final sharedSecret = await X25519().sharedSecretKey(
+      keyPair: myKeyPair,
+      remotePublicKey: remote,
+    );
     return Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
       secretKey: sharedSecret,
       nonce: utf8.encode(chatId),
@@ -163,9 +202,109 @@ class CryptoService {
     );
   }
 
+  /// Adds an independent authenticated-encryption layer to a Drive archive.
+  /// The wrapping key is derived from the account identity key, so only a
+  /// device that has unlocked the same identity can open the archive.
+  static Future<Map<String, dynamic>> encryptDriveBackup({
+    required List<int> archiveBytes,
+    required KeyPair identity,
+    required String userId,
+  }) async {
+    if (userId.isEmpty)
+      throw const FormatException('A CrazeChat account is required.');
+    final key = await _driveBackupKey(identity, userId);
+    final aad = utf8.encode('$_driveBackupFormat:$userId');
+    final box = await _aes.encrypt(archiveBytes, secretKey: key, aad: aad);
+    return {
+      'format': _driveBackupFormat,
+      'nonce': base64Encode(box.nonce),
+      'ciphertext': base64Encode(box.cipherText),
+      'mac': base64Encode(box.mac.bytes),
+    };
+  }
+
+  static Future<List<int>> decryptDriveBackup({
+    required Map<String, dynamic> envelope,
+    required KeyPair identity,
+    required String userId,
+  }) async {
+    if (envelope['format'] != _driveBackupFormat || userId.isEmpty) {
+      throw const FormatException(
+        'Unsupported or invalid CrazeChat Drive backup.',
+      );
+    }
+    final nonce = _decodeBase64Field(envelope, 'nonce', exactLength: 12);
+    final ciphertext = _decodeBase64Field(envelope, 'ciphertext');
+    final mac = _decodeBase64Field(envelope, 'mac', exactLength: 16);
+    if (ciphertext.isEmpty)
+      throw const FormatException('Drive backup is empty.');
+    final key = await _driveBackupKey(identity, userId);
+    return _aes.decrypt(
+      SecretBox(ciphertext, nonce: nonce, mac: Mac(mac)),
+      secretKey: key,
+      aad: utf8.encode('$_driveBackupFormat:$userId'),
+    );
+  }
+
+  static Future<SecretKey> _driveBackupKey(
+    KeyPair identity,
+    String userId,
+  ) async {
+    final keyData = await identity.extract();
+    if (keyData is! SimpleKeyPairData || keyData.type != KeyPairType.x25519) {
+      throw const FormatException(
+        'The CrazeChat identity is not an X25519 key pair.',
+      );
+    }
+    final privateBytes = keyData.bytes;
+    return _driveBackupKdf.deriveKey(
+      secretKey: SecretKey(privateBytes),
+      nonce: utf8.encode('CrazeChat/drive-backup-salt/v1:$userId'),
+      info: utf8.encode('CrazeChat/google-drive-backup/v1'),
+    );
+  }
+
+  static List<int> _decodeBase64Field(
+    Map<String, dynamic> envelope,
+    String field, {
+    int? exactLength,
+  }) {
+    final value = envelope[field];
+    if (value is! String || value.isEmpty) {
+      throw FormatException('Encrypted field "$field" is missing.');
+    }
+    late final List<int> decoded;
+    try {
+      decoded = base64Decode(value);
+    } on FormatException {
+      throw FormatException('Encrypted field "$field" is not valid base64.');
+    }
+    if (exactLength != null && decoded.length != exactLength) {
+      throw FormatException(
+        'Encrypted field "$field" must contain exactly $exactLength bytes.',
+      );
+    }
+    return decoded;
+  }
+
+  static void validateMessageEnvelope(Map<String, dynamic> message) {
+    if (message['format'] != 'cc-e2ee-v1' ||
+        message['senderId'] is! String ||
+        (message['senderId'] as String).isEmpty) {
+      throw const FormatException('Unsupported or invalid encrypted message.');
+    }
+    if (_decodeBase64Field(message, 'ciphertext').isEmpty) {
+      throw const FormatException('Encrypted message ciphertext is empty.');
+    }
+    _decodeBase64Field(message, 'nonce', exactLength: 12);
+    _decodeBase64Field(message, 'mac', exactLength: 16);
+  }
+
   static Future<Map<String, String>> encryptMessage({
-    required String text, required SecretKey chatKey,
-    required String chatId, required String senderId,
+    required String text,
+    required SecretKey chatKey,
+    required String chatId,
+    required String senderId,
   }) async {
     final box = await _aes.encrypt(
       utf8.encode(text),
@@ -185,7 +324,7 @@ class CryptoService {
     required SecretKey chatKey,
     required String chatId,
   }) async {
-    if (message['format'] != 'cc-e2ee-v1') throw const FormatException('Unknown message format.');
+    validateMessageEnvelope(message);
     final senderId = message['senderId'] as String;
     final box = SecretBox(
       base64Decode(message['ciphertext'] as String),

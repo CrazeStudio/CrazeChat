@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'api.dart';
 import 'crypto_service.dart';
 import 'session.dart';
 import 'push_notifications.dart';
+import 'drive_backup.dart';
 
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
@@ -18,6 +21,7 @@ class CrazeChatApp extends StatefulWidget {
   @override
   State<CrazeChatApp> createState() => _CrazeChatAppState();
 }
+
 class _CrazeChatAppState extends State<CrazeChatApp> {
   final session = ChatSession();
   @override
@@ -30,13 +34,15 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
   void _syncPushRegistration() {
     if (mounted) setState(() {});
     if (session.signedIn) {
-      unawaited(PushNotificationService.configure(
-        session.api,
-        userId: session.userId,
-        enabled: session.notificationsEnabled,
-        soundEnabled: session.soundEffectsEnabled,
-        vibrationEnabled: session.vibrationEnabled,
-      ));
+      unawaited(
+        PushNotificationService.configure(
+          session.api,
+          userId: session.userId,
+          enabled: session.notificationsEnabled,
+          soundEnabled: session.soundEffectsEnabled,
+          vibrationEnabled: session.vibrationEnabled,
+        ),
+      );
     }
   }
 
@@ -46,6 +52,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     session.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'CrazeChat',
@@ -53,33 +60,59 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     themeMode: session.themeMode,
     theme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: _brand, surface: Colors.white),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _brand,
+        surface: Colors.white,
+      ),
       scaffoldBackgroundColor: _canvas,
-      appBarTheme: const AppBarTheme(backgroundColor: _canvas, surfaceTintColor: _canvas, elevation: 0, foregroundColor: _ink),
-      cardTheme: CardThemeData(color: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: _canvas,
+        surfaceTintColor: _canvas,
+        elevation: 0,
+        foregroundColor: _ink,
+      ),
+      cardTheme: CardThemeData(
+        color: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
       inputDecorationTheme: InputDecorationTheme(
-        filled: true, fillColor: const Color(0xFFEAF1ED),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: const BorderSide(color: _brand, width: 1.2)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        filled: true,
+        fillColor: const Color(0xFFEAF1ED),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: _brand, width: 1.2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
       ),
     ),
     darkTheme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _brand,
-        brightness: Brightness.dark,
-      ).copyWith(
-        primary: const Color(0xFF62D6AE),
-        onPrimary: const Color(0xFF06251D),
-        surface: const Color(0xFF0B1513),
-        surfaceContainer: const Color(0xFF14211E),
-        surfaceContainerHighest: const Color(0xFF20312D),
-        onSurface: const Color(0xFFF1F7F4),
-        onSurfaceVariant: const Color(0xFFB5C6BF),
-        outlineVariant: const Color(0xFF344841),
-      ),
+      colorScheme:
+          ColorScheme.fromSeed(
+            seedColor: _brand,
+            brightness: Brightness.dark,
+          ).copyWith(
+            primary: const Color(0xFF62D6AE),
+            onPrimary: const Color(0xFF06251D),
+            surface: const Color(0xFF0B1513),
+            surfaceContainer: const Color(0xFF14211E),
+            surfaceContainerHighest: const Color(0xFF20312D),
+            onSurface: const Color(0xFFF1F7F4),
+            onSurfaceVariant: const Color(0xFFB5C6BF),
+            outlineVariant: const Color(0xFF344841),
+          ),
       scaffoldBackgroundColor: const Color(0xFF0B1513),
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF0B1513),
@@ -126,18 +159,24 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
 class _LoadingScreen extends StatelessWidget {
   const _LoadingScreen();
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: CircularProgressIndicator()));
 }
 
 void showMessage(BuildContext context, String message) {
   final colors = Theme.of(context).colorScheme;
-  ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(
-    SnackBar(
-      content: Text(message, style: TextStyle(color: colors.onInverseSurface)),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: colors.inverseSurface,
-    ),
-  );
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: TextStyle(color: colors.onInverseSurface),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: colors.inverseSurface,
+      ),
+    );
 }
 
 class _BrandMark extends StatelessWidget {
@@ -145,9 +184,14 @@ class _BrandMark extends StatelessWidget {
   final double size;
   @override
   Widget build(BuildContext context) => Container(
-    width: size, height: size,
+    width: size,
+    height: size,
     decoration: BoxDecoration(
-      gradient: const LinearGradient(colors: [_brand, Color(0xFF0B5147)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+      gradient: const LinearGradient(
+        colors: [_brand, Color(0xFF0B5147)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
       borderRadius: BorderRadius.circular(size * .32),
     ),
     child: Icon(Icons.bolt_rounded, color: Colors.white, size: size * .64),
@@ -162,21 +206,33 @@ class _ProfileAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const palette = [
-      Color(0xFF176B5B), Color(0xFF315D9B), Color(0xFF8A4F83),
-      Color(0xFF9A6238), Color(0xFF536B36), Color(0xFF6A5AA6),
+      Color(0xFF176B5B),
+      Color(0xFF315D9B),
+      Color(0xFF8A4F83),
+      Color(0xFF9A6238),
+      Color(0xFF536B36),
+      Color(0xFF6A5AA6),
     ];
     final normalized = username.trim();
     final stableHash = normalized.codeUnits.fold<int>(
-      0, (value, unit) => (value * 31 + unit) & 0x7fffffff,
+      0,
+      (value, unit) => (value * 31 + unit) & 0x7fffffff,
     );
     final color = palette[stableHash % palette.length];
-    final initial = normalized.isEmpty ? '?' : normalized.substring(0, 1).toUpperCase();
+    final initial = normalized.isEmpty
+        ? '?'
+        : normalized.substring(0, 1).toUpperCase();
     return CircleAvatar(
       radius: size / 2,
       backgroundColor: color,
-      child: Text(initial, style: TextStyle(
-        color: Colors.white, fontSize: size * .39, fontWeight: FontWeight.w900,
-      )),
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * .39,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     );
   }
 }
@@ -202,21 +258,33 @@ class AuthScreen extends StatefulWidget {
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
+
 class _AuthScreenState extends State<AuthScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
   bool creating = false, busy = false, showPassword = false;
   @override
-  void dispose() { username.dispose(); password.dispose(); super.dispose(); }
+  void dispose() {
+    username.dispose();
+    password.dispose();
+    super.dispose();
+  }
 
   Future<void> submit() async {
     final name = username.text.trim();
     final pass = password.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
-      showMessage(context, 'Username: 3–20 letters, numbers, or underscores.'); return;
+      showMessage(context, 'Username: 3–20 letters, numbers, or underscores.');
+      return;
     }
-    if (creating && pass.length < 12) { showMessage(context, 'Use a password with at least 12 characters.'); return; }
-    if (pass.isEmpty) { showMessage(context, 'Enter your password.'); return; }
+    if (creating && pass.length < 12) {
+      showMessage(context, 'Use a password with at least 12 characters.');
+      return;
+    }
+    if (pass.isEmpty) {
+      showMessage(context, 'Enter your password.');
+      return;
+    }
     setState(() => busy = true);
     try {
       late final Map<String, dynamic> result;
@@ -224,22 +292,30 @@ class _AuthScreenState extends State<AuthScreen> {
       if (creating) {
         material = await CryptoService.createIdentity(pass);
         result = await widget.session.api.register(
-          username: name, password: pass, identityEnvelope: material.envelope,
+          username: name,
+          password: pass,
+          identityEnvelope: material.envelope,
         );
       } else {
         result = await widget.session.api.login(username: name, password: pass);
         material = await CryptoService.unlockIdentityMaterial(
-          Map<String, dynamic>.from(result['identityEnvelope'] as Map), pass,
+          Map<String, dynamic>.from(result['identityEnvelope'] as Map),
+          pass,
         );
       }
       await widget.session.acceptSession(result, material);
     } on ApiException catch (error) {
-      if (mounted) { showMessage(context, error.message); }
+      if (mounted) {
+        showMessage(context, error.message);
+      }
     } catch (_) {
       if (mounted) {
-        showMessage(context, creating
-            ? 'Account setup failed. Check the API deployment and try again.'
-            : 'Password could not unlock this account.');
+        showMessage(
+          context,
+          creating
+              ? 'Account setup failed. Check the API deployment and try again.'
+              : 'Password could not unlock this account.',
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -250,58 +326,122 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      body: SafeArea(child: Center(child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 430),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            const _BrandMark(size: 64),
-            const SizedBox(height: 28),
-            const _Eyebrow('CrazeStudio · Private network'),
-            const SizedBox(height: 8),
-            Text('Conversations,\nwithout the noise.',
-              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                color: colors.onSurface, fontWeight: FontWeight.w900, height: 1.04, letterSpacing: -1.4,
-              )),
-            const SizedBox(height: 12),
-            Text('A quieter place to talk. Your messages are encrypted on this device before they leave it.',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant, height: 1.45)),
-            const SizedBox(height: 30),
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('Sign in'), icon: Icon(Icons.login_rounded)),
-                ButtonSegment(value: true, label: Text('Create account'), icon: Icon(Icons.person_add_alt_1_rounded)),
-              ],
-              selected: {creating},
-              onSelectionChanged: busy ? null : (value) => setState(() => creating = value.first),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _BrandMark(size: 64),
+                  const SizedBox(height: 28),
+                  const _Eyebrow('CrazeStudio · Private network'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Conversations,\nwithout the noise.',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      color: colors.onSurface,
+                      fontWeight: FontWeight.w900,
+                      height: 1.04,
+                      letterSpacing: -1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'A quieter place to talk. Your messages are encrypted on this device before they leave it.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        label: Text('Sign in'),
+                        icon: Icon(Icons.login_rounded),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        label: Text('Create account'),
+                        icon: Icon(Icons.person_add_alt_1_rounded),
+                      ),
+                    ],
+                    selected: {creating},
+                    onSelectionChanged: busy
+                        ? null
+                        : (value) => setState(() => creating = value.first),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: username,
+                    autocorrect: false,
+                    textCapitalization: TextCapitalization.none,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      prefixIcon: Icon(Icons.alternate_email_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: password,
+                    obscureText: !showPassword,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setState(() => showPassword = !showPassword),
+                        icon: Icon(
+                          showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
+                    ),
+                    onSubmitted: (_) => submit(),
+                  ),
+                  if (creating) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Use 12 or more characters. This password protects your private encryption key. Keep it safe.',
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colors.onSurfaceVariant),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: busy ? null : submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _brand,
+                      padding: const EdgeInsets.symmetric(vertical: 17),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            creating
+                                ? 'Create secure account'
+                                : 'Unlock and sign in',
+                          ),
+                  ),
+                  const SizedBox(height: 22),
+                  const _SecurityNote(),
+                ],
+              ),
             ),
-            const SizedBox(height: 20),
-            TextField(controller: username, autocorrect: false, textCapitalization: TextCapitalization.none,
-              decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.alternate_email_rounded))),
-            const SizedBox(height: 12),
-            TextField(controller: password, obscureText: !showPassword,
-              decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline_rounded),
-                suffixIcon: IconButton(onPressed: () => setState(() => showPassword = !showPassword),
-                  icon: Icon(showPassword ? Icons.visibility_off : Icons.visibility))),
-              onSubmitted: (_) => submit()),
-            if (creating) ...[
-              const SizedBox(height: 10),
-              Text('Use 12 or more characters. This password protects your private encryption key. Keep it safe.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant)),
-            ],
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: busy ? null : submit,
-              style: FilledButton.styleFrom(backgroundColor: _brand, padding: const EdgeInsets.symmetric(vertical: 17),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-              child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(creating ? 'Create secure account' : 'Unlock and sign in'),
-            ),
-            const SizedBox(height: 22),
-            const _SecurityNote(),
-          ]),
+          ),
         ),
-      ))),
+      ),
     );
   }
 }
@@ -309,14 +449,19 @@ class _AuthScreenState extends State<AuthScreen> {
 class _SecurityNote extends StatelessWidget {
   const _SecurityNote();
   @override
-  Widget build(BuildContext context) => const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Icon(Icons.verified_user_outlined, color: _brand, size: 20),
-    SizedBox(width: 10),
-    Expanded(child: Text(
-      'Messages are encrypted on your device. The authenticated API stores encrypted envelopes, not readable message text.',
-      style: TextStyle(fontSize: 12),
-    )),
-  ]);
+  Widget build(BuildContext context) => const Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(Icons.verified_user_outlined, color: _brand, size: 20),
+      SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          'Messages are encrypted on your device. The authenticated API stores encrypted envelopes, not readable message text.',
+          style: TextStyle(fontSize: 12),
+        ),
+      ),
+    ],
+  );
 }
 
 class UnlockScreen extends StatefulWidget {
@@ -325,43 +470,90 @@ class UnlockScreen extends StatefulWidget {
   @override
   State<UnlockScreen> createState() => _UnlockScreenState();
 }
+
 class _UnlockScreenState extends State<UnlockScreen> {
   final password = TextEditingController();
   bool busy = false, visible = false;
   @override
-  void dispose() { password.dispose(); super.dispose(); }
+  void dispose() {
+    password.dispose();
+    super.dispose();
+  }
+
   Future<void> unlock() async {
     if (password.text.isEmpty || busy) return;
     setState(() => busy = true);
-    try { await widget.session.unlock(password.text); }
-    catch (_) { if (mounted) showMessage(context, 'Incorrect password or damaged encrypted key backup.'); }
-    finally { if (mounted) setState(() => busy = false); }
+    try {
+      await widget.session.unlock(password.text);
+    } catch (_) {
+      if (mounted)
+        showMessage(
+          context,
+          'Incorrect password or damaged encrypted key backup.',
+        );
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: Center(child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Center(child: _BrandMark(size: 68)),
-          const SizedBox(height: 22),
-          Text('Welcome back, @${widget.session.username!}', textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          const Text('Unlock your private identity key on this device to open your conversations.', textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          TextField(controller: password, obscureText: !visible, onSubmitted: (_) => unlock(),
-            decoration: InputDecoration(labelText: 'Account password', prefixIcon: const Icon(Icons.key_rounded),
-              suffixIcon: IconButton(onPressed: () => setState(() => visible = !visible),
-                icon: Icon(visible ? Icons.visibility_off : Icons.visibility)))),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: busy ? null : unlock,
-            child: busy ? const CircularProgressIndicator() : const Text('Unlock CrazeChat')),
-          TextButton(onPressed: widget.session.signOut, child: const Text('Sign in to another account')),
-        ]),
+    body: SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Center(child: _BrandMark(size: 68)),
+                const SizedBox(height: 22),
+                Text(
+                  'Welcome back, @${widget.session.username!}',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Unlock your private identity key on this device to open your conversations.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: password,
+                  obscureText: !visible,
+                  onSubmitted: (_) => unlock(),
+                  decoration: InputDecoration(
+                    labelText: 'Account password',
+                    prefixIcon: const Icon(Icons.key_rounded),
+                    suffixIcon: IconButton(
+                      onPressed: () => setState(() => visible = !visible),
+                      icon: Icon(
+                        visible ? Icons.visibility_off : Icons.visibility,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: busy ? null : unlock,
+                  child: busy
+                      ? const CircularProgressIndicator()
+                      : const Text('Unlock CrazeChat'),
+                ),
+                TextButton(
+                  onPressed: widget.session.signOut,
+                  child: const Text('Sign in to another account'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-    ))),
+    ),
   );
 }
 
@@ -371,8 +563,10 @@ class HomeScreen extends StatefulWidget {
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
+
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
+  Timer? autoLockTimer;
   StreamSubscription<String>? pushOpenSubscription;
   List<Map<String, dynamic>> chats = [];
   final Map<String, int> sentCounts = {};
@@ -385,26 +579,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     search.addListener(_changed);
-    pushOpenSubscription = PushNotificationService.chatOpened.listen(_openNotificationChat);
+    pushOpenSubscription = PushNotificationService.chatOpened.listen(
+      _openNotificationChat,
+    );
     final pendingChatId = PushNotificationService.consumePendingChatId();
     if (pendingChatId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _openNotificationChat(pendingChatId));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openNotificationChat(pendingChatId),
+      );
     }
     loadChats();
+    unawaited(GoogleDriveBackupService.instance.syncIfEnabled(widget.session));
   }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    autoLockTimer?.cancel();
     pushOpenSubscription?.cancel();
     search.removeListener(_changed);
     search.dispose();
     super.dispose();
   }
+
   void _changed() => setState(() {});
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) loadChats(silent: true);
+    if (state == AppLifecycleState.paused && widget.session.autoLockEnabled) {
+      unawaited(widget.session.markAppBackgrounded());
+      autoLockTimer?.cancel();
+      autoLockTimer = Timer(ChatSession.autoLockDelay, () {
+        if (mounted &&
+            widget.session.autoLockEnabled &&
+            widget.session.unlocked) {
+          unawaited(widget.session.lock());
+        }
+      });
+    } else if (state == AppLifecycleState.resumed) {
+      autoLockTimer?.cancel();
+      autoLockTimer = null;
+      unawaited(_resumeFromBackground());
+    }
+  }
+
+  Future<void> _resumeFromBackground() async {
+    if (await widget.session.lockIfBackgroundedLongEnough()) return;
+    if (!mounted) return;
+    loadChats(silent: true);
+    unawaited(GoogleDriveBackupService.instance.syncIfEnabled(widget.session));
   }
 
   Future<void> loadChats({bool silent = false}) async {
@@ -413,22 +636,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (mounted) setState(() => refreshingChats = true);
     try {
       final data = await widget.session.api.listChats();
-      final list = (data['chats'] as List? ?? const []).whereType<Map>()
-          .map((value) => Map<String, dynamic>.from(value)).toList();
+      final list = (data['chats'] as List? ?? const [])
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .toList();
       final nextSentCounts = <String, int>{};
-      for (final chat in list) {
-        final id = chat['id']?.toString();
-        if (id == null || id.isEmpty) continue;
-        try {
-          final cached = await widget.session.loadCachedMessages(id);
-          nextSentCounts[id] = cached.where((message) => message['senderId'] == widget.session.userId).length;
-        } catch (_) {
-          // A local cache issue must not prevent the inbox itself from loading.
-          nextSentCounts[id] = 0;
+      for (var start = 0; start < list.length; start += 4) {
+        final batch = list.skip(start).take(4).toList();
+        final counts = await Future.wait(
+          batch.map((chat) async {
+            final id = chat['id']?.toString();
+            if (id == null || id.isEmpty) return (id: null, count: 0);
+            try {
+              final cached = await widget.session.loadCachedMessages(id);
+              return (
+                id: id,
+                count: cached
+                    .where(
+                      (message) => message['senderId'] == widget.session.userId,
+                    )
+                    .length,
+              );
+            } catch (_) {
+              // A local cache issue must not prevent the inbox itself from loading.
+              return (id: id, count: 0);
+            }
+          }),
+        );
+        for (final result in counts) {
+          final id = result.id;
+          if (id != null) nextSentCounts[id] = result.count;
         }
       }
       if (!mounted) return;
-      final changed = jsonEncode(chats) != jsonEncode(list) || jsonEncode(sentCounts) != jsonEncode(nextSentCounts);
+      final changed =
+          jsonEncode(chats) != jsonEncode(list) ||
+          jsonEncode(sentCounts) != jsonEncode(nextSentCounts);
       if (changed || loading || failed) {
         setState(() {
           chats = list;
@@ -441,7 +684,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } catch (error) {
       if (mounted && !silent) {
-        setState(() { loading = false; failed = true; });
+        setState(() {
+          loading = false;
+          failed = true;
+        });
         if (chats.isEmpty) showMessage(context, error.toString());
       }
     } finally {
@@ -456,12 +702,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Find a person'),
-        content: TextField(controller: controller, autofocus: true, textCapitalization: TextCapitalization.none,
-          decoration: const InputDecoration(labelText: 'CrazeChat username', prefixIcon: Icon(Icons.alternate_email_rounded)),
-          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim())),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.none,
+          decoration: const InputDecoration(
+            labelText: 'CrazeChat username',
+            prefixIcon: Icon(Icons.alternate_email_rounded),
+          ),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Open conversation')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Open conversation'),
+          ),
         ],
       ),
     );
@@ -470,28 +730,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final response = await widget.session.api.createChat(target);
       await openChat(Map<String, dynamic>.from(response['chat'] as Map));
-    } catch (error) { if (mounted) showMessage(context, error.toString()); }
+    } catch (error) {
+      if (mounted) showMessage(context, error.toString());
+    }
   }
 
   Future<void> openChat(Map<String, dynamic> chat) async {
-    await Navigator.of(context).push(PageRouteBuilder<void>(
-      transitionDuration: const Duration(milliseconds: 230),
-      reverseTransitionDuration: const Duration(milliseconds: 190),
-      pageBuilder: (_, __, ___) => ChatScreen(session: widget.session, chat: chat),
-      transitionsBuilder: (_, animation, __, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.035, 0),
-              end: Offset.zero,
-            ).animate(curved),
-            child: child,
-          ),
-        );
-      },
-    ));
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 230),
+        reverseTransitionDuration: const Duration(milliseconds: 190),
+        pageBuilder: (_, __, ___) =>
+            ChatScreen(session: widget.session, chat: chat),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.035, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
     if (mounted) loadChats(silent: true);
   }
 
@@ -508,8 +776,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Map<String, dynamic>? _peer(Map<String, dynamic> chat) {
-    final members = (chat['members'] as List? ?? const []).whereType<Map>()
-        .map((value) => Map<String, dynamic>.from(value));
+    final members = (chat['members'] as List? ?? const []).whereType<Map>().map(
+      (value) => Map<String, dynamic>.from(value),
+    );
     for (final member in members) {
       if (member['id'] != widget.session.userId) return member;
     }
@@ -536,7 +805,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          page == 0 ? 'Messages' : page == 1 ? 'Privacy' : 'Settings',
+                          page == 0 ? 'Messages' : 'Settings',
                           style: TextStyle(
                             color: colors.onSurface,
                             fontSize: 25,
@@ -546,21 +815,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         Text(
                           '@${widget.session.username ?? 'crazechat'}',
-                          style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
                     tooltip: 'Refresh conversations',
-                    onPressed: refreshingChats ? null : () => loadChats(silent: true),
+                    onPressed: refreshingChats
+                        ? null
+                        : () => loadChats(silent: true),
                     style: IconButton.styleFrom(
                       backgroundColor: colors.surfaceContainerHighest,
                       foregroundColor: colors.onSurface,
                       fixedSize: const Size(44, 44),
                     ),
                     icon: refreshingChats
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Icon(Icons.refresh_rounded, size: 20),
                   ),
                   const SizedBox(width: 8),
@@ -596,10 +874,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: KeyedSubtree(
                   key: ValueKey<int>(page),
                   child: switch (page) {
-                    0 => _buildInbox(context, chats.where((chat) {
-                      final name = _peer(chat)?['username']?.toString().toLowerCase() ?? '';
-                      return name.contains(search.text.trim().toLowerCase());
-                    }).toList()),
+                    0 => _buildInbox(
+                      context,
+                      chats.where((chat) {
+                        final name =
+                            _peer(
+                              chat,
+                            )?['username']?.toString().toLowerCase() ??
+                            '';
+                        return name.contains(search.text.trim().toLowerCase());
+                      }).toList(),
+                    ),
                     _ => _buildSettings(context),
                   },
                 ),
@@ -615,7 +900,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               foregroundColor: Colors.white,
               elevation: 3,
               icon: const Icon(Icons.add_comment_rounded),
-              label: const Text('New chat', style: TextStyle(fontWeight: FontWeight.w800)),
+              label: const Text(
+                'New chat',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
             )
           : null,
       bottomNavigationBar: NavigationBar(
@@ -625,16 +913,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         selectedIndex: page,
         onDestinationSelected: (value) => setState(() => page = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline_rounded), selectedIcon: Icon(Icons.chat_rounded), label: 'Chats'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: 'Settings'),
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_rounded),
+            label: 'Chats',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildInbox(BuildContext context, List<Map<String, dynamic>> filtered) {
+  Widget _buildInbox(
+    BuildContext context,
+    List<Map<String, dynamic>> filtered,
+  ) {
     final colors = Theme.of(context).colorScheme;
-    final totalSent = sentCounts.values.fold<int>(0, (sum, count) => sum + count);
+    final totalSent = sentCounts.values.fold<int>(
+      0,
+      (sum, count) => sum + count,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -644,15 +946,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             controller: search,
             decoration: InputDecoration(
               hintText: 'Search people or conversations',
-              prefixIcon: Icon(Icons.search_rounded, color: colors.onSurfaceVariant),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: colors.onSurfaceVariant,
+              ),
               suffixIcon: search.text.isEmpty
                   ? null
-                  : IconButton(onPressed: search.clear, icon: const Icon(Icons.close_rounded)),
+                  : IconButton(
+                      onPressed: search.clear,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
               filled: true,
               fillColor: colors.surfaceContainerHighest,
               contentPadding: const EdgeInsets.symmetric(vertical: 15),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(17), borderSide: BorderSide.none),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(17),
+                borderSide: BorderSide.none,
+              ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(17),
                 borderSide: const BorderSide(color: _brand, width: 1.2),
@@ -664,120 +978,208 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
           child: Row(
             children: [
-              Text('YOUR CONVERSATIONS', style: TextStyle(
-                color: colors.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.4,
-              )),
+              Text(
+                'YOUR CONVERSATIONS',
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                ),
+              ),
               const Spacer(),
-              Text('${chats.length} chats · $totalSent sent on device', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w700)),
-
+              Text(
+                '${chats.length} chats · $totalSent sent on device',
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
         Expanded(
           child: loading
-                ? const Center(child: CircularProgressIndicator(color: _brand))
-                : failed && chats.isEmpty
-                    ? ListView(
-                        children: [
-                          const SizedBox(height: 110),
-                          Icon(Icons.cloud_off_rounded, size: 48, color: colors.onSurfaceVariant),
-                          const SizedBox(height: 14),
-                          const Center(child: Text('Could not load your chats', style: TextStyle(fontWeight: FontWeight.w700))),
-                          Center(child: Text(
-                            'Reconnecting automatically…',
-                            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
-                          )),
-                        ],
-                      )
-                    : filtered.isEmpty
-                        ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
+              ? const Center(child: CircularProgressIndicator(color: _brand))
+              : failed && chats.isEmpty
+              ? ListView(
+                  children: [
+                    const SizedBox(height: 110),
+                    Icon(
+                      Icons.cloud_off_rounded,
+                      size: 48,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 14),
+                    const Center(
+                      child: Text(
+                        'Could not load your chats',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Center(
+                      child: Text(
+                        'Reconnecting automatically…',
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : filtered.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    const SizedBox(height: 78),
+                    Center(
+                      child: Container(
+                        width: 82,
+                        height: 82,
+                        decoration: BoxDecoration(
+                          color: colors.secondaryContainer,
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        child: Icon(
+                          Icons.forum_rounded,
+                          size: 36,
+                          color: colors.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Center(
+                      child: Text(
+                        search.text.isEmpty
+                            ? 'Your chats start here'
+                            : 'No conversations found',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Center(
+                      child: Text(
+                        search.text.isEmpty
+                            ? 'Find someone and start a private conversation.'
+                            : 'Try another name or username.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 100),
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 5),
+                  itemBuilder: (context, index) {
+                    final chat = filtered[index];
+                    final peer = _peer(chat);
+                    final name =
+                        peer?['username']?.toString() ?? 'Unknown user';
+                    return Material(
+                      color: colors.surfaceContainer,
+                      borderRadius: BorderRadius.circular(19),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(19),
+                        onTap: () => openChat(chat),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 13,
+                            vertical: 13,
+                          ),
+                          child: Row(
                             children: [
-                              const SizedBox(height: 78),
-                              Center(
-                                child: Container(
-                                  width: 82, height: 82,
-                                  decoration: BoxDecoration(
-                                    color: colors.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(28),
-                                  ),
-                                  child: Icon(Icons.forum_rounded, size: 36, color: colors.onSecondaryContainer),
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-                              Center(child: Text(
-                                search.text.isEmpty ? 'Your chats start here' : 'No conversations found',
-                                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: colors.onSurface),
-                              )),
-                              const SizedBox(height: 7),
-                              Center(child: Text(
-                                search.text.isEmpty
-                                    ? 'Find someone and start a private conversation.'
-                                    : 'Try another name or username.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
-                              )),
-                            ],
-                          )
-                        : ListView.separated(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 100),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 5),
-                            itemBuilder: (context, index) {
-                              final chat = filtered[index];
-                              final peer = _peer(chat);
-                              final name = peer?['username']?.toString() ?? 'Unknown user';
-                              return Material(
-                                color: colors.surfaceContainer,
-                                borderRadius: BorderRadius.circular(19),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(19),
-                                  onTap: () => openChat(chat),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
-                                    child: Row(
+                              _ProfileAvatar(username: name, size: 54),
+                              const SizedBox(width: 13),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colors.onSurface,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Row(
                                       children: [
-                                        _ProfileAvatar(username: name, size: 54),
-                                        const SizedBox(width: 13),
+                                        const Icon(
+                                          Icons.lock_rounded,
+                                          size: 12,
+                                          color: _brand,
+                                        ),
+                                        const SizedBox(width: 5),
                                         Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(color: colors.onSurface, fontSize: 15, fontWeight: FontWeight.w800)),
-                                              const SizedBox(height: 5),
-                                              Row(children: [
-                                                const Icon(Icons.lock_rounded, size: 12, color: _brand),
-                                                const SizedBox(width: 5),
-                                                Expanded(child: Text(
-                                                  'End-to-end encrypted conversation',
-                                                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11),
-                                                )),
-                                              ]),
-                                            ],
+                                          child: Text(
+                                            'End-to-end encrypted conversation',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: colors.onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                                            decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(20)),
-                                            child: Text('${sentCounts[chat['id']?.toString()] ?? 0} saved sent',
-                                              style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800)),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant, size: 19),
-                                        ]),
                                       ],
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              );
-                            },
+                              ),
+                              const SizedBox(width: 8),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colors.secondaryContainer,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      '${sentCounts[chat['id']?.toString()] ?? 0} saved sent',
+                                      style: TextStyle(
+                                        color: colors.onSecondaryContainer,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: colors.onSurfaceVariant,
+                                    size: 19,
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
@@ -785,133 +1187,460 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildSettings(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return ListView(
-    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-    children: [
-      const _Eyebrow('Your account'),
-      const SizedBox(height: 8),
-      Text('Settings', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1)),
-      const SizedBox(height: 18),
-      Card(child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(children: [
-          _ProfileAvatar(username: widget.session.username ?? 'user', size: 54),
-          const SizedBox(width: 13),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('@${widget.session.username}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-            const SizedBox(height: 4),
-            Text('End-to-end encrypted account', style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
-          ])),
-        ]),
-      )),
-      const SizedBox(height: 14),
-      const _Eyebrow('Experience'),
-      const SizedBox(height: 8),
-      Card(
-        child: Column(
-          children: [
-            SwitchListTile(
-              secondary: const Icon(Icons.notifications_active_outlined),
-              title: const Text('Push notifications'),
-              subtitle: Text(
-                PushNotificationService.isAvailable
-                    ? 'Receive alerts when CrazeChat is in the background'
-                    : 'Add this Android app to Firebase to enable background alerts',
-              ),
-              value: widget.session.notificationsEnabled,
-              activeThumbColor: _brand,
-              onChanged: PushNotificationService.isAvailable
-                  ? (value) => widget.session.setNotificationsEnabled(value)
-                  : null,
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              secondary: const Icon(Icons.volume_up_outlined),
-              title: const Text('Sound effects'),
-              subtitle: const Text('Play a short sound when messages arrive or send'),
-              value: widget.session.soundEffectsEnabled,
-              activeThumbColor: _brand,
-              onChanged: (value) => widget.session.setSoundEffectsEnabled(value),
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              secondary: const Icon(Icons.vibration_outlined),
-              title: const Text('Vibration'),
-              subtitle: const Text('Use light haptic feedback for message actions'),
-              value: widget.session.vibrationEnabled,
-              activeThumbColor: _brand,
-              onChanged: (value) => widget.session.setVibrationEnabled(value),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 10),
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.brightness_auto_outlined)),
-                      ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
-                      ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+      children: [
+        const _Eyebrow('Your account'),
+        const SizedBox(height: 8),
+        Text(
+          'Settings',
+          style: Theme.of(context).textTheme.headlineMedium
+              ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1),
+        ),
+        const SizedBox(height: 18),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                _ProfileAvatar(
+                  username: widget.session.username ?? 'user',
+                  size: 54,
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '@${widget.session.username}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'End-to-end encrypted account',
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
-                    selected: {widget.session.themeMode},
-                    onSelectionChanged: (values) => widget.session.setThemeMode(values.first),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
-      const SizedBox(height: 14),
-      _SettingsAction(icon: Icons.lock_outline_rounded, title: 'Lock CrazeChat',
-        subtitle: 'Lock the local encryption identity', onTap: widget.session.lock),
-      _SettingsAction(icon: Icons.switch_account_outlined, title: 'Switch account',
-        subtitle: 'Manage saved accounts', onTap: _showAccounts),
-      _SettingsAction(icon: Icons.person_add_alt_1_outlined, title: 'Add account',
-        subtitle: 'Sign in with another CrazeChat account', onTap: widget.session.addAccount),
-      const SizedBox(height: 8),
-      OutlinedButton.icon(
-        onPressed: widget.session.signOut,
-        icon: const Icon(Icons.logout_rounded),
-        label: const Text('Sign out'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF9B3D35),
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        const SizedBox(height: 14),
+        _DriveBackupCard(session: widget.session),
+        const SizedBox(height: 14),
+        const _Eyebrow('Experience'),
+        const SizedBox(height: 8),
+        Card(
+          child: Column(
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Push notifications'),
+                subtitle: Text(
+                  PushNotificationService.isAvailable
+                      ? 'Receive alerts when CrazeChat is in the background'
+                      : 'Add this Android app to Firebase to enable background alerts',
+                ),
+                value: widget.session.notificationsEnabled,
+                activeThumbColor: _brand,
+                onChanged: PushNotificationService.isAvailable
+                    ? (value) => widget.session.setNotificationsEnabled(value)
+                    : null,
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                secondary: const Icon(Icons.volume_up_outlined),
+                title: const Text('Sound effects'),
+                subtitle: const Text(
+                  'Play a short sound when messages arrive or send',
+                ),
+                value: widget.session.soundEffectsEnabled,
+                activeThumbColor: _brand,
+                onChanged: (value) =>
+                    widget.session.setSoundEffectsEnabled(value),
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                secondary: const Icon(Icons.vibration_outlined),
+                title: const Text('Vibration'),
+                subtitle: const Text(
+                  'Use light haptic feedback for message actions',
+                ),
+                value: widget.session.vibrationEnabled,
+                activeThumbColor: _brand,
+                onChanged: (value) => widget.session.setVibrationEnabled(value),
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                secondary: const Icon(Icons.lock_clock_outlined),
+                title: const Text('Auto-lock in background'),
+                subtitle: const Text(
+                  'Lock after 5 minutes away from CrazeChat',
+                ),
+                value: widget.session.autoLockEnabled,
+                activeThumbColor: _brand,
+                onChanged: (value) => widget.session.setAutoLockEnabled(value),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Appearance',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          label: Text('System'),
+                          icon: Icon(Icons.brightness_auto_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          label: Text('Light'),
+                          icon: Icon(Icons.light_mode_outlined),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          label: Text('Dark'),
+                          icon: Icon(Icons.dark_mode_outlined),
+                        ),
+                      ],
+                      selected: {widget.session.themeMode},
+                      onSelectionChanged: (values) =>
+                          widget.session.setThemeMode(values.first),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      const SizedBox(height: 20),
-      const _SecurityNote(),
-    ],
-  );
+        const SizedBox(height: 14),
+        _SettingsAction(
+          icon: Icons.lock_outline_rounded,
+          title: 'Lock CrazeChat',
+          subtitle: 'Lock the local encryption identity',
+          onTap: () => unawaited(widget.session.lock()),
+        ),
+        _SettingsAction(
+          icon: Icons.switch_account_outlined,
+          title: 'Switch account',
+          subtitle: 'Manage saved accounts',
+          onTap: _showAccounts,
+        ),
+        _SettingsAction(
+          icon: Icons.person_add_alt_1_outlined,
+          title: 'Add account',
+          subtitle: 'Sign in with another CrazeChat account',
+          onTap: widget.session.addAccount,
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: widget.session.signOut,
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('Sign out'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF9B3D35),
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SecurityNote(),
+      ],
+    );
   }
 
   Future<void> _showAccounts() async {
     await showModalBottomSheet<void>(
-      context: context, showDragHandle: true,
-      builder: (sheetContext) => SafeArea(child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 6, 18, 22),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Saved accounts', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          ...widget.session.savedAccounts.where((account) => account['userId'] != widget.session.userId).map((account) =>
-            ListTile(leading: const Icon(Icons.account_circle_outlined), title: Text('@${account['username']}'),
-              subtitle: const Text('Switch account'), onTap: () {
-                Navigator.pop(sheetContext);
-                widget.session.switchAccount(account['userId'] as String);
-              })),
-          if (!widget.session.savedAccounts.any((account) => account['userId'] != widget.session.userId))
-            const ListTile(leading: Icon(Icons.info_outline), title: Text('No other account saved')),
-        ]),
-      )),
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Saved accounts',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              ...widget.session.savedAccounts
+                  .where(
+                    (account) => account['userId'] != widget.session.userId,
+                  )
+                  .map(
+                    (account) => ListTile(
+                      leading: const Icon(Icons.account_circle_outlined),
+                      title: Text('@${account['username']}'),
+                      subtitle: const Text('Switch account'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        widget.session.switchAccount(
+                          account['userId'] as String,
+                        );
+                      },
+                    ),
+                  ),
+              if (!widget.session.savedAccounts.any(
+                (account) => account['userId'] != widget.session.userId,
+              ))
+                const ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('No other account saved'),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
+class _DriveBackupCard extends StatefulWidget {
+  const _DriveBackupCard({required this.session});
+  final ChatSession session;
+
+  @override
+  State<_DriveBackupCard> createState() => _DriveBackupCardState();
+}
+
+class _DriveBackupCardState extends State<_DriveBackupCard> {
+  final service = GoogleDriveBackupService.instance;
+  String? _loadedUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadedUserId = widget.session.userId;
+    unawaited(service.refreshStatus(widget.session));
+  }
+
+  @override
+  void didUpdateWidget(covariant _DriveBackupCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentUserId = widget.session.userId;
+    if (currentUserId != _loadedUserId) {
+      _loadedUserId = currentUserId;
+      unawaited(service.refreshStatus(widget.session));
+    }
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (error) {
+      if (mounted) showMessage(context, error.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: service,
+    builder: (context, _) {
+      final colors = Theme.of(context).colorScheme;
+      final lastSync = service.lastSyncedAt;
+      final lastSyncLabel = lastSync == null
+          ? null
+          : '${MaterialLocalizations.of(context).formatMediumDate(lastSync)} · '
+                '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(lastSync))}';
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(17),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: colors.secondaryContainer,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      Icons.cloud_sync_rounded,
+                      color: colors.onSecondaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Encrypted Google Drive sync',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          service.enabled
+                              ? 'Automatic sync is on'
+                              : 'Optional · off until you connect',
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (service.syncing)
+                    const SizedBox(
+                      width: 19,
+                      height: 19,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Messages are encrypted again with your CrazeChat identity before upload. '
+                'Only an opaque backup is stored in Drive’s app-private area.',
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'Pausing or disconnecting stops future sync; it does not delete the existing Drive backup.',
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 11,
+                  height: 1.35,
+                ),
+              ),
+              if (service.accountEmail != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.account_circle_outlined,
+                      size: 16,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        service.accountEmail!,
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (lastSyncLabel != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Last sync: $lastSyncLabel',
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+              if (service.status != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  service.status!,
+                  style: TextStyle(
+                    color: colors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: service.enabled
+                    ? [
+                        FilledButton.icon(
+                          onPressed: service.syncing
+                              ? null
+                              : () =>
+                                    _run(() => service.syncNow(widget.session)),
+                          icon: const Icon(Icons.sync_rounded),
+                          label: const Text('Sync now'),
+                        ),
+                        TextButton(
+                          onPressed: service.syncing
+                              ? null
+                              : () => _run(
+                                  () => service.pauseSync(widget.session),
+                                ),
+                          child: const Text('Pause sync'),
+                        ),
+                        TextButton(
+                          onPressed: service.syncing
+                              ? null
+                              : () => _run(
+                                  () => service.disconnect(widget.session),
+                                ),
+                          child: const Text('Disconnect'),
+                        ),
+                      ]
+                    : [
+                        FilledButton.icon(
+                          onPressed: service.syncing
+                              ? null
+                              : () => _run(
+                                  () => service.connectAndSync(widget.session),
+                                ),
+                          icon: const Icon(Icons.add_link_rounded),
+                          label: const Text('Connect and sync'),
+                        ),
+                      ],
+              ),
+              if (!service.enabled && service.accountEmail != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: TextButton(
+                    onPressed: service.syncing
+                        ? null
+                        : () => _run(() => service.disconnect(widget.session)),
+                    child: const Text('Forget Google account'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _SettingsAction extends StatelessWidget {
-  const _SettingsAction({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _SettingsAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
   final IconData icon;
   final String title;
   final String subtitle;
@@ -919,16 +1648,27 @@ class _SettingsAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card(child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
-      leading: Container(width: 42, height: 42,
-        decoration: BoxDecoration(color: colors.secondaryContainer, borderRadius: BorderRadius.circular(13)),
-        child: Icon(icon, color: colors.onSecondaryContainer)),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      subtitle: Text(subtitle),
-      trailing: Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
-      onTap: onTap,
-    ));
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 5),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: colors.secondaryContainer,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: colors.onSecondaryContainer),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(subtitle),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: colors.onSurfaceVariant,
+        ),
+        onTap: onTap,
+      ),
+    );
   }
 }
 
@@ -939,6 +1679,7 @@ class ChatScreen extends StatefulWidget {
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
+
 class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
   final composerFocus = FocusNode();
@@ -963,8 +1704,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String get chatId => widget.chat['id'] as String;
   Map<String, dynamic>? get peer {
-    final members = (widget.chat['members'] as List? ?? const []).whereType<Map>()
-      .map((value) => Map<String, dynamic>.from(value));
+    final members = (widget.chat['members'] as List? ?? const [])
+        .whereType<Map>()
+        .map((value) => Map<String, dynamic>.from(value));
     for (final member in members) {
       if (member['id'] != widget.session.userId) return member;
     }
@@ -983,6 +1725,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     prepare();
   }
+
   @override
   void dispose() {
     reconnectTimer?.cancel();
@@ -997,12 +1740,17 @@ class _ChatScreenState extends State<ChatScreen> {
     scroll.dispose();
     super.dispose();
   }
+
   void _searchChanged() => setState(() {});
 
   Future<void> prepare() async {
     final other = peer;
     if (other == null || widget.session.identity == null) {
-      if (mounted) setState(() { error = 'This conversation is missing an encryption identity.'; loading = false; });
+      if (mounted)
+        setState(() {
+          error = 'This conversation is missing an encryption identity.';
+          loading = false;
+        });
       return;
     }
     peerName = other['username']?.toString() ?? 'Conversation';
@@ -1018,10 +1766,15 @@ class _ChatScreenState extends State<ChatScreen> {
       for (final message in cached) {
         await _addLocalMessage(message);
       }
+      messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() => loading = false);
       _connectRealtime();
     } catch (exception) {
-      if (mounted) setState(() { error = 'Could not establish the encrypted conversation: $exception'; loading = false; });
+      if (mounted)
+        setState(() {
+          error = 'Could not establish the encrypted conversation: $exception';
+          loading = false;
+        });
     }
   }
 
@@ -1030,7 +1783,10 @@ class _ChatScreenState extends State<ChatScreen> {
     connectingRealtime = true;
     try {
       final socket = await widget.session.api.connectRealtime(chatId);
-      if (!mounted) { await socket.close(); return; }
+      if (!mounted) {
+        await socket.close();
+        return;
+      }
       realtime = socket;
       reconnectAttempt = 0;
       reconnectTimer?.cancel();
@@ -1058,20 +1814,30 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted || reconnectTimer?.isActive == true) return;
     final seconds = 2 * (1 << reconnectAttempt.clamp(0, 5).toInt());
     reconnectAttempt = (reconnectAttempt + 1).clamp(0, 6).toInt();
-    reconnectTimer = Timer(Duration(seconds: seconds.clamp(2, 60).toInt()), () async {
-      if (!mounted) return;
-      await _retryPendingMessages();
-      _connectRealtime();
-    });
+    reconnectTimer = Timer(
+      Duration(seconds: seconds.clamp(2, 60).toInt()),
+      () async {
+        if (!mounted) return;
+        await _retryPendingMessages();
+        _connectRealtime();
+      },
+    );
   }
 
-  Future<void> _acknowledgeIncoming(List<String> ids, {required String status}) async {
-    if (ids.isEmpty) { return; }
+  Future<void> _acknowledgeIncoming(
+    List<String> ids, {
+    required String status,
+  }) async {
+    if (ids.isEmpty) {
+      return;
+    }
     for (var start = 0; start < ids.length; start += 100) {
       final batch = ids.skip(start).take(100).toList();
       try {
         await widget.session.api.acknowledgeMessages(
-          chatId, messageIds: batch, status: status,
+          chatId,
+          messageIds: batch,
+          status: status,
         );
         // A successful read acknowledgement lets the backend purge its
         // server-side payload. The encrypted local copy and ChatView entry
@@ -1100,9 +1866,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (local == 'queued') return 'queued';
     final recipientId = peer?['id']?.toString();
     final readBy = message['readBy'];
-    if (recipientId != null && readBy is Map && readBy.containsKey(recipientId)) return 'read';
+    if (recipientId != null && readBy is Map && readBy.containsKey(recipientId))
+      return 'read';
     final deliveredTo = message['deliveredTo'];
-    if (recipientId != null && deliveredTo is Map && deliveredTo.containsKey(recipientId)) return 'delivered';
+    if (recipientId != null &&
+        deliveredTo is Map &&
+        deliveredTo.containsKey(recipientId))
+      return 'delivered';
     return 'sent';
   }
 
@@ -1115,10 +1885,12 @@ class _ChatScreenState extends State<ChatScreen> {
         // Never propagate it into the receiver's durable local message history.
         return;
       }
-      if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map) return;
+      if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map)
+        return;
       final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
       final id = message['id']?.toString();
-      if (id == null || message['senderId'] == widget.session.userId ||
+      if (id == null ||
+          message['senderId'] == widget.session.userId ||
           messageIds.contains(id)) {
         return;
       }
@@ -1127,10 +1899,15 @@ class _ChatScreenState extends State<ChatScreen> {
         ...message,
         'deliveryState': 'saved',
       });
+      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      // A REST sync can finish while this event is being decrypted and saved.
+      // Recheck after the awaits so the same envelope is never shown twice.
+      if (messageIds.contains(id)) return;
       message['deliveryState'] = 'saved';
       messageIds.add(id);
       final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
+      if (lastMessageAt == null || timestamp > lastMessageAt!)
+        lastMessageAt = timestamp;
       if (mounted) {
         setState(() {
           _applyDecodedMessage(decoded);
@@ -1150,7 +1927,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _decodeMessage(Map<String, dynamic> message) async {
+  Future<Map<String, dynamic>> _decodeMessage(
+    Map<String, dynamic> message,
+  ) async {
     final clear = await CryptoService.decryptMessage(
       message: message,
       chatKey: chatKey!,
@@ -1213,19 +1992,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _addLocalMessage(Map<String, dynamic> message) async {
+    if (!mounted) return;
     final id = message['id']?.toString();
     if (id == null || messageIds.contains(id)) return;
     try {
       final decoded = await _decodeMessage(message);
+      if (!mounted) return;
       messageIds.add(id);
       final timestamp = (decoded['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
-      if (mounted) {
-        setState(() {
-          _applyDecodedMessage(decoded);
-          messages.sort((a, b) => _time(a).compareTo(_time(b)));
-        });
-      }
+      if (lastMessageAt == null || timestamp > lastMessageAt!)
+        lastMessageAt = timestamp;
+      _applyDecodedMessage(decoded);
     } catch (_) {
       // A damaged cache entry can be recovered from remote sync if it remains.
     }
@@ -1260,7 +2037,8 @@ class _ChatScreenState extends State<ChatScreen> {
           });
           if (!mine) receivedIds.add(id);
           final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-          if (lastMessageAt == null || timestamp > lastMessageAt!) lastMessageAt = timestamp;
+          if (lastMessageAt == null || timestamp > lastMessageAt!)
+            lastMessageAt = timestamp;
           if (!messageIds.contains(id)) {
             messageIds.add(id);
             _applyDecodedMessage(decoded);
@@ -1275,20 +2053,33 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         } catch (exception) {
-          if (!silent && mounted) showMessage(context, 'Could not save message $id locally: $exception');
+          if (!silent && mounted)
+            showMessage(
+              context,
+              'Could not save message $id locally: $exception',
+            );
         }
       }
-
-
 
       // Every received envelope above has been durably saved before the
       // read acknowledgement can trigger server-side deletion.
       await _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
-      if (mounted) setState(() { loading = false; error = null; });
+      if (raw.isNotEmpty) {
+        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      }
+      if (mounted)
+        setState(() {
+          loading = false;
+          error = null;
+        });
       if (!silent) _scrollToBottom();
     } catch (exception) {
-      if (mounted && !silent) setState(() { error = exception.toString(); loading = false; });
+      if (mounted && !silent)
+        setState(() {
+          error = exception.toString();
+          loading = false;
+        });
     } finally {
       syncing = false;
     }
@@ -1300,35 +2091,54 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final cached = await widget.session.loadCachedMessages(chatId);
       for (final item in cached) {
-      if (item['senderId'] != widget.session.userId || item['deliveryState'] != 'queued') continue;
-      final id = item['id']?.toString();
-      if (id == null) continue;
-      try {
-        final response = await widget.session.api.sendMessage(chatId, {
-          'id': id, 'format': item['format'], 'ciphertext': item['ciphertext'],
-          'nonce': item['nonce'], 'mac': item['mac'],
-        });
-        final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
-        await widget.session.updateCachedMessage(chatId, id,
-          deliveryState: 'sent', serverMessage: serverMessage);
-        if (mounted) {
-          final index = messages.indexWhere((message) => message['id'] == id);
-          if (index >= 0) {
-            setState(() {
-              messages[index]['deliveryState'] = 'sent';
-              if (serverMessage.containsKey('deliveredTo')) messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
-              if (serverMessage.containsKey('readBy')) messages[index]['readBy'] = serverMessage['readBy'];
-            });
+        if (item['senderId'] != widget.session.userId ||
+            item['deliveryState'] != 'queued')
+          continue;
+        final id = item['id']?.toString();
+        if (id == null) continue;
+        try {
+          final response = await widget.session.api.sendMessage(chatId, {
+            'id': id,
+            'format': item['format'],
+            'ciphertext': item['ciphertext'],
+            'nonce': item['nonce'],
+            'mac': item['mac'],
+          });
+          final serverMessage = Map<String, dynamic>.from(
+            response['message'] as Map,
+          );
+          await widget.session.updateCachedMessage(
+            chatId,
+            id,
+            deliveryState: 'sent',
+            serverMessage: serverMessage,
+          );
+          if (mounted) {
+            final index = messages.indexWhere((message) => message['id'] == id);
+            if (index >= 0) {
+              setState(() {
+                messages[index]['deliveryState'] = 'sent';
+                if (serverMessage.containsKey('deliveredTo'))
+                  messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
+                if (serverMessage.containsKey('readBy'))
+                  messages[index]['readBy'] = serverMessage['readBy'];
+              });
+            }
           }
+        } on ApiException catch (exception) {
+          if (exception.statusCode != null &&
+              exception.statusCode! >= 400 &&
+              exception.statusCode! < 500 &&
+              exception.statusCode != 429 &&
+              mounted) {
+            showMessage(
+              context,
+              'A queued message needs attention: ${exception.message}',
+            );
+          }
+        } catch (_) {
+          // Keep the encrypted item queued; the next sync cycle retries it.
         }
-      } on ApiException catch (exception) {
-        if (exception.statusCode != null && exception.statusCode! >= 400 &&
-            exception.statusCode! < 500 && exception.statusCode != 429 && mounted) {
-          showMessage(context, 'A queued message needs attention: ${exception.message}');
-        }
-      } catch (_) {
-        // Keep the encrypted item queued; the next sync cycle retries it.
-      }
       }
     } finally {
       retryingPending = false;
@@ -1370,6 +2180,7 @@ class _ChatScreenState extends State<ChatScreen> {
       };
       // Persist the encrypted envelope before the server can expose it.
       await widget.session.saveCachedMessage(chatId, queued);
+      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       if (mounted) {
         setState(() {
           messages.add({
@@ -1398,20 +2209,36 @@ class _ChatScreenState extends State<ChatScreen> {
           'nonce': encrypted['nonce'],
           'mac': encrypted['mac'],
         });
-        final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
+        final serverMessage = Map<String, dynamic>.from(
+          response['message'] as Map,
+        );
         await widget.session.updateCachedMessage(
           chatId,
           id,
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
+        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
-          if (index >= 0) setState(() => messages[index]['deliveryState'] = 'sent');
+          if (index >= 0) {
+            setState(() {
+              messages[index]['deliveryState'] = 'sent';
+              if (serverMessage.containsKey('deliveredTo')) {
+                messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
+              }
+              if (serverMessage.containsKey('readBy')) {
+                messages[index]['readBy'] = serverMessage['readBy'];
+              }
+            });
+          }
         }
       } catch (_) {
         if (mounted) {
-          showMessage(context, 'Saved to your outbox. CrazeChat will retry when the connection returns.');
+          showMessage(
+            context,
+            'Saved to your outbox. CrazeChat will retry when the connection returns.',
+          );
         }
       }
     } catch (exception) {
@@ -1455,6 +2282,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'deliveryState': 'queued',
       };
       await widget.session.saveCachedMessage(chatId, queued);
+      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       if (!mounted) return;
       setState(() {
         messageIds.add(id);
@@ -1480,15 +2308,19 @@ class _ChatScreenState extends State<ChatScreen> {
           'nonce': encrypted['nonce'],
           'mac': encrypted['mac'],
         });
-        final serverMessage = Map<String, dynamic>.from(response['message'] as Map);
+        final serverMessage = Map<String, dynamic>.from(
+          response['message'] as Map,
+        );
         await widget.session.updateCachedMessage(
           chatId,
           id,
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
+        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       } catch (_) {
-        if (mounted) showMessage(context, 'Reaction queued until the connection returns.');
+        if (mounted)
+          showMessage(context, 'Reaction queued until the connection returns.');
       }
     } catch (exception) {
       if (mounted) showMessage(context, 'Could not save reaction: $exception');
@@ -1514,11 +2346,18 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete this message?'),
-        content: const Text('The server copy will be removed and a deletion receipt will synchronize to the other participant.'),
+        content: const Text(
+          'The server copy will be removed and a deletion receipt will synchronize to the other participant.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Keep message')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep message'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF9B3D35)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF9B3D35),
+            ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
           ),
@@ -1529,8 +2368,12 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await widget.session.api.deleteMessage(chatId, id);
       await widget.session.deleteCachedMessage(chatId, id);
+      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       if (!mounted) return;
-      setState(() { messages.removeWhere((item) => item['id'] == id); messageIds.remove(id); });
+      setState(() {
+        messages.removeWhere((item) => item['id'] == id);
+        messageIds.remove(id);
+      });
       showMessage(context, 'Message deleted.');
     } catch (exception) {
       if (mounted) showMessage(context, exception.toString());
@@ -1542,50 +2385,69 @@ class _ChatScreenState extends State<ChatScreen> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(
-          leading: const Icon(Icons.reply_rounded),
-          title: const Text('Reply'),
-          onTap: () {
-            Navigator.pop(sheetContext);
-            _startReply(message);
-          },
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: ['❤️', '😂', '😮', '😢', '🙏', '👍'].map((emoji) =>
-              InkWell(
-                borderRadius: BorderRadius.circular(24),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply_rounded),
+              title: const Text('Reply'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _startReply(message);
+              },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: ['❤️', '😂', '😮', '😢', '🙏', '👍']
+                    .map(
+                      (emoji) => InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          reactToMessage(message, emoji);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(7),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.copy_rounded),
+              title: const Text('Copy message'),
+              onTap: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: message['clearText']?.toString() ?? ''),
+                );
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+                if (mounted) showMessage(context, 'Message copied.');
+              },
+            ),
+            if (mine)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Color(0xFF9B3D35),
+                ),
+                title: const Text('Delete message'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  reactToMessage(message, emoji);
+                  deleteMessage(message);
                 },
-                child: Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: Text(emoji, style: const TextStyle(fontSize: 24)),
-                ),
               ),
-            ).toList(),
-          ),
+          ],
         ),
-        const Divider(height: 1),
-        ListTile(
-          leading: const Icon(Icons.copy_rounded),
-          title: const Text('Copy message'),
-          onTap: () async {
-            await Clipboard.setData(ClipboardData(text: message['clearText']?.toString() ?? ''));
-            if (sheetContext.mounted) Navigator.pop(sheetContext);
-            if (mounted) showMessage(context, 'Message copied.');
-          },
-        ),
-        if (mine) ListTile(
-          leading: const Icon(Icons.delete_outline_rounded, color: Color(0xFF9B3D35)),
-          title: const Text('Delete message'),
-          onTap: () { Navigator.pop(sheetContext); deleteMessage(message); },
-        ),
-      ])),
+      ),
     );
   }
 
@@ -1601,7 +2463,8 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  int _time(Map<String, dynamic> message) => (message['createdAt'] as num?)?.toInt() ?? 0;
+  int _time(Map<String, dynamic> message) =>
+      (message['createdAt'] as num?)?.toInt() ?? 0;
   String _clock(Object? value) {
     final timestamp = value is num ? value.toInt() : 0;
     if (timestamp <= 0) return '';
@@ -1612,338 +2475,604 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final visible = messages.where((message) =>
-      message['messageKind'] != 'reaction' &&
-      (message['clearText']?.toString().toLowerCase() ?? '').contains(search.text.trim().toLowerCase())
-    ).toList();
+    final visible = messages
+        .where(
+          (message) =>
+              message['messageKind'] != 'reaction' &&
+              (message['clearText']?.toString().toLowerCase() ?? '').contains(
+                search.text.trim().toLowerCase(),
+              ),
+        )
+        .toList();
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded)),
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
         titleSpacing: 0,
-        title: Row(children: [
-          _ProfileAvatar(username: peerName ?? 'contact', size: 40),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(peerName ?? 'Conversation', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            Row(children: [
-              const Icon(Icons.shield_outlined, size: 12, color: _brand),
-              const SizedBox(width: 4),
-              Text('Private channel', style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
-            ]),
-          ])),
-        ]),
+        title: Row(
+          children: [
+            _ProfileAvatar(username: peerName ?? 'contact', size: 40),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    peerName ?? 'Conversation',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.shield_outlined,
+                        size: 12,
+                        color: _brand,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Private channel',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: searchOpen ? 'Close search' : 'Search messages',
-            onPressed: () => setState(() { searchOpen = !searchOpen; search.clear(); }),
+            onPressed: () => setState(() {
+              searchOpen = !searchOpen;
+              search.clear();
+            }),
             icon: Icon(searchOpen ? Icons.close_rounded : Icons.search_rounded),
           ),
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          decoration: BoxDecoration(
-            color: colors.secondaryContainer,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(children: [
-            Icon(Icons.auto_awesome_rounded, color: colors.onSecondaryContainer, size: 17),
-            const SizedBox(width: 8),
-            Expanded(child: Text(
-              'END-TO-END ENCRYPTED · Messages stay available in your conversation',
-              style: TextStyle(color: colors.onSecondaryContainer, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: .3),
-            )),
-          ]),
-        ),
-        if (searchOpen) Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-          child: TextField(controller: search, autofocus: true,
-            decoration: const InputDecoration(hintText: 'Search in this conversation', prefixIcon: Icon(Icons.search_rounded))),
-        ),
-        if (error != null && !loading) Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-          child: Material(
-            color: colors.errorContainer,
-            borderRadius: BorderRadius.circular(12),
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.cloud_off_outlined, color: colors.onErrorContainer),
-              title: Text(error!, style: TextStyle(fontSize: 12, color: colors.onErrorContainer)),
-              trailing: IconButton(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded)),
-            ),
-          ),
-        ),
-        Expanded(
-          child: loading ? const Center(child: CircularProgressIndicator())
-            : error != null && messages.isEmpty ? Center(child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.lock_clock_outlined, size: 48, color: colors.onSurfaceVariant),
-                  const SizedBox(height: 12),
-                  Text('Conversation not synced', style: TextStyle(color: colors.onSurface)),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(onPressed: () => loadMessages(), icon: const Icon(Icons.refresh_rounded), label: const Text('Retry')),
-                ]),
-              ))
-            : visible.isEmpty ? Center(child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const _BrandMark(size: 52),
-                  const SizedBox(height: 14),
-                  Text(search.text.isEmpty ? 'This channel is yours.' : 'No matching messages.',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  Text('Encrypted before sending. Saved on your device.',
-                    textAlign: TextAlign.center, style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
-                ]),
-              ))
-            : ListView.builder(
-                key: const PageStorageKey<String>('chat-message-list'),
-                controller: scroll,
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
-                itemCount: visible.length,
-                itemBuilder: (context, index) {
-                  final message = visible[index];
-                  final mine = message['senderId'] == widget.session.userId;
-                  final state = mine ? _outgoingState(message) : (message['deliveryState']?.toString() ?? '');
-                  final reactions = Map<String, dynamic>.from(
-                    message['reactionsByUser'] is Map ? message['reactionsByUser'] as Map : const {},
-                  );
-                  final reactionCounts = <String, int>{};
-                  for (final value in reactions.values.whereType<String>()) {
-                    reactionCounts[value] = (reactionCounts[value] ?? 0) + 1;
-                  }
-                  final reply = message['replyTo'] is Map
-                      ? Map<String, dynamic>.from(message['replyTo'] as Map)
-                      : null;
-                  final isDark = Theme.of(context).brightness == Brightness.dark;
-                  final bubbleColor = mine
-                      ? (isDark ? const Color(0xFF17483D) : const Color(0xFFE0F1E8))
-                      : (isDark ? const Color(0xFF1A2925) : Colors.white);
-                  final bubbleBorder = isDark
-                      ? const Color(0xFF2E4840)
-                      : (mine ? const Color(0xFFC6E4D4) : const Color(0xFFE5ECE8));
-                  return TweenAnimationBuilder<double>(
-                    key: ValueKey(message['id']),
-                    tween: Tween<double>(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, progress, child) => Opacity(
-                      opacity: progress,
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - progress) * 10),
-                        child: child,
-                      ),
-                    ),
-                    child: Align(
-                    alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .84),
-                      child: GestureDetector(
-                        onLongPress: () => messageActions(message),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.fromLTRB(15, 13, 15, 11),
-                          decoration: BoxDecoration(
-                            color: bubbleColor,
-                            borderRadius: BorderRadius.circular(19),
-                            border: Border.all(color: bubbleBorder),
-                          ),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text(mine ? 'YOU' : (peerName ?? 'CONTACT').toUpperCase(),
-                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: colors.primary, letterSpacing: 1)),
-                              const SizedBox(width: 9),
-                              Text(_clock(message['createdAt']),
-                                style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
-                            ]),
-                            const SizedBox(height: 7),
-                            if (reply != null) ...[
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: MediaQuery.sizeOf(context).width * .68,
-                                ),
-                                child: Container(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                padding: const EdgeInsets.fromLTRB(9, 6, 9, 6),
-                                decoration: BoxDecoration(
-                                  color: colors.surface.withValues(alpha: .72),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border(
-                                    left: BorderSide(color: colors.primary, width: 3),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      reply['senderId'] == widget.session.userId ? 'You' : (peerName ?? 'Contact'),
-                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      reply['text']?.toString() ?? '',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-                                    ),
-                                  ],
-                                ),
-                                ),
-                              ),
-                            ],
-                            Text(message['clearText']?.toString() ?? '',
-                              style: TextStyle(fontSize: 14, height: 1.4, color: colors.onSurface)),
-                            if (reactionCounts.isNotEmpty) ...[
-                              const SizedBox(height: 5),
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOutCubic,
-                                child: Wrap(
-                                  spacing: 4,
-                                  runSpacing: 3,
-                                  children: reactionCounts.entries.map((reactionEntry) => InkWell(
-                                    borderRadius: BorderRadius.circular(18),
-                                    onTap: () => reactToMessage(message, reactionEntry.key),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: colors.surfaceContainerHighest,
-                                        borderRadius: BorderRadius.circular(18),
-                                        border: Border.all(color: colors.outlineVariant),
-                                      ),
-                                      child: Text(
-                                        '${reactionEntry.key} ${reactionEntry.value}',
-                                        style: TextStyle(fontSize: 11, color: colors.onSurface),
-                                      ),
-                                    ),
-                                  )).toList(),
-                                ),
-                              ),
-                            ],
-                            if (mine && state.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(
-                                  state == 'queued' ? Icons.schedule_rounded : state == 'read' ? Icons.done_all_rounded : state == 'delivered' ? Icons.done_all_rounded : Icons.check_rounded,
-                                  size: 12, color: colors.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  state == 'queued' ? 'WAITING TO SEND' : state == 'read' ? 'READ' : state == 'delivered' ? 'DELIVERED' : 'SENT',
-                                  style: TextStyle(fontSize: 9, color: colors.primary, fontWeight: FontWeight.w800, letterSpacing: .3),
-                                ),
-                              ]),
-                            ],
-                          ]),
-                        ),
-                      ),
-                    ),
-                    ),
-                  );
-                },
-              ),
-        ),
-        SafeArea(
-          top: false,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(13, 9, 13, 12),
+      body: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
             decoration: BoxDecoration(
-              color: colors.surfaceContainer,
-              border: Border(top: BorderSide(color: colors.outlineVariant)),
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: replyTarget == null
-                      ? const SizedBox.shrink()
-                      : Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 9),
-                          padding: const EdgeInsets.fromLTRB(12, 9, 7, 9),
-                          decoration: BoxDecoration(
-                            color: colors.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(13),
-                            border: Border(left: BorderSide(color: colors.primary, width: 3)),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      replyTarget!['senderId'] == widget.session.userId ? 'Replying to yourself' : 'Replying to ${peerName ?? 'contact'}',
-                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: colors.primary),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      replyTarget!['clearText']?.toString() ?? '',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Cancel reply',
-                                onPressed: () => setState(() => replyTarget = null),
-                                icon: const Icon(Icons.close_rounded, size: 18),
-                              ),
-                            ],
-                          ),
-                        ),
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  color: colors.onSecondaryContainer,
+                  size: 17,
                 ),
-                Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Expanded(child: TextField(
-                    controller: input,
-                    focusNode: composerFocus,
-                    minLines: 1,
-                    maxLines: 5,
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => send(),
-                    decoration: const InputDecoration(
-                      hintText: 'Write something…',
-                      prefixIcon: Icon(Icons.edit_note_rounded),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  )),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 48, height: 48,
-                    child: AnimatedScale(
-                      scale: sending ? .94 : 1,
-                      duration: const Duration(milliseconds: 140),
-                      child: FilledButton(
-                        onPressed: sending ? null : send,
-                        style: FilledButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: colors.primary,
-                          foregroundColor: colors.onPrimary,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: sending
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.arrow_upward_rounded),
-                      ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'END-TO-END ENCRYPTED · Messages stay available in your conversation',
+                    style: TextStyle(
+                      color: colors.onSecondaryContainer,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: .3,
                     ),
                   ),
-                ]),
+                ),
               ],
             ),
           ),
-        ),
-      ]),
+          if (searchOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: TextField(
+                controller: search,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search in this conversation',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+            ),
+          if (error != null && !loading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Material(
+                color: colors.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(
+                    Icons.cloud_off_outlined,
+                    color: colors.onErrorContainer,
+                  ),
+                  title: Text(
+                    error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.onErrorContainer,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    onPressed: () => loadMessages(),
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : error != null && messages.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.lock_clock_outlined,
+                            size: 48,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Conversation not synced',
+                            style: TextStyle(color: colors.onSurface),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.icon(
+                            onPressed: () => loadMessages(),
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : visible.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _BrandMark(size: 52),
+                          const SizedBox(height: 14),
+                          Text(
+                            search.text.isEmpty
+                                ? 'This channel is yours.'
+                                : 'No matching messages.',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Encrypted before sending. Saved on your device.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    key: const PageStorageKey<String>('chat-message-list'),
+                    controller: scroll,
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+                    itemCount: visible.length,
+                    itemBuilder: (context, index) {
+                      final message = visible[index];
+                      final mine = message['senderId'] == widget.session.userId;
+                      final state = mine
+                          ? _outgoingState(message)
+                          : (message['deliveryState']?.toString() ?? '');
+                      final reactions = Map<String, dynamic>.from(
+                        message['reactionsByUser'] is Map
+                            ? message['reactionsByUser'] as Map
+                            : const {},
+                      );
+                      final reactionCounts = <String, int>{};
+                      for (final value
+                          in reactions.values.whereType<String>()) {
+                        reactionCounts[value] =
+                            (reactionCounts[value] ?? 0) + 1;
+                      }
+                      final reply = message['replyTo'] is Map
+                          ? Map<String, dynamic>.from(message['replyTo'] as Map)
+                          : null;
+                      final isDark =
+                          Theme.of(context).brightness == Brightness.dark;
+                      final bubbleColor = mine
+                          ? (isDark
+                                ? const Color(0xFF17483D)
+                                : const Color(0xFFE0F1E8))
+                          : (isDark ? const Color(0xFF1A2925) : Colors.white);
+                      final bubbleBorder = isDark
+                          ? const Color(0xFF2E4840)
+                          : (mine
+                                ? const Color(0xFFC6E4D4)
+                                : const Color(0xFFE5ECE8));
+                      return TweenAnimationBuilder<double>(
+                        key: ValueKey(message['id']),
+                        tween: Tween<double>(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, progress, child) => Opacity(
+                          opacity: progress,
+                          child: Transform.translate(
+                            offset: Offset(0, (1 - progress) * 10),
+                            child: child,
+                          ),
+                        ),
+                        child: Align(
+                          alignment: mine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: MediaQuery.sizeOf(context).width * .84,
+                            ),
+                            child: GestureDetector(
+                              onLongPress: () => messageActions(message),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.fromLTRB(
+                                  15,
+                                  13,
+                                  15,
+                                  11,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: bubbleColor,
+                                  borderRadius: BorderRadius.circular(19),
+                                  border: Border.all(color: bubbleBorder),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          mine
+                                              ? 'YOU'
+                                              : (peerName ?? 'CONTACT')
+                                                    .toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w900,
+                                            color: colors.primary,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 9),
+                                        Text(
+                                          _clock(message['createdAt']),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 7),
+                                    if (reply != null) ...[
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth:
+                                              MediaQuery.sizeOf(context).width *
+                                              .68,
+                                        ),
+                                        child: Container(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 6,
+                                          ),
+                                          padding: const EdgeInsets.fromLTRB(
+                                            9,
+                                            6,
+                                            9,
+                                            6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: colors.surface.withValues(
+                                              alpha: .72,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border(
+                                              left: BorderSide(
+                                                color: colors.primary,
+                                                width: 3,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                reply['senderId'] ==
+                                                        widget.session.userId
+                                                    ? 'You'
+                                                    : (peerName ?? 'Contact'),
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: colors.primary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                reply['text']?.toString() ?? '',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color:
+                                                      colors.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    Text(
+                                      message['clearText']?.toString() ?? '',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        height: 1.4,
+                                        color: colors.onSurface,
+                                      ),
+                                    ),
+                                    if (reactionCounts.isNotEmpty) ...[
+                                      const SizedBox(height: 5),
+                                      AnimatedSize(
+                                        duration: const Duration(
+                                          milliseconds: 180,
+                                        ),
+                                        curve: Curves.easeOutCubic,
+                                        child: Wrap(
+                                          spacing: 4,
+                                          runSpacing: 3,
+                                          children: reactionCounts.entries
+                                              .map(
+                                                (reactionEntry) => InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(18),
+                                                  onTap: () => reactToMessage(
+                                                    message,
+                                                    reactionEntry.key,
+                                                  ),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 3,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: colors
+                                                          .surfaceContainerHighest,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            18,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: colors
+                                                            .outlineVariant,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      '${reactionEntry.key} ${reactionEntry.value}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: colors.onSurface,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              )
+                                              .toList(),
+                                        ),
+                                      ),
+                                    ],
+                                    if (mine && state.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            state == 'queued'
+                                                ? Icons.schedule_rounded
+                                                : state == 'read'
+                                                ? Icons.done_all_rounded
+                                                : state == 'delivered'
+                                                ? Icons.done_all_rounded
+                                                : Icons.check_rounded,
+                                            size: 12,
+                                            color: colors.primary,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            state == 'queued'
+                                                ? 'WAITING TO SEND'
+                                                : state == 'read'
+                                                ? 'READ'
+                                                : state == 'delivered'
+                                                ? 'DELIVERED'
+                                                : 'SENT',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: .3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(13, 9, 13, 12),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainer,
+                border: Border(top: BorderSide(color: colors.outlineVariant)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: replyTarget == null
+                        ? const SizedBox.shrink()
+                        : Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 9),
+                            padding: const EdgeInsets.fromLTRB(12, 9, 7, 9),
+                            decoration: BoxDecoration(
+                              color: colors.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border(
+                                left: BorderSide(
+                                  color: colors.primary,
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        replyTarget!['senderId'] ==
+                                                widget.session.userId
+                                            ? 'Replying to yourself'
+                                            : 'Replying to ${peerName ?? 'contact'}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          color: colors.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        replyTarget!['clearText']?.toString() ??
+                                            '',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: colors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Cancel reply',
+                                  onPressed: () =>
+                                      setState(() => replyTarget = null),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: input,
+                          focusNode: composerFocus,
+                          minLines: 1,
+                          maxLines: 5,
+                          textCapitalization: TextCapitalization.sentences,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => send(),
+                          decoration: const InputDecoration(
+                            hintText: 'Write something…',
+                            prefixIcon: Icon(Icons.edit_note_rounded),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: AnimatedScale(
+                          scale: sending ? .94 : 1,
+                          duration: const Duration(milliseconds: 140),
+                          child: FilledButton(
+                            onPressed: sending ? null : send,
+                            style: FilledButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              backgroundColor: colors.primary,
+                              foregroundColor: colors.onPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: sending
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.arrow_upward_rounded),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
