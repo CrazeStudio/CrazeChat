@@ -628,7 +628,7 @@ class ChatSession extends ChangeNotifier {
 
   /// Exports encrypted message envelopes only. Plaintext is never part of the
   /// returned archive; DriveBackupService encrypts the whole archive again.
-  Future<Map<String, dynamic>> exportEncryptedDriveArchive() async {
+  Future<Map<String, dynamic>> exportEncryptedLocalArchive() async {
     final uid = userId;
     if (uid == null || identity == null || identity!.hasBeenDestroyed) {
       throw StateError(
@@ -687,7 +687,7 @@ class ChatSession extends ChangeNotifier {
 
   /// Merges authenticated encrypted envelopes from Drive into this account's
   /// local cache. Existing local records win if a message ID is already stored.
-  Future<int> mergeEncryptedDriveArchive(Map<String, dynamic> archive) async {
+  Future<int> mergeEncryptedLocalArchive(Map<String, dynamic> archive) async {
     final uid = userId;
     if (uid == null ||
         identity == null ||
@@ -702,7 +702,7 @@ class ChatSession extends ChangeNotifier {
     final rawChats = archive['chats'] as List;
     if (rawChats.length > 2000) {
       throw const FormatException(
-        'The Drive backup contains too many conversations.',
+        'The local backup contains too many conversations.',
       );
     }
     final validated =
@@ -716,7 +716,7 @@ class ChatSession extends ChangeNotifier {
     var totalMessages = 0;
     for (final rawChat in rawChats) {
       if (rawChat is! Map) {
-        throw const FormatException('Invalid conversation in Drive backup.');
+        throw const FormatException('Invalid conversation in local backup.');
       }
       final chatId = rawChat['chatId'];
       final rawMessages = rawChat['messages'];
@@ -725,12 +725,12 @@ class ChatSession extends ChangeNotifier {
           !_chatIdPattern.hasMatch(chatId) ||
           rawMessages is! List ||
           rawTombstones is! List) {
-        throw const FormatException('Invalid conversation in Drive backup.');
+        throw const FormatException('Invalid conversation in local backup.');
       }
       if (rawMessages.length > 100000 ||
           totalMessages + rawMessages.length > 200000) {
         throw const FormatException(
-          'The Drive backup contains too many messages.',
+          'The local backup contains too many messages.',
         );
       }
       final messages = <Map<String, dynamic>>[];
@@ -738,21 +738,21 @@ class ChatSession extends ChangeNotifier {
       for (final rawId in rawTombstones) {
         if (rawId is! String || !_messageIdPattern.hasMatch(rawId)) {
           throw const FormatException(
-            'Invalid deletion marker in Drive backup.',
+            'Invalid deletion marker in local backup.',
           );
         }
         tombstones.add(rawId);
       }
       for (final rawMessage in rawMessages) {
         if (rawMessage is! Map) {
-          throw const FormatException('Invalid message in Drive backup.');
+          throw const FormatException('Invalid message in local backup.');
         }
         final message = Map<String, dynamic>.from(rawMessage);
         final id = message['id'];
         if (id is! String ||
             !_messageIdPattern.hasMatch(id) ||
             message['createdAt'] is! num) {
-          throw const FormatException('Invalid message in Drive backup.');
+          throw const FormatException('Invalid message in local backup.');
         }
         if (tombstones.contains(id)) continue;
         CryptoService.validateMessageEnvelope(message);
