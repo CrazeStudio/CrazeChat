@@ -142,17 +142,19 @@ class ChatSession extends ChangeNotifier {
     token = response['token'] as String;
     username = user['username'] as String;
     userId = user['id'] as String;
-    identityEnvelope = Map<String, dynamic>.from(
-      response['identityEnvelope'] as Map,
-    );
+    final serverEnvelope = Map<String, dynamic>.from(response['identityEnvelope'] as Map);
+    identityEnvelope = Map<String, dynamic>.from(material.envelope);
     _destroyIdentity();
     identity = material.keyPair;
+    api.token = token;
+    if (serverEnvelope['version'] != material.envelope['version'] || serverEnvelope['keyProtection'] != material.envelope['keyProtection']) {
+      await api.updateIdentityEnvelope(material.envelope);
+    }
     await _storage.delete(key: _manualLockKey);
     await _storage.write(
       key: 'identityPrivateKey_$userId',
       value: base64Encode(material.privateKeyBytes),
     );
-    api.token = token;
     await _persistActive();
     savedAccounts.removeWhere((item) => item['userId'] == userId);
     savedAccounts.insert(0, {
@@ -167,9 +169,6 @@ class ChatSession extends ChangeNotifier {
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
   }
-
-  bool get needsEncryptionPassphraseMigration =>
-      identityEnvelope?['version'] == 1;
 
   Future<String> contactKeyStatus({
     required String contactId,
@@ -208,43 +207,34 @@ class ChatSession extends ChangeNotifier {
     await _storage.write(key: _trustedContactKeysKey, value: jsonEncode(trusted));
   }
 
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    if (!signedIn || identityEnvelope == null) {
-      throw const FormatException('Sign in before changing your password.');
-    }
-    // The account password is authentication-only. It never re-wraps or
-    // otherwise changes the independently protected identity key.
-    await api.changePassword(
-      currentPassword: currentPassword,
-      newPassword: newPassword,
-    );
-  }
-
-  Future<void> updateEncryptionPassphrase(String newPassphrase) async {
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
     final currentIdentity = identity;
     final uid = userId;
-    if (!signedIn || currentIdentity == null || uid == null) {
-      throw const FormatException('Unlock your identity before changing its encryption passphrase.');
+    if (!signedIn || identityEnvelope == null || currentIdentity == null || uid == null) {
+      throw const FormatException('Unlock your CrazeChat identity before changing your password.');
     }
-    final material = await CryptoService.rewrapUnlockedIdentity(
-      identity: currentIdentity,
-      encryptionPassphrase: newPassphrase,
-    );
-    await api.updateIdentityEnvelope(material.envelope);
+    final material = await CryptoService.rewrapUnlockedIdentity(identity: currentIdentity, password: newPassword);
+    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, identityEnvelope: material.envelope);
     identityEnvelope = material.envelope;
-    await _storage.write(
-      key: 'identityPrivateKey_$uid',
-      value: base64Encode(material.privateKeyBytes),
-    );
+    await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
     await _persistActive();
-    for (final account in savedAccounts) {
-      if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
-    }
+    for (final account in savedAccounts) { if (account['userId'] == uid) account['identityEnvelope'] = material.envelope; }
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
+  }
+
+  Future<IdentityMaterial> unlockForLogin({required Map<String, dynamic> envelope, required String password, required String accountId}) async {
+    if (envelope['version'] == 2) {
+      final saved = await _storage.read(key: 'identityPrivateKey_$accountId');
+      if (saved == null) throw const FormatException('This account uses an older separate encryption passphrase. Open it on a device where it is already unlocked to migrate automatically.');
+      final keyPair = await CryptoService.restoreIdentityFromPrivateBytes(envelope, base64Decode(saved));
+      return CryptoService.rewrapUnlockedIdentity(identity: keyPair, password: password);
+    }
+    final material = await CryptoService.unlockIdentityMaterial(envelope, password);
+    if (envelope['version'] != 3 || envelope['keyProtection'] != 'account-password-v3') {
+      return CryptoService.rewrapUnlockedIdentity(identity: material.keyPair, password: password);
+    }
+    return material;
   }
 
   Future<void> unlock(String password) async {
