@@ -179,7 +179,9 @@ class CryptoService {
     );
   }
 
-  /// Re-wraps the account identity using its account password.
+  /// Re-wraps the account identity using its account password. The private
+  /// key is never sent to the backend; the password is still sent separately
+  /// as the normal HTTPS login credential for server-side authentication.
   static Future<IdentityMaterial> rewrapUnlockedIdentity({
     required KeyPair identity,
     required String password,
