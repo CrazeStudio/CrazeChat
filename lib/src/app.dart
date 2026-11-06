@@ -11,6 +11,7 @@ import 'crypto_service.dart';
 import 'session.dart';
 import 'push_notifications.dart';
 import 'local_folder_sync.dart';
+import 'sound_effects.dart';
 
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
@@ -28,6 +29,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
   void initState() {
     super.initState();
     session.addListener(_syncPushRegistration);
+    unawaited(CrazeChatSoundEffects.initialize());
     session.restore();
   }
 
@@ -50,6 +52,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
   void dispose() {
     session.removeListener(_syncPushRegistration);
     session.dispose();
+    unawaited(CrazeChatSoundEffects.dispose());
     super.dispose();
   }
 
@@ -2108,9 +2111,11 @@ class _ChatScreenState extends State<ChatScreen> {
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
         _scrollToBottom();
-        if (widget.session.soundEffectsEnabled) {
-          SystemSound.play(SystemSoundType.alert);
-        }
+        unawaited(
+          CrazeChatSoundEffects.playIncoming(
+            enabled: widget.session.soundEffectsEnabled,
+          ),
+        );
         if (widget.session.vibrationEnabled) {
           HapticFeedback.mediumImpact();
         }
@@ -2408,9 +2413,11 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
       _scrollToBottom();
-      if (widget.session.soundEffectsEnabled) {
-        SystemSound.play(SystemSoundType.click);
-      }
+      unawaited(
+        CrazeChatSoundEffects.playOutgoing(
+          enabled: widget.session.soundEffectsEnabled,
+        ),
+      );
       if (widget.session.vibrationEnabled) {
         HapticFeedback.lightImpact();
       }
@@ -2515,9 +2522,11 @@ class _ChatScreenState extends State<ChatScreen> {
           'reactionEmoji': nextEmoji,
         });
       });
-      if (widget.session.soundEffectsEnabled) {
-        SystemSound.play(SystemSoundType.click);
-      }
+      unawaited(
+        CrazeChatSoundEffects.playOutgoing(
+          enabled: widget.session.soundEffectsEnabled,
+        ),
+      );
       if (widget.session.vibrationEnabled) {
         HapticFeedback.selectionClick();
       }
