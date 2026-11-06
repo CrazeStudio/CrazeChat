@@ -28,6 +28,7 @@ class ChatSession extends ChangeNotifier {
   KeyPair? identity;
   List<Map<String, dynamic>> savedAccounts = [];
   static const _accountsKey = 'savedAccounts';
+  static const _trustedContactKeysKey = 'trustedContactPublicKeyFingerprints';
   static final _chatIdPattern = RegExp(r'^[a-f0-9]{32}$');
   static final _messageIdPattern = RegExp(r'^[a-f0-9]{32}$');
   final Map<String, Future<void>> _cacheWriteQueues = {};
@@ -169,6 +170,43 @@ class ChatSession extends ChangeNotifier {
 
   bool get needsEncryptionPassphraseMigration =>
       identityEnvelope?['version'] == 1;
+
+  Future<String> contactKeyStatus({
+    required String contactId,
+    required String publicKey,
+  }) async {
+    final fingerprint = await CryptoService.fingerprintPublicKey(publicKey);
+    final encoded = await _storage.read(key: _trustedContactKeysKey);
+    if (encoded == null) return 'unverified';
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) return 'unverified';
+      final previous = decoded[contactId];
+      if (previous == null) return 'unverified';
+      return previous == fingerprint ? 'verified' : 'changed';
+    } catch (_) {
+      return 'unverified';
+    }
+  }
+
+  Future<void> trustContactKey({
+    required String contactId,
+    required String publicKey,
+  }) async {
+    final fingerprint = await CryptoService.fingerprintPublicKey(publicKey);
+    final encoded = await _storage.read(key: _trustedContactKeysKey);
+    Map<String, dynamic> trusted = {};
+    if (encoded != null) {
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is Map) trusted = Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        trusted = {};
+      }
+    }
+    trusted[contactId] = fingerprint;
+    await _storage.write(key: _trustedContactKeysKey, value: jsonEncode(trusted));
+  }
 
   Future<void> changePassword({
     required String currentPassword,
