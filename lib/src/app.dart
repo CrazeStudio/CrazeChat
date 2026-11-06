@@ -774,35 +774,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> startChat() async {
-    final controller = TextEditingController();
     final target = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Find a person'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.none,
-          decoration: const InputDecoration(
-            labelText: 'CrazeChat username',
-            prefixIcon: Icon(Icons.alternate_email_rounded),
-          ),
-          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Open conversation'),
-          ),
-        ],
-      ),
+      builder: (_) => _FindPeopleDialog(session: widget.session),
     );
-    controller.dispose();
     if (target == null || target.isEmpty || !mounted) return;
     try {
       final response = await widget.session.api.createChat(target);
@@ -1440,6 +1415,196 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   leading: Icon(Icons.info_outline),
                   title: Text('No other account saved'),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FindPeopleDialog extends StatefulWidget {
+  const _FindPeopleDialog({required this.session});
+  final ChatSession session;
+
+  @override
+  State<_FindPeopleDialog> createState() => _FindPeopleDialogState();
+}
+
+class _FindPeopleDialogState extends State<_FindPeopleDialog> {
+  final controller = TextEditingController();
+  Timer? debounce;
+  List<Map<String, dynamic>> users = [];
+  bool searching = false;
+  String? error;
+  String query = '';
+
+  @override
+  void dispose() {
+    debounce?.cancel();
+    controller.dispose();
+    super.dispose();
+  }
+
+  void _search(String value) {
+    query = value.trim();
+    debounce?.cancel();
+    if (query.length < 2) {
+      setState(() {
+        users = [];
+        searching = false;
+        error = null;
+      });
+      return;
+    }
+    setState(() {
+      searching = true;
+      error = null;
+    });
+    debounce = Timer(const Duration(milliseconds: 320), _runSearch);
+  }
+
+  Future<void> _runSearch() async {
+    final requested = query;
+    try {
+      final result = await widget.session.api.searchUsers(requested);
+      if (!mounted || requested != query) return;
+      final values = (result['users'] as List? ?? const [])
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .where((value) => value['id'] != widget.session.userId)
+          .toList();
+      setState(() {
+        users = values;
+        searching = false;
+        error = null;
+      });
+    } catch (exception) {
+      if (!mounted || requested != query) return;
+      setState(() {
+        users = [];
+        searching = false;
+        error = exception.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Find people',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                onChanged: _search,
+                decoration: InputDecoration(
+                  hintText: 'Search by username',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: controller.text.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            controller.clear();
+                            _search('');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: searching
+                    ? const Center(child: CircularProgressIndicator())
+                    : error != null
+                        ? Center(
+                            child: Text(
+                              error!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: colors.error),
+                            ),
+                          )
+                        : users.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 34),
+                                  child: Text(
+                                    query.length < 2
+                                        ? 'Enter at least 2 characters to find people.'
+                                        : 'No users found for “$query”.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: users.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final user = users[index];
+                                  final username =
+                                      user['username']?.toString() ?? 'User';
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: _ProfileAvatar(
+                                      username: username,
+                                      size: 42,
+                                    ),
+                                    title: Text(
+                                      '@$username',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    subtitle: const Text('Start a private chat'),
+                                    trailing: const Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 18,
+                                    ),
+                                    onTap: () =>
+                                        Navigator.pop(context, username),
+                                  );
+                                },
+                              ),
+              ),
             ],
           ),
         ),
