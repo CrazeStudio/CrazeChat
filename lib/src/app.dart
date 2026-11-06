@@ -1830,6 +1830,7 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
   Timer? syncTimer;
+  Timer? pollTimer;
   Timer? readAckTimer;
   final Set<String> pendingReadAcks = <String>{};
   bool connectingRealtime = false;
@@ -1858,8 +1859,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     search.addListener(_searchChanged);
-    // Retry only queued outgoing sends here. Incoming messages arrive over
-    // the authenticated WebSocket; history is fetched on initial connect/reconnect.
+    // Keep a REST polling fallback active even when the realtime socket is
+    // unavailable or silently disconnected by a mobile network/proxy.
+    // WebSocket delivery remains the fast path; polling recovers missed events.
+    pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || loading || syncing || chatKey == null) return;
+      await loadMessages(silent: true);
+    });
     syncTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
       if (!mounted) return;
       await _retryPendingMessages();
@@ -1871,6 +1877,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     reconnectTimer?.cancel();
     syncTimer?.cancel();
+    pollTimer?.cancel();
     readAckTimer?.cancel();
     realtimeSubscription?.cancel();
     realtime?.close();
