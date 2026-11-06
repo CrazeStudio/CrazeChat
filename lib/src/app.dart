@@ -2397,12 +2397,26 @@ class _ChatScreenState extends State<ChatScreen> {
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
+        // Keep the live timeline cursor aligned with the same server timestamp
+        // already persisted in the encrypted local cache.
+        final serverCreatedAt = (serverMessage['createdAt'] as num?)?.toInt();
+        if (serverCreatedAt != null && lastMessageAt == createdAt) {
+          lastMessageAt = serverCreatedAt;
+        }
         LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
           if (index >= 0) {
             setState(() {
               messages[index]['deliveryState'] = 'sent';
+              // Replace the optimistic device timestamp with the authoritative
+              // server timestamp. The next incremental sync uses lastMessageAt;
+              // retaining a clock-skewed local timestamp can skip incoming rows.
+              final serverCreatedAt = (serverMessage['createdAt'] as num?)?.toInt();
+              if (serverCreatedAt != null) {
+                messages[index]['createdAt'] = serverCreatedAt;
+                if (lastMessageAt == createdAt) lastMessageAt = serverCreatedAt;
+              }
               if (serverMessage.containsKey('deliveredTo')) {
                 messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
               }
