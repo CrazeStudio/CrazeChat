@@ -106,12 +106,10 @@ jobs:
         env:
           CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
           CRAZECHAT_KEY: ${{ secrets.KEY }}
-          GOOGLE_SERVER_CLIENT_ID: ${{ vars.GOOGLE_SERVER_CLIENT_ID || secrets.GOOGLE_SERVER_CLIENT_ID }}
         run: |
           flutter build apk --release \
             --dart-define="BURL=$CRAZECHAT_BURL" \
-            --dart-define="KEY=$CRAZECHAT_KEY" \
-            --dart-define="GOOGLE_SERVER_CLIENT_ID=$GOOGLE_SERVER_CLIENT_ID"
+            --dart-define="KEY=$CRAZECHAT_KEY"
 
       - name: Report API configuration requirement
         if: github.ref == 'refs/heads/main' && steps.app_config.outputs.configured == 'false'
