@@ -120,6 +120,7 @@ class ChatSession extends ChangeNotifier {
             'username': username,
             'userId': userId,
             'identityEnvelope': identityEnvelope,
+            'photoUrl': photoUrl,
           });
           if (savedAccounts.length > 2) {
             savedAccounts = savedAccounts.take(2).toList();
@@ -357,6 +358,7 @@ class ChatSession extends ChangeNotifier {
     token = null;
     username = null;
     userId = null;
+    photoUrl = null;
     identityEnvelope = null;
     api.token = null;
     await _clearActiveSession();
@@ -371,6 +373,7 @@ class ChatSession extends ChangeNotifier {
     token = null;
     username = null;
     userId = null;
+    photoUrl = null;
     identityEnvelope = null;
     _destroyIdentity();
     api.token = null;
