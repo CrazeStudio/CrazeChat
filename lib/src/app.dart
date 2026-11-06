@@ -1825,7 +1825,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? peerName, error;
   Map<String, dynamic>? replyTarget;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
-  int? lastMessageAt;
+  int? lastServerMessageAt;
   WebSocket? realtime;
   StreamSubscription? realtimeSubscription;
   Timer? reconnectTimer;
@@ -1838,6 +1838,18 @@ class _ChatScreenState extends State<ChatScreen> {
   int reconnectAttempt = 0;
 
   String get chatId => widget.chat['id'] as String;
+
+  // Advance the incremental-sync cursor only from server-authoritative
+  // timestamps. Device clocks and optimistic outbox timestamps are untrusted.
+  void _advanceServerMessageCursor(Object? value) {
+    final timestamp = value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '') ?? 0;
+    if (timestamp <= 0) return;
+    if (lastServerMessageAt == null || timestamp > lastServerMessageAt!) {
+      lastServerMessageAt = timestamp;
+    }
+  }
 
   static const int _maxMessageWords = 1500;
 
@@ -2061,10 +2073,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (messageIds.contains(id)) return;
       message['deliveryState'] = 'saved';
       messageIds.add(id);
-      final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!) {
-        lastMessageAt = timestamp;
-      }
+      _advanceServerMessageCursor(message['createdAt']);
       if (mounted) {
         setState(() {
           _applyDecodedMessage(decoded);
@@ -2156,10 +2165,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final decoded = await _decodeMessage(message);
       if (!mounted) return;
       messageIds.add(id);
-      final timestamp = (decoded['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!) {
-        lastMessageAt = timestamp;
-      }
+      // Cached entries can carry device-generated timestamps (including
+      // queued messages). They are timeline data, never a server sync cursor.
       _applyDecodedMessage(decoded);
     } catch (_) {
       // A damaged cache entry can be recovered from remote sync if it remains.
@@ -2173,7 +2180,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!silent) await _retryPendingMessages();
       final messageResponse = await widget.session.api.getMessages(
         chatId,
-        since: lastMessageAt == null ? null : lastMessageAt! - 1,
+        since: lastServerMessageAt == null ? null : lastServerMessageAt! - 1,
         limit: 100,
       );
       final raw = (messageResponse['messages'] as List? ?? const [])
@@ -2194,10 +2201,7 @@ class _ChatScreenState extends State<ChatScreen> {
             'deliveryState': mine ? 'sent' : 'saved',
           });
           if (!mine) receivedIds.add(id);
-          final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-          if (lastMessageAt == null || timestamp > lastMessageAt!) {
-            lastMessageAt = timestamp;
-          }
+          _advanceServerMessageCursor(message['createdAt']);
           if (!messageIds.contains(id)) {
             messageIds.add(id);
             _applyDecodedMessage(decoded);
@@ -2285,6 +2289,7 @@ class _ChatScreenState extends State<ChatScreen> {
             deliveryState: 'sent',
             serverMessage: serverMessage,
           );
+          _advanceServerMessageCursor(serverMessage['createdAt']);
           if (mounted) {
             final index = messages.indexWhere((message) => message['id'] == id);
             if (index >= 0) {
@@ -2369,7 +2374,6 @@ class _ChatScreenState extends State<ChatScreen> {
             if (reply != null) 'replyTo': reply,
           });
           messageIds.add(id);
-          lastMessageAt = createdAt;
           replyTarget = null;
         });
       }
@@ -2399,23 +2403,18 @@ class _ChatScreenState extends State<ChatScreen> {
         );
         // Keep the live timeline cursor aligned with the same server timestamp
         // already persisted in the encrypted local cache.
-        final serverCreatedAt = (serverMessage['createdAt'] as num?)?.toInt();
-        if (serverCreatedAt != null && lastMessageAt == createdAt) {
-          lastMessageAt = serverCreatedAt;
-        }
+        _advanceServerMessageCursor(serverMessage['createdAt']);
         LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
           if (index >= 0) {
             setState(() {
               messages[index]['deliveryState'] = 'sent';
-              // Replace the optimistic device timestamp with the authoritative
-              // server timestamp. The next incremental sync uses lastMessageAt;
-              // retaining a clock-skewed local timestamp can skip incoming rows.
+              // Keep the rendered bubble aligned with the server timestamp.
+              // Its timestamp is independent from the retrieval cursor.
               final serverCreatedAt = (serverMessage['createdAt'] as num?)?.toInt();
               if (serverCreatedAt != null) {
                 messages[index]['createdAt'] = serverCreatedAt;
-                if (lastMessageAt == createdAt) lastMessageAt = serverCreatedAt;
               }
               if (serverMessage.containsKey('deliveredTo')) {
                 messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
@@ -2485,7 +2484,6 @@ class _ChatScreenState extends State<ChatScreen> {
           'reactionTargetId': targetId,
           'reactionEmoji': nextEmoji,
         });
-        lastMessageAt = createdAt;
       });
       if (widget.session.soundEffectsEnabled) {
         SystemSound.play(SystemSoundType.click);
@@ -2510,6 +2508,7 @@ class _ChatScreenState extends State<ChatScreen> {
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
+        _advanceServerMessageCursor(serverMessage['createdAt']);
         LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       } catch (_) {
         if (mounted) {
