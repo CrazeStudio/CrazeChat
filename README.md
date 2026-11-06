@@ -32,7 +32,7 @@ Firebase Realtime Database
 
 **CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
 
-The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value.
+The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value. The separate server-only `ADMIN_KEY` protects generic Firebase paths and the legacy bare `POST /db` operation dispatcher; CrazeChat mobile builds must never contain it.
 
 ## API contract
 
@@ -42,6 +42,7 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | --- | --- | --- |
 | POST | `/db/auth/register` | Create account and encrypted identity backup |
 | POST | `/db/auth/login` | Authenticate and receive a user JWT |
+| POST | `/db/auth/update-identity` | Replace the encrypted identity envelope after client-side passphrase migration |
 | GET | `/db/auth/session` | Validate the current session |
 | GET | `/db/users/search?query=name` | Search usernames |
 | GET | `/db/chats` | List the signed-in user's conversations |
@@ -51,7 +52,7 @@ The Flutter client uses these path-based endpoints on the CrazeStudio-Web deploy
 | DELETE | `/db/chats/{chatId}/messages/{messageId}` | Delete a message sent by the current user |
 | POST | `/db/chats/{chatId}/messages/acknowledge` | Acknowledge delivery/read; a read acknowledgement purges the server payload |
 
-Every request sends `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key. The existing `POST /db` operation dispatcher and generic Firebase path operations use the same shared-key check.
+CrazeChat app REST requests send `X-Access-Key: {KEY}`. Protected requests also send `Authorization: Bearer {user JWT}`; the Authorization header is reserved for the user's JWT. The mobile app does **not** contain the Firebase service-account key or `ADMIN_KEY`. Generic Firebase path operations and the legacy bare `POST /db` dispatcher require the separate server-only `X-Admin-Key`.
 
 ## CrazeStudio-Web deployment
 
@@ -136,6 +137,23 @@ Changing the selected folder does not erase the previous folder's backup. Copyin
 - Firebase direct-client reads and writes must remain denied. CrazeStudio-Web accesses Firebase using its server-side service account.
 - The API validates JWT sessions and verifies conversation membership before returning or mutating conversation data.
 - The current key agreement does not yet provide forward secrecy or out-of-band public-key verification; the cryptographic design has not been independently audited.
+
+## Independent account and encryption credentials
+
+New accounts use two different secrets:
+
+- **Account password** authenticates with CrazeStudio-Web. It is sent over HTTPS to the authentication endpoint and stored only as a PBKDF2-SHA256 verifier.
+- **Encryption passphrase** derives the Argon2id wrapping key for the X25519 identity private key. It is used only on the device; it is never included in an API request.
+
+The encrypted identity envelope uses version 2 (`keyProtection: separate-passphrase-v2`). Changing the account password does not re-encrypt or replace the identity envelope. The encryption passphrase can be changed while the identity is unlocked; only the newly encrypted envelope is uploaded through the authenticated `/db/auth/update-identity` route. The backend verifies that the public key remains unchanged.
+
+**Existing-account migration:** version-1 envelopes were encrypted with the old shared account password. On the sign-in screen, existing users must enter that old password in both the account-password and encryption-passphrase fields for the first sign-in after this update. Once signed in, open Settings → Separate encryption passphrase and choose a new, different passphrase. Until this migration is completed, the legacy envelope remains vulnerable to offline password guessing if the backend data is compromised. Do not forget the new encryption passphrase: the server cannot recover it.
+
+## Contact public-key verification
+
+Before sending messages or reactions to a contact, compare the contact's SHA-256 public-key fingerprint with them over a separate trusted channel (in person or a voice/video call). Open the fingerprint icon in the conversation header. Unverified contacts cannot receive outgoing messages or reactions; queued messages are not sent until verification. Fingerprints are stored locally per contact. If a previously verified contact's key changes, the app displays a warning and blocks sending until the replacement fingerprint is independently checked. Never accept a fingerprint sent only inside the conversation being verified.
+
+This is manual trust-on-first-use with local pinning, not a formal key-transparency service. Reinstalling or clearing app data removes the local trusted-fingerprint store, so verify contacts again.
 
 ## Current app functions
 
