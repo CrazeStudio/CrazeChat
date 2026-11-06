@@ -28,6 +28,7 @@ class ChatSession extends ChangeNotifier {
   KeyPair? identity;
   List<Map<String, dynamic>> savedAccounts = [];
   static const _accountsKey = 'savedAccounts';
+  static const _trustedContactKeysKey = 'trustedContactPublicKeyFingerprints';
   static final _chatIdPattern = RegExp(r'^[a-f0-9]{32}$');
   static final _messageIdPattern = RegExp(r'^[a-f0-9]{32}$');
   final Map<String, Future<void>> _cacheWriteQueues = {};
@@ -167,16 +168,77 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
-    final envelope = identityEnvelope;
+  bool get needsEncryptionPassphraseMigration =>
+      identityEnvelope?['version'] == 1;
+
+  Future<String> contactKeyStatus({
+    required String contactId,
+    required String publicKey,
+  }) async {
+    final fingerprint = await CryptoService.fingerprintPublicKey(publicKey);
+    final encoded = await _storage.read(key: _trustedContactKeysKey);
+    if (encoded == null) return 'unverified';
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map) return 'unverified';
+      final previous = decoded[contactId];
+      if (previous == null) return 'unverified';
+      return previous == fingerprint ? 'verified' : 'changed';
+    } catch (_) {
+      return 'unverified';
+    }
+  }
+
+  Future<void> trustContactKey({
+    required String contactId,
+    required String publicKey,
+  }) async {
+    final fingerprint = await CryptoService.fingerprintPublicKey(publicKey);
+    final encoded = await _storage.read(key: _trustedContactKeysKey);
+    Map<String, dynamic> trusted = {};
+    if (encoded != null) {
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is Map) trusted = Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        trusted = {};
+      }
+    }
+    trusted[contactId] = fingerprint;
+    await _storage.write(key: _trustedContactKeysKey, value: jsonEncode(trusted));
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!signedIn || identityEnvelope == null) {
+      throw const FormatException('Sign in before changing your password.');
+    }
+    // The account password is authentication-only. It never re-wraps or
+    // otherwise changes the independently protected identity key.
+    await api.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
+  Future<void> updateEncryptionPassphrase(String newPassphrase) async {
+    final currentIdentity = identity;
     final uid = userId;
-    if (!signedIn || envelope == null || uid == null) throw const FormatException('Sign in before changing your password.');
-    final material = await CryptoService.rewrapIdentityMaterial(envelope: envelope, currentPassword: currentPassword, newPassword: newPassword);
-    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, identityEnvelope: material.envelope);
+    if (!signedIn || currentIdentity == null || uid == null) {
+      throw const FormatException('Unlock your identity before changing its encryption passphrase.');
+    }
+    final material = await CryptoService.rewrapUnlockedIdentity(
+      identity: currentIdentity,
+      encryptionPassphrase: newPassphrase,
+    );
+    await api.updateIdentityEnvelope(material.envelope);
     identityEnvelope = material.envelope;
-    _destroyIdentity();
-    identity = material.keyPair;
-    await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
+    await _storage.write(
+      key: 'identityPrivateKey_$uid',
+      value: base64Encode(material.privateKeyBytes),
+    );
     await _persistActive();
     for (final account in savedAccounts) {
       if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;

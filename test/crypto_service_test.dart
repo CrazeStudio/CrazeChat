@@ -12,7 +12,8 @@ void main() {
       'correct horse battery staple 2026',
     );
     final envelope = material.envelope;
-    expect(envelope['version'], 1);
+    expect(envelope['version'], 2);
+    expect(envelope['keyProtection'], 'separate-passphrase-v2');
     expect(envelope['kdf'], 'Argon2id');
     expect(base64Decode(envelope['salt'] as String), hasLength(16));
     expect(base64Decode(envelope['nonce'] as String), hasLength(12));
@@ -44,6 +45,42 @@ void main() {
       CryptoService.unlockIdentity(material.envelope, 'wrong password'),
       throwsA(anything),
     );
+  });
+
+  test('identity encryption passphrase is independent and can be rotated locally', () async {
+    final material = await CryptoService.createIdentity('private encryption passphrase 2026');
+    await expectLater(
+      CryptoService.unlockIdentity(material.envelope, 'different account password 2026'),
+      throwsA(anything),
+    );
+    final rotated = await CryptoService.rewrapUnlockedIdentity(
+      identity: material.keyPair,
+      encryptionPassphrase: 'new independent encryption passphrase 2027',
+    );
+    expect(rotated.envelope['version'], 2);
+    final unlockedRotated = await CryptoService.unlockIdentity(
+      rotated.envelope,
+      'new independent encryption passphrase 2027',
+    );
+    expect(await unlockedRotated.extractPublicKey(), isA<SimplePublicKey>());
+    await expectLater(
+      CryptoService.unlockIdentity(
+        rotated.envelope,
+        'private encryption passphrase 2026',
+      ),
+      throwsA(anything),
+    );
+    final legacyEnvelope = <String, dynamic>{...material.envelope, 'version': 1}
+      ..remove('keyProtection');
+    final unlockedLegacy = await CryptoService.unlockIdentity(
+      legacyEnvelope,
+      'private encryption passphrase 2026',
+    );
+    expect(await unlockedLegacy.extractPublicKey(), isA<SimplePublicKey>());
+    final fingerprint = await CryptoService.fingerprintPublicKey(
+      material.envelope['publicKey'] as String,
+    );
+    expect(fingerprint.replaceAll(' ', ''), matches(RegExp(r'^[A-F0-9]{64}$')));
   });
 
   test(

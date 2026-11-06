@@ -60,7 +60,7 @@ class CryptoService {
   }
 
   static void validateIdentityEnvelope(Map<String, dynamic> envelope) {
-    if (envelope['version'] != 1 || envelope['kdf'] != 'Argon2id') {
+    if (![1, 2].contains(envelope['version']) || envelope['kdf'] != 'Argon2id') {
       throw const FormatException(
         'Unsupported encrypted identity version or KDF.',
       );
@@ -86,14 +86,14 @@ class CryptoService {
     }
   }
 
-  static Future<IdentityMaterial> createIdentity(String password) async {
+  static Future<IdentityMaterial> createIdentity(String encryptionPassphrase) async {
     final keyPair = await X25519().newKeyPair();
     final privateBytes = await keyPair.extractPrivateKeyBytes();
     final publicKey = await keyPair.extractPublicKey();
     final publicKeyBase64 = base64Encode(publicKey.bytes);
     final salt = _randomBytes(16);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(
-      password: password,
+      password: encryptionPassphrase,
       nonce: salt,
     );
     final box = await _aes.encrypt(
@@ -102,7 +102,8 @@ class CryptoService {
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
     final envelope = <String, dynamic>{
-      'version': 1,
+      'version': 2,
+      'keyProtection': 'separate-passphrase-v2',
       'kdf': 'Argon2id',
       'kdfMemoryKiB': 32768,
       'kdfIterations': 2,
@@ -178,26 +179,63 @@ class CryptoService {
     );
   }
 
-  static Future<IdentityMaterial> rewrapIdentityMaterial({required Map<String, dynamic> envelope, required String currentPassword, required String newPassword}) async {
-    final unlocked = await unlockIdentityMaterial(envelope, currentPassword);
-    final publicKey = envelope['publicKey'] as String;
+  /// Re-wraps the already-unlocked identity using an encryption-only passphrase.
+  /// The passphrase is never sent to the backend.
+  static Future<IdentityMaterial> rewrapUnlockedIdentity({
+    required KeyPair identity,
+    required String encryptionPassphrase,
+  }) async {
+    final keyData = await identity.extract();
+    if (keyData is! SimpleKeyPairData || keyData.type != KeyPairType.x25519) {
+      throw const FormatException('The CrazeChat identity is not an X25519 key pair.');
+    }
+    final privateBytes = keyData.bytes;
+    final publicKey = keyData.publicKey.bytes;
+    final publicKeyBase64 = base64Encode(publicKey);
     final salt = _randomBytes(16);
-    final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: newPassword, nonce: salt);
-    final box = await _aes.encrypt(unlocked.privateKeyBytes, secretKey: wrappingKey, aad: utf8.encode('$_identityAad:$publicKey'));
+    final wrappingKey = await _identityKdf.deriveKeyFromPassword(
+      password: encryptionPassphrase,
+      nonce: salt,
+    );
+    final box = await _aes.encrypt(
+      privateBytes,
+      secretKey: wrappingKey,
+      aad: utf8.encode('$_identityAad:$publicKeyBase64'),
+    );
     final nextEnvelope = <String, dynamic>{
-      'version': 1, 'kdf': 'Argon2id', 'kdfMemoryKiB': 32768, 'kdfIterations': 2,
-      'salt': base64Encode(salt), 'nonce': base64Encode(box.nonce),
-      'ciphertext': base64Encode(box.cipherText), 'mac': base64Encode(box.mac.bytes),
-      'publicKey': publicKey,
+      'version': 2,
+      'keyProtection': 'separate-passphrase-v2',
+      'kdf': 'Argon2id',
+      'kdfMemoryKiB': 32768,
+      'kdfIterations': 2,
+      'salt': base64Encode(salt),
+      'nonce': base64Encode(box.nonce),
+      'ciphertext': base64Encode(box.cipherText),
+      'mac': base64Encode(box.mac.bytes),
+      'publicKey': publicKeyBase64,
     };
     validateIdentityEnvelope(nextEnvelope);
-    return IdentityMaterial(keyPair: unlocked.keyPair, envelope: nextEnvelope, privateKeyBytes: unlocked.privateKeyBytes);
+    return IdentityMaterial(
+      keyPair: identity,
+      envelope: nextEnvelope,
+      privateKeyBytes: privateBytes,
+    );
   }
 
   static Future<KeyPair> unlockIdentity(
     Map<String, dynamic> envelope,
     String password,
   ) async => (await unlockIdentityMaterial(envelope, password)).keyPair;
+
+  static Future<String> fingerprintPublicKey(String publicKeyBase64) async {
+    final publicKey = base64Decode(publicKeyBase64);
+    if (publicKey.length != 32) {
+      throw const FormatException('Contact public key must contain exactly 32 bytes.');
+    }
+    final digest = await Sha256().hash(publicKey);
+    final hex = digest.bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+    return RegExp(r'.{1,4}').allMatches(hex).map((match) => match.group(0)!).join(' ');
+  }
 
   static Future<SecretKey> deriveChatKey({
     required KeyPair myKeyPair,
