@@ -227,6 +227,16 @@ class CryptoService {
     String password,
   ) async => (await unlockIdentityMaterial(envelope, password)).keyPair;
 
+  static Future<String> fingerprintPublicKey(String publicKeyBase64) async {
+    final publicKey = base64Decode(publicKeyBase64);
+    if (publicKey.length != 32) {
+      throw const FormatException('Contact public key must contain exactly 32 bytes.');
+    }
+    final digest = await Sha256().hash(publicKey);
+    final hex = digest.bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+    return RegExp(r'.{1,4}').allMatches(hex).map((match) => match.group(0)!).join(' ');
+  }
+
   static Future<SecretKey> deriveChatKey({
     required KeyPair myKeyPair,
     required String peerPublicKey,
