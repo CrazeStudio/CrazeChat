@@ -10,7 +10,7 @@ import 'api.dart';
 import 'crypto_service.dart';
 import 'session.dart';
 import 'push_notifications.dart';
-import 'drive_backup.dart';
+import 'local_folder_sync.dart';
 
 const _brand = Color(0xFF087E65);
 const _ink = Color(0xFF142A27);
@@ -666,7 +666,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
     loadChats();
-    unawaited(GoogleDriveBackupService.instance.syncIfEnabled(widget.session));
+    unawaited(LocalFolderSyncService.instance.syncIfEnabled(widget.session));
   }
 
   @override
@@ -704,7 +704,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (await widget.session.lockIfBackgroundedLongEnough()) return;
     if (!mounted) return;
     loadChats(silent: true);
-    unawaited(GoogleDriveBackupService.instance.syncIfEnabled(widget.session));
+    unawaited(LocalFolderSyncService.instance.syncIfEnabled(widget.session));
   }
 
   Future<void> loadChats({bool silent = false}) async {
@@ -1243,7 +1243,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
-        _DriveBackupCard(session: widget.session),
+        _LocalFolderSyncCard(session: widget.session),
         const SizedBox(height: 14),
         const _Eyebrow('Experience'),
         const SizedBox(height: 8),
@@ -1613,16 +1613,16 @@ class _FindPeopleDialogState extends State<_FindPeopleDialog> {
   }
 }
 
-class _DriveBackupCard extends StatefulWidget {
-  const _DriveBackupCard({required this.session});
+class _LocalFolderSyncCard extends StatefulWidget {
+  const _LocalFolderSyncCard({required this.session});
   final ChatSession session;
 
   @override
-  State<_DriveBackupCard> createState() => _DriveBackupCardState();
+  State<_LocalFolderSyncCard> createState() => _LocalFolderSyncCardState();
 }
 
-class _DriveBackupCardState extends State<_DriveBackupCard> {
-  final service = GoogleDriveBackupService.instance;
+class _LocalFolderSyncCardState extends State<_LocalFolderSyncCard> {
+  final service = LocalFolderSyncService.instance;
   String? _loadedUserId;
 
   @override
@@ -1633,7 +1633,7 @@ class _DriveBackupCardState extends State<_DriveBackupCard> {
   }
 
   @override
-  void didUpdateWidget(covariant _DriveBackupCard oldWidget) {
+  void didUpdateWidget(covariant _LocalFolderSyncCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     final currentUserId = widget.session.userId;
     if (currentUserId != _loadedUserId) {
@@ -1676,7 +1676,7 @@ class _DriveBackupCardState extends State<_DriveBackupCard> {
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(
-                      Icons.cloud_sync_rounded,
+                      Icons.folder_outlined,
                       color: colors.onSecondaryContainer,
                     ),
                   ),
@@ -1686,14 +1686,14 @@ class _DriveBackupCardState extends State<_DriveBackupCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Encrypted Google Drive sync',
+                          'Local Folder Sync',
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          service.enabled
-                              ? 'Automatic sync is on'
-                              : 'Optional · off until you connect',
+                          service.folderSelected
+                              ? 'A backup folder is selected'
+                              : 'Choose where your encrypted backup is stored',
                           style: TextStyle(
                             color: colors.onSurfaceVariant,
                             fontSize: 12,
@@ -1712,49 +1712,27 @@ class _DriveBackupCardState extends State<_DriveBackupCard> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Messages are encrypted again with your CrazeChat identity before upload. '
-                'Only an opaque backup is stored in Drive’s app-private area.',
+                'CrazeChat writes an encrypted backup file into a folder you choose. '
+                'The folder can be on your device or an Android document provider.',
                 style: TextStyle(
                   color: colors.onSurfaceVariant,
                   fontSize: 12,
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 6),
               Text(
-                'Pausing or disconnecting stops future sync; it does not delete the existing Drive backup.',
+                'The backup contains encrypted message envelopes only. Restoring requires the same CrazeChat identity.',
                 style: TextStyle(
                   color: colors.onSurfaceVariant,
                   fontSize: 11,
                   height: 1.35,
                 ),
               ),
-              if (service.accountEmail != null) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.account_circle_outlined,
-                      size: 16,
-                      color: colors.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        service.accountEmail!,
-                        style: TextStyle(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
               if (lastSyncLabel != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 10),
                 Text(
-                  'Last sync: $lastSyncLabel',
+                  'Last saved: $lastSyncLabel',
                   style: TextStyle(
                     color: colors.onSurfaceVariant,
                     fontSize: 11,
@@ -1776,55 +1754,28 @@ class _DriveBackupCardState extends State<_DriveBackupCard> {
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
-                children: service.enabled
-                    ? [
-                        FilledButton.icon(
-                          onPressed: service.syncing
-                              ? null
-                              : () =>
-                                    _run(() => service.syncNow(widget.session)),
-                          icon: const Icon(Icons.sync_rounded),
-                          label: const Text('Sync now'),
-                        ),
-                        TextButton(
-                          onPressed: service.syncing
-                              ? null
-                              : () => _run(
-                                  () => service.pauseSync(widget.session),
-                                ),
-                          child: const Text('Pause sync'),
-                        ),
-                        TextButton(
-                          onPressed: service.syncing
-                              ? null
-                              : () => _run(
-                                  () => service.disconnect(widget.session),
-                                ),
-                          child: const Text('Disconnect'),
-                        ),
-                      ]
-                    : [
-                        FilledButton.icon(
-                          onPressed: service.syncing
-                              ? null
-                              : () => _run(
-                                  () => service.connectAndSync(widget.session),
-                                ),
-                          icon: const Icon(Icons.add_link_rounded),
-                          label: const Text('Connect and sync'),
-                        ),
-                      ],
-              ),
-              if (!service.enabled && service.accountEmail != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: TextButton(
+                children: [
+                  FilledButton.icon(
                     onPressed: service.syncing
                         ? null
-                        : () => _run(() => service.disconnect(widget.session)),
-                    child: const Text('Forget Google account'),
+                        : () => _run(
+                            () => service.chooseFolderAndSync(widget.session),
+                          ),
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: Text(
+                      service.folderSelected ? 'Change folder' : 'Choose folder',
+                    ),
                   ),
-                ),
+                  if (service.folderSelected)
+                    OutlinedButton.icon(
+                      onPressed: service.syncing
+                          ? null
+                          : () => _run(() => service.syncNow(widget.session)),
+                      icon: const Icon(Icons.sync_rounded),
+                      label: const Text('Sync now'),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -2113,7 +2064,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ...message,
         'deliveryState': 'saved',
       });
-      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       // A REST sync can finish while this event is being decrypted and saved.
       // Recheck after the awaits so the same envelope is never shown twice.
       if (messageIds.contains(id)) return;
@@ -2284,7 +2235,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _scheduleReadPurge(receivedIds);
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (raw.isNotEmpty) {
-        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+        LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       }
       if (mounted) {
         setState(() {
@@ -2417,7 +2368,7 @@ class _ChatScreenState extends State<ChatScreen> {
       };
       // Persist the encrypted envelope before the server can expose it.
       await widget.session.saveCachedMessage(chatId, queued);
-      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       if (mounted) {
         setState(() {
           messages.add({
@@ -2455,7 +2406,7 @@ class _ChatScreenState extends State<ChatScreen> {
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
-        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+        LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
         if (mounted) {
           final index = messages.indexWhere((item) => item['id'] == id);
           if (index >= 0) {
@@ -2519,7 +2470,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'deliveryState': 'queued',
       };
       await widget.session.saveCachedMessage(chatId, queued);
-      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       if (!mounted) return;
       setState(() {
         messageIds.add(id);
@@ -2554,7 +2505,7 @@ class _ChatScreenState extends State<ChatScreen> {
           deliveryState: 'sent',
           serverMessage: serverMessage,
         );
-        GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+        LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       } catch (_) {
         if (mounted) {
           showMessage(context, 'Reaction queued until the connection returns.');
@@ -2606,7 +2557,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await widget.session.api.deleteMessage(chatId, id);
       await widget.session.deleteCachedMessage(chatId, id);
-      GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
+      LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       if (!mounted) return;
       setState(() {
         messages.removeWhere((item) => item['id'] == id);
