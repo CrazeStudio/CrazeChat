@@ -118,6 +118,7 @@ class LocalFolderSyncService extends ChangeNotifier {
       throw StateError('Unlock your CrazeChat identity and choose a folder first.');
     }
     _syncing = true;
+    _activeUserId = userId;
     _status = 'Checking encrypted local backup…';
     notifyListeners();
     try {
