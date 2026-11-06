@@ -83,6 +83,10 @@ class ChatSession extends ChangeNotifier {
           final restoredUser = Map<String, dynamic>.from(restored['user'] as Map);
           photoUrl = restoredUser['photoUrl'] as String?;
           await _storage.write(key: 'profilePhotoUrl_$userId', value: photoUrl);
+          for (final account in savedAccounts) {
+            if (account['userId'] == userId) account['photoUrl'] = photoUrl;
+          }
+          await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
         } on ApiException catch (error) {
           // The generic CrazeStudio-Web gateway also returns 401 for a missing
           // or mismatched shared gateway credential. That is not proof that the
