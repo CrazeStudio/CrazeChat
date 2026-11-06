@@ -15,8 +15,6 @@ import 'crypto_service.dart';
 class ChatSession extends ChangeNotifier {
   ChatSession() : api = CrazeChatApi();
   static const _storage = FlutterSecureStorage();
-  static const autoLockDelay = Duration(minutes: 5);
-  static const _autoLockBackgroundedAtKey = 'pref_auto_lock_backgrounded_at';
   static const _manualLockKey = 'pref_manual_lock';
   final CrazeChatApi api;
 
@@ -24,7 +22,6 @@ class ChatSession extends ChangeNotifier {
   bool notificationsEnabled = true;
   bool soundEffectsEnabled = true;
   bool vibrationEnabled = true;
-  bool autoLockEnabled = true;
   ThemeMode themeMode = ThemeMode.system;
   String? token, username, userId;
   Map<String, dynamic>? identityEnvelope;
@@ -46,17 +43,10 @@ class ChatSession extends ChangeNotifier {
           (await _storage.read(key: 'pref_sound_effects')) != 'false';
       vibrationEnabled =
           (await _storage.read(key: 'pref_vibration')) != 'false';
-      autoLockEnabled = (await _storage.read(key: 'pref_auto_lock')) != 'false';
-      final backgroundedAt = int.tryParse(
-        await _storage.read(key: _autoLockBackgroundedAtKey) ?? '',
-      );
-      final autoLockExpired =
-          autoLockEnabled &&
-          backgroundedAt != null &&
-          DateTime.now().millisecondsSinceEpoch - backgroundedAt >=
-              autoLockDelay.inMilliseconds;
+      await _storage.delete(key: 'pref_auto_lock_backgrounded_at');
+      await _storage.delete(key: 'pref_auto_lock');
       final manuallyLocked = await _storage.read(key: _manualLockKey) == 'true';
-      final requireIdentityUnlock = autoLockExpired || manuallyLocked;
+      final requireIdentityUnlock = manuallyLocked;
       themeMode = switch (await _storage.read(key: 'pref_theme_mode')) {
         'light' => ThemeMode.light,
         'dark' => ThemeMode.dark,
@@ -118,9 +108,6 @@ class ChatSession extends ChangeNotifier {
             }
           }
         }
-        if (!autoLockExpired) {
-          await _storage.delete(key: _autoLockBackgroundedAtKey);
-        }
         if (token != null &&
             !savedAccounts.any((item) => item['userId'] == userId)) {
           savedAccounts.insert(0, {
@@ -159,7 +146,6 @@ class ChatSession extends ChangeNotifier {
     );
     _destroyIdentity();
     identity = material.keyPair;
-    await _storage.delete(key: _autoLockBackgroundedAtKey);
     await _storage.delete(key: _manualLockKey);
     await _storage.write(
       key: 'identityPrivateKey_$userId',
@@ -219,45 +205,6 @@ class ChatSession extends ChangeNotifier {
     await _storage.delete(key: _autoLockBackgroundedAtKey);
     await _storage.delete(key: _manualLockKey);
     notifyListeners();
-  }
-
-  Future<void> markAppBackgrounded() async {
-    if (!autoLockEnabled || !unlocked) return;
-    try {
-      await _storage.write(
-        key: _autoLockBackgroundedAtKey,
-        value: '${DateTime.now().millisecondsSinceEpoch}',
-      );
-    } catch (_) {
-      // A transient keystore error must not crash lifecycle handling.
-    }
-  }
-
-  Future<bool> lockIfBackgroundedLongEnough() async {
-    int? backgroundedAt;
-    try {
-      backgroundedAt = int.tryParse(
-        await _storage.read(key: _autoLockBackgroundedAtKey) ?? '',
-      );
-    } catch (_) {
-      return false;
-    }
-    final shouldLock =
-        autoLockEnabled &&
-        unlocked &&
-        backgroundedAt != null &&
-        DateTime.now().millisecondsSinceEpoch - backgroundedAt >=
-            autoLockDelay.inMilliseconds;
-    if (shouldLock) {
-      await lock();
-      return true;
-    }
-    try {
-      await _storage.delete(key: _autoLockBackgroundedAtKey);
-    } catch (_) {
-      // Leave the marker for the next resume attempt if storage is unavailable.
-    }
-    return false;
   }
 
   void _destroyIdentity() {
@@ -377,12 +324,6 @@ class ChatSession extends ChangeNotifier {
   Future<void> setVibrationEnabled(bool value) async {
     vibrationEnabled = value;
     await _storage.write(key: 'pref_vibration', value: value.toString());
-    notifyListeners();
-  }
-
-  Future<void> setAutoLockEnabled(bool value) async {
-    autoLockEnabled = value;
-    await _storage.write(key: 'pref_auto_lock', value: value.toString());
     notifyListeners();
   }
 
