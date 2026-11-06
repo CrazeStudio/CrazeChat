@@ -4,6 +4,15 @@
     ".write": false,
     "Users": {
       ".indexOn": ["UsernameLower", "User id"]
+    },
+    "Massages": {
+      "chats": {
+        "$chatId": {
+          "massages": {
+            ".indexOn": ["Information/Timestamp"]
+          }
+        }
+      }
     }
   }
 }
