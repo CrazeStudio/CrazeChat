@@ -2075,7 +2075,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // Do not fetch or decrypt remote messages until this contact's public
       // key has been independently verified. Local encrypted history remains
       // available while the user checks the fingerprint.
-      if (peerKeyStatus == 'verified') {
+      if (peerKeyStatus == 'verified' && !widget.session.needsEncryptionPassphraseMigration) {
         unawaited(loadMessages(silent: true));
         _connectRealtime();
       }
@@ -2121,8 +2121,10 @@ class _ChatScreenState extends State<ChatScreen> {
       await widget.session.trustContactKey(contactId: id, publicKey: publicKey);
       if (mounted) {
         setState(() => peerKeyStatus = 'verified');
-        unawaited(loadMessages(silent: true));
-        _connectRealtime();
+        if (!widget.session.needsEncryptionPassphraseMigration) {
+          unawaited(loadMessages(silent: true));
+          _connectRealtime();
+        }
       }
     }
   }
@@ -2363,7 +2365,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> loadMessages({bool silent = false}) async {
-    if (chatKey == null || syncing || peerKeyStatus != 'verified') return;
+    if (chatKey == null || syncing || peerKeyStatus != 'verified' || widget.session.needsEncryptionPassphraseMigration) return;
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
@@ -2443,7 +2445,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _retryPendingMessages() async {
-    if (retryingPending || !mounted || peerKeyStatus != 'verified') return;
+    if (retryingPending || !mounted || peerKeyStatus != 'verified' || widget.session.needsEncryptionPassphraseMigration) return;
     retryingPending = true;
     try {
       final cached = await widget.session.loadCachedMessages(chatId);
@@ -2516,6 +2518,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> send() async {
+    if (widget.session.needsEncryptionPassphraseMigration) {
+      showMessage(context, 'Update your separate encryption passphrase in Settings before sending messages.');
+      return;
+    }
     if (peerKeyStatus != 'verified') {
       showMessage(context, 'Verify this contact\'s public-key fingerprint before sending messages.');
       await _showPeerVerification();
@@ -2640,6 +2646,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> reactToMessage(Map<String, dynamic> target, String emoji) async {
+    if (widget.session.needsEncryptionPassphraseMigration) {
+      showMessage(context, 'Update your separate encryption passphrase in Settings before sending reactions.');
+      return;
+    }
     if (peerKeyStatus != 'verified') {
       showMessage(context, 'Verify this contact\'s public-key fingerprint before sending reactions.');
       await _showPeerVerification();
