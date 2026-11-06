@@ -2629,6 +2629,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> reactToMessage(Map<String, dynamic> target, String emoji) async {
+    if (peerKeyStatus != 'verified') {
+      showMessage(context, 'Verify this contact\'s public-key fingerprint before sending reactions.');
+      await _showPeerVerification();
+      return;
+    }
     if (chatKey == null || sending) return;
     final targetId = target['id']?.toString();
     final senderId = widget.session.userId;
