@@ -2615,35 +2615,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          Container(
-            margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            decoration: BoxDecoration(
-              color: colors.secondaryContainer,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.auto_awesome_rounded,
-                  color: colors.onSecondaryContainer,
-                  size: 17,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'END-TO-END ENCRYPTED · Messages stay available in your conversation',
-                    style: TextStyle(
-                      color: colors.onSecondaryContainer,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: .3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
           if (searchOpen)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
@@ -2798,61 +2769,23 @@ class _ChatScreenState extends State<ChatScreen> {
                               : Alignment.centerLeft,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth: MediaQuery.sizeOf(context).width * .84,
+                              maxWidth: MediaQuery.sizeOf(context).width * .78,
                             ),
                             child: GestureDetector(
                               onLongPress: () => messageActions(message),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
-                                margin: const EdgeInsets.only(bottom: 10),
+                                margin: const EdgeInsets.only(bottom: 7),
                                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
                                 decoration: BoxDecoration(
                                   color: bubbleColor,
-                                  borderRadius: BorderRadius.circular(19),
+                                  borderRadius: BorderRadius.circular(17),
                                   border: Border.all(color: bubbleBorder),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          mine
-                                              ? 'YOU'
-                                              : (peerName ?? 'CONTACT')
-                                                    .toUpperCase(),
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w900,
-                                            color: colors.primary,
-                                            letterSpacing: 1,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 9),
-                                        Text(
-                                          _clock(message['createdAt']),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: 'Message actions',
-                                          visualDensity: VisualDensity.compact,
-                                          padding: EdgeInsets.zero,
-                                          onPressed: () =>
-                                              messageActions(message),
-                                          icon: Icon(
-                                            Icons.more_horiz_rounded,
-                                            size: 18,
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 7),
                                     if (reply != null) ...[
                                       ConstrainedBox(
                                         constraints: BoxConstraints(
@@ -2974,6 +2907,19 @@ class _ChatScreenState extends State<ChatScreen> {
                                         ),
                                       ),
                                     ],
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _clock(message['createdAt']),
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                     if (mine && state.isNotEmpty) ...[
                                       const SizedBox(height: 8),
                                       Row(
