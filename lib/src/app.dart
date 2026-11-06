@@ -1148,19 +1148,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       final peer = _peer(chat);
                       final name =
                           peer?['username']?.toString() ?? 'Unknown user';
-                      const statusColors = [
-                        Color(0xFF9CE9B0),
-                        Color(0xFF82AFFF),
-                        Color(0xFFF0A7C1),
-                        Color(0xFFFFD16F),
-                        Color(0xFFC6A0F6),
-                        Color(0xFF80D8C0),
-                      ];
-                      final hash = name.codeUnits.fold<int>(
-                        0,
-                        (value, unit) => (value * 31 + unit) & 0x7fffffff,
-                      );
-                      final statusColor = statusColors[hash % statusColors.length];
                       return Material(
                         color: dark
                             ? const Color(0xFF252D33)
@@ -1217,13 +1204,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                Container(
-                                  width: 9,
-                                  height: 9,
-                                  decoration: BoxDecoration(
-                                    color: statusColor,
-                                    shape: BoxShape.circle,
-                                  ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: colors.onSurfaceVariant,
+                                  size: 20,
                                 ),
                               ],
                             ),
