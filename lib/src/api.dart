@@ -62,6 +62,8 @@ class CrazeChatApi {
   });
 
   Future<Map<String, dynamic>> restoreSession() => _request('GET', 'auth/session');
+  Future<Map<String, dynamic>> updateProfilePhoto(String? photoUrl) =>
+      _request('POST', 'profile', body: {'photoUrl': photoUrl});
   Future<Map<String, dynamic>> registerPushFid(
     String fid, {
     required bool soundEnabled,

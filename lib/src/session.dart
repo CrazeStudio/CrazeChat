@@ -23,7 +23,7 @@ class ChatSession extends ChangeNotifier {
   bool soundEffectsEnabled = true;
   bool vibrationEnabled = true;
   ThemeMode themeMode = ThemeMode.system;
-  String? token, username, userId;
+  String? token, username, userId, photoUrl;
   Map<String, dynamic>? identityEnvelope;
   KeyPair? identity;
   List<Map<String, dynamic>> savedAccounts = [];
@@ -62,6 +62,7 @@ class ChatSession extends ChangeNotifier {
       token = await _storage.read(key: 'token');
       username = await _storage.read(key: 'username');
       userId = await _storage.read(key: 'userId');
+      photoUrl = userId == null ? null : await _storage.read(key: 'profilePhotoUrl_$userId');
       final encoded = await _storage.read(key: 'identityEnvelope');
       if (encoded != null) {
         identityEnvelope = Map<String, dynamic>.from(
@@ -78,7 +79,14 @@ class ChatSession extends ChangeNotifier {
         try {
           // Previous builds stored unsigned local claims. The new API rejects
           // them, so users must sign in again instead of trusting local tokens.
-          await api.restoreSession();
+          final restored = await api.restoreSession();
+          final restoredUser = Map<String, dynamic>.from(restored['user'] as Map);
+          photoUrl = restoredUser['photoUrl'] as String?;
+          await _storage.write(key: 'profilePhotoUrl_$userId', value: photoUrl);
+          for (final account in savedAccounts) {
+            if (account['userId'] == userId) account['photoUrl'] = photoUrl;
+          }
+          await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
         } on ApiException catch (error) {
           // The generic CrazeStudio-Web gateway also returns 401 for a missing
           // or mismatched shared gateway credential. That is not proof that the
@@ -116,6 +124,7 @@ class ChatSession extends ChangeNotifier {
             'username': username,
             'userId': userId,
             'identityEnvelope': identityEnvelope,
+            'photoUrl': photoUrl,
           });
           if (savedAccounts.length > 2) {
             savedAccounts = savedAccounts.take(2).toList();
@@ -142,6 +151,7 @@ class ChatSession extends ChangeNotifier {
     token = response['token'] as String;
     username = user['username'] as String;
     userId = user['id'] as String;
+    photoUrl = user['photoUrl'] as String?;
     final serverEnvelope = Map<String, dynamic>.from(response['identityEnvelope'] as Map);
     identityEnvelope = Map<String, dynamic>.from(material.envelope);
     _destroyIdentity();
@@ -162,6 +172,7 @@ class ChatSession extends ChangeNotifier {
       'username': username,
       'userId': userId,
       'identityEnvelope': identityEnvelope,
+      'photoUrl': photoUrl,
     });
     if (savedAccounts.length > 2) {
       savedAccounts = savedAccounts.take(2).toList();
@@ -205,6 +216,23 @@ class ChatSession extends ChangeNotifier {
     }
     trusted[contactId] = fingerprint;
     await _storage.write(key: _trustedContactKeysKey, value: jsonEncode(trusted));
+  }
+
+  Future<void> updateProfilePhoto(String? nextPhotoUrl) async {
+    if (!signedIn || userId == null) {
+      throw const FormatException('Sign in before changing your profile photo.');
+    }
+    final normalized = nextPhotoUrl?.trim();
+    final value = normalized == null || normalized.isEmpty ? null : normalized;
+    final result = await api.updateProfilePhoto(value);
+    final user = Map<String, dynamic>.from(result['user'] as Map);
+    photoUrl = user['photoUrl'] as String?;
+    for (final account in savedAccounts) {
+      if (account['userId'] == userId) account['photoUrl'] = photoUrl;
+    }
+    await _storage.write(key: 'profilePhotoUrl_$userId', value: photoUrl);
+    await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+    notifyListeners();
   }
 
   Future<void> changePassword({required String currentPassword, required String newPassword}) async {
@@ -288,6 +316,7 @@ class ChatSession extends ChangeNotifier {
     token = account['token'] as String;
     username = account['username'] as String;
     userId = account['userId'] as String;
+    photoUrl = account['photoUrl'] as String?;
     identityEnvelope = Map<String, dynamic>.from(
       account['identityEnvelope'] as Map,
     );
@@ -315,6 +344,7 @@ class ChatSession extends ChangeNotifier {
     token = null;
     username = null;
     userId = null;
+    photoUrl = null;
     identityEnvelope = null;
     api.token = null;
     await _clearActiveSession();
@@ -332,6 +362,7 @@ class ChatSession extends ChangeNotifier {
     token = null;
     username = null;
     userId = null;
+    photoUrl = null;
     identityEnvelope = null;
     api.token = null;
     await _clearActiveSession();
@@ -346,6 +377,7 @@ class ChatSession extends ChangeNotifier {
     token = null;
     username = null;
     userId = null;
+    photoUrl = null;
     identityEnvelope = null;
     _destroyIdentity();
     api.token = null;
@@ -363,6 +395,7 @@ class ChatSession extends ChangeNotifier {
     await _storage.write(key: 'token', value: token);
     await _storage.write(key: 'username', value: username);
     await _storage.write(key: 'userId', value: userId);
+    if (userId != null) await _storage.write(key: 'profilePhotoUrl_$userId', value: photoUrl);
     await _storage.write(
       key: 'identityEnvelope',
       value: jsonEncode(identityEnvelope),

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'crypto_service.dart';
 import 'session.dart';
+import 'profile_photo.dart';
 import 'push_notifications.dart';
 import 'local_folder_sync.dart';
 import 'sound_effects.dart';
@@ -201,10 +202,46 @@ class _BrandMark extends StatelessWidget {
   );
 }
 
-class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({required this.username, this.size = 52});
+class _ProfileAvatar extends StatefulWidget {
+  const _ProfileAvatar({
+    required this.username,
+    this.userId,
+    this.photoUrl,
+    this.size = 52,
+  });
   final String username;
+  final String? userId;
+  final String? photoUrl;
   final double size;
+
+  @override
+  State<_ProfileAvatar> createState() => _ProfileAvatarState();
+}
+
+class _ProfileAvatarState extends State<_ProfileAvatar> {
+  Future<Uint8List?>? _photo;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPhoto();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProfileAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId || oldWidget.photoUrl != widget.photoUrl) {
+      _loadPhoto();
+    }
+  }
+
+  void _loadPhoto() {
+    final id = widget.userId;
+    final url = widget.photoUrl;
+    _photo = id == null || url == null || url.isEmpty
+        ? Future<Uint8List?>.value(null)
+        : ProfilePhotoCache.load(userId: id, url: url);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,24 +253,26 @@ class _ProfileAvatar extends StatelessWidget {
       Color(0xFF536B36),
       Color(0xFF6A5AA6),
     ];
-    final normalized = username.trim();
+    final normalized = widget.username.trim();
     final stableHash = normalized.codeUnits.fold<int>(
       0,
       (value, unit) => (value * 31 + unit) & 0x7fffffff,
     );
     final color = palette[stableHash % palette.length];
-    final initial = normalized.isEmpty
-        ? '?'
-        : normalized.substring(0, 1).toUpperCase();
-    return CircleAvatar(
-      radius: size / 2,
-      backgroundColor: color,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * .39,
-          fontWeight: FontWeight.w900,
+    final initial = normalized.isEmpty ? '?' : normalized.substring(0, 1).toUpperCase();
+    return FutureBuilder<Uint8List?>(
+      future: _photo,
+      builder: (context, snapshot) => CircleAvatar(
+        radius: widget.size / 2,
+        backgroundColor: color,
+        foregroundImage: snapshot.data == null ? null : MemoryImage(snapshot.data!),
+        child: Text(
+          initial,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: widget.size * .39,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );
@@ -1112,7 +1151,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             child: Row(
                               children: [
-                                _ProfileAvatar(username: name, size: 46),
+                                _ProfileAvatar(username: name, userId: peer?['id']?.toString(), photoUrl: peer?['photoUrl']?.toString(), size: 46),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
@@ -1178,6 +1217,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 _ProfileAvatar(
                   username: widget.session.username ?? 'user',
+                  userId: widget.session.userId,
+                  photoUrl: widget.session.photoUrl,
                   size: 54,
                 ),
                 const SizedBox(width: 13),
@@ -1205,6 +1246,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.photo_camera_back_rounded),
+            title: const Text('Change profile photo', style: TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: const Text('Use a direct HTTPS image URL'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _showProfilePhotoDialog,
           ),
         ),
         const SizedBox(height: 14),
@@ -1338,6 +1389,96 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _showProfilePhotoDialog() async {
+    final controller = TextEditingController(text: widget.session.photoUrl ?? '');
+    bool busy = false;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Profile photo'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Paste a direct HTTPS image URL. CrazeChat stores the URL on the server and caches the image locally in encrypted storage.'),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: controller,
+                  enabled: !busy,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Image URL',
+                    hintText: 'https://example.com/photo.jpg',
+                    prefixIcon: Icon(Icons.link_rounded),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              if (widget.session.photoUrl != null)
+                TextButton(
+                  onPressed: busy ? null : () async {
+                    setDialogState(() => busy = true);
+                    try {
+                      final id = widget.session.userId;
+                      await widget.session.updateProfilePhoto(null);
+                      if (id != null) await ProfilePhotoCache.clear(id);
+                      if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      if (mounted) showMessage(this.context, 'Profile photo removed.');
+                    } catch (error) {
+                      if (dialogContext.mounted) showMessage(dialogContext, 'Could not remove profile photo: $error');
+                    } finally {
+                      if (dialogContext.mounted) setDialogState(() => busy = false);
+                    }
+                  },
+                  child: const Text('Remove'),
+                ),
+              TextButton(
+                onPressed: busy ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: busy ? null : () async {
+                  final value = controller.text.trim();
+                  final id = widget.session.userId;
+                  if (id == null) {
+                    showMessage(dialogContext, 'Sign in before changing your profile photo.');
+                    return;
+                  }
+                  if (!ProfilePhotoCache.isValidUrl(value)) {
+                    showMessage(dialogContext, 'Enter a valid HTTPS image URL.');
+                    return;
+                  }
+                  setDialogState(() => busy = true);
+                  try {
+                    final image = await ProfilePhotoCache.load(userId: id, url: value);
+                    if (image == null) {
+                      throw const FormatException('The URL did not return a supported image under 256 KB.');
+                    }
+                    await widget.session.updateProfilePhoto(value);
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                    if (mounted) showMessage(this.context, 'Profile photo updated.');
+                  } catch (error) {
+                    if (dialogContext.mounted) showMessage(dialogContext, 'Could not update profile photo: $error');
+                  } finally {
+                    if (dialogContext.mounted) setDialogState(() => busy = false);
+                  }
+                },
+                child: busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Save photo'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   Future<void> _showChangePassword() async {
     final current = TextEditingController(), next = TextEditingController(), confirm = TextEditingController();
     bool busy = false, showCurrent = false, showNext = false, showConfirm = false;
@@ -1402,7 +1543,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   )
                   .map(
                     (account) => ListTile(
-                      leading: const Icon(Icons.account_circle_outlined),
+                      leading: _ProfileAvatar(
+                        username: account['username']?.toString() ?? 'user',
+                        userId: account['userId']?.toString(),
+                        photoUrl: account['photoUrl']?.toString(),
+                        size: 42,
+                      ),
                       title: Text('@${account['username']}'),
                       subtitle: const Text('Switch account'),
                       onTap: () {
@@ -1591,6 +1737,8 @@ class _FindPeopleDialogState extends State<_FindPeopleDialog> {
                                     contentPadding: EdgeInsets.zero,
                                     leading: _ProfileAvatar(
                                       username: username,
+                                      userId: user['id']?.toString(),
+                                      photoUrl: user['photoUrl']?.toString(),
                                       size: 42,
                                     ),
                                     title: Text(
@@ -2781,7 +2929,7 @@ class _ChatScreenState extends State<ChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            _ProfileAvatar(username: peerName ?? 'contact', size: 40),
+            _ProfileAvatar(username: peerName ?? 'contact', userId: peerId, photoUrl: peer?['photoUrl']?.toString(), size: 40),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
