@@ -152,16 +152,153 @@ activity.write_text("""package com.crazestudio.crazechat
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private val localSyncChannel = "com.crazestudio.crazechat/local_sync"
+    private val folderRequestCode = 7821
+    private var pendingFolderResult: MethodChannel.Result? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         createCrazeChatNotificationChannels()
         super.onCreate(savedInstanceState)
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, localSyncChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "selectFolder" -> {
+                        if (pendingFolderResult != null) {
+                            result.error("PICKER_BUSY", "A folder picker is already open.", null)
+                        } else {
+                            pendingFolderResult = result
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                                addFlags(
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                                )
+                            }
+                            startActivityForResult(intent, folderRequestCode)
+                        }
+                    }
+                    "readBackup" -> runLocalIo(result) {
+                        val treeUri = Uri.parse(call.argument<String>("treeUri")
+                            ?: throw IllegalArgumentException("Folder permission is missing."))
+                        readBackupFile(treeUri)
+                    }
+                    "writeBackup" -> runLocalIo(result) {
+                        val treeUri = Uri.parse(call.argument<String>("treeUri")
+                            ?: throw IllegalArgumentException("Folder permission is missing."))
+                        val contents = call.argument<String>("contents")
+                            ?: throw IllegalArgumentException("Encrypted backup contents are missing.")
+                        writeBackupFile(treeUri, contents)
+                        null
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun runLocalIo(result: MethodChannel.Result, operation: () -> Any?) {
+        Thread {
+            try {
+                val value = operation()
+                runOnUiThread { result.success(value) }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    result.error("LOCAL_SYNC_FAILED", error.message ?: "Local folder operation failed.", null)
+                }
+            }
+        }.start()
+    }
+
+    @Deprecated("Deprecated in Android, retained for FlutterActivity folder-picker result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != folderRequestCode) return
+        val pending = pendingFolderResult
+        pendingFolderResult = null
+        if (resultCode != RESULT_OK || data?.data == null) {
+            pending?.success(null)
+            return
+        }
+        val uri = data.data!!
+        try {
+            val flags = data.flags and
+                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            contentResolver.takePersistableUriPermission(uri, flags)
+            pending?.success(uri.toString())
+        } catch (error: Exception) {
+            pending?.error("FOLDER_PERMISSION_FAILED", error.message, null)
+        }
+    }
+
+    private fun rootDocumentUri(treeUri: Uri): Uri {
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        return DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
+    }
+
+    private fun findBackupDocument(treeUri: Uri): Uri? {
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+        contentResolver.query(
+            childrenUri,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            ),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID
+            )
+            val nameColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            )
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameColumn) == "crazechat-encrypted-backup.json") {
+                    return DocumentsContract.buildDocumentUriUsingTree(
+                        treeUri,
+                        cursor.getString(idColumn)
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    private fun readBackupFile(treeUri: Uri): String? {
+        val document = findBackupDocument(treeUri) ?: return null
+        return contentResolver.openInputStream(document)?.bufferedReader(Charsets.UTF_8)?.use {
+            it.readText()
+        } ?: throw IllegalStateException("Could not read the encrypted backup file.")
+    }
+
+    private fun writeBackupFile(treeUri: Uri, contents: String) {
+        val document = findBackupDocument(treeUri) ?: DocumentsContract.createDocument(
+            contentResolver,
+            rootDocumentUri(treeUri),
+            "application/json",
+            "crazechat-encrypted-backup.json"
+        ) ?: throw IllegalStateException("Could not create the encrypted backup file.")
+        contentResolver.openOutputStream(document, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+            it.write(contents)
+        } ?: throw IllegalStateException("Could not write the encrypted backup file.")
     }
 
     private fun createCrazeChatNotificationChannels() {
