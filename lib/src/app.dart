@@ -2009,10 +2009,8 @@ class _ChatScreenState extends State<ChatScreen> {
       await widget.session.trustContactKey(contactId: id, publicKey: publicKey);
       if (mounted) {
         setState(() => peerKeyStatus = 'verified');
-        {
-          unawaited(loadMessages(silent: true));
-          _connectRealtime();
-        }
+        unawaited(loadMessages(silent: true));
+        _connectRealtime();
       }
     }
   }
@@ -2253,7 +2251,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> loadMessages({bool silent = false}) async {
-    if (chatKey == null || syncing || peerKeyStatus != 'verified' || false) return;
+    if (chatKey == null || syncing || peerKeyStatus != 'verified') return;
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
@@ -2333,7 +2331,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _retryPendingMessages() async {
-    if (retryingPending || !mounted || peerKeyStatus != 'verified' || false) return;
+    if (retryingPending || !mounted || peerKeyStatus != 'verified') return;
     retryingPending = true;
     try {
       final cached = await widget.session.loadCachedMessages(chatId);
