@@ -2068,10 +2068,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() => loading = false);
-      // Start the durable REST pull independently of WebSocket availability.
-      // Realtime is an optimization; it must never gate initial history sync.
-      unawaited(loadMessages(silent: true));
-      _connectRealtime();
+      // Do not fetch or decrypt remote messages until this contact's public
+      // key has been independently verified. Local encrypted history remains
+      // available while the user checks the fingerprint.
+      if (peerKeyStatus == 'verified') {
+        unawaited(loadMessages(silent: true));
+        _connectRealtime();
+      }
     } catch (exception) {
       if (mounted) {
         setState(() {
@@ -2112,7 +2115,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (accepted == true) {
       await widget.session.trustContactKey(contactId: id, publicKey: publicKey);
-      if (mounted) setState(() => peerKeyStatus = 'verified');
+      if (mounted) {
+        setState(() => peerKeyStatus = 'verified');
+        unawaited(loadMessages(silent: true));
+        _connectRealtime();
+      }
     }
   }
 
@@ -2352,7 +2359,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> loadMessages({bool silent = false}) async {
-    if (chatKey == null || syncing) return;
+    if (chatKey == null || syncing || peerKeyStatus != 'verified') return;
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
