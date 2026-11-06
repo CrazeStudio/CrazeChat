@@ -38,6 +38,7 @@ class CrazeChatApi {
   }) => _request('POST', 'auth/register', body: {
     'username': username,
     'password': password,
+    'publicKey': identityEnvelope['publicKey'],
     'identityEnvelope': identityEnvelope,
   });
 
