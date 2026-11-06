@@ -16,11 +16,11 @@ class IdentityMaterial {
 
 class CryptoService {
   static const _identityAad = 'CrazeChat/identity-key/v1';
-  static const _driveBackupFormat = 'cc-drive-backup-v1';
+  static const _localBackupFormat = 'cc-local-backup-v1';
   // Keep the wire format identical to the Cloudflare API validator:
   // AES-GCM nonce = 12 bytes, authentication tag = 16 bytes.
   static final _aes = AesGcm.with256bits(nonceLength: 12);
-  static final _driveBackupKdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+  static final _localBackupKdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
   static final _identityKdf = Argon2id(
     memory: 32 * 1024,
     parallelism: 1,
@@ -206,7 +206,7 @@ class CryptoService {
   /// Adds an independent authenticated-encryption layer to a Drive archive.
   /// The wrapping key is derived from the account identity key, so only a
   /// device that has unlocked the same identity can open the archive.
-  static Future<Map<String, dynamic>> encryptDriveBackup({
+  static Future<Map<String, dynamic>> encryptLocalBackup({
     required List<int> archiveBytes,
     required KeyPair identity,
     required String userId,
@@ -215,37 +215,37 @@ class CryptoService {
       throw const FormatException('A CrazeChat account is required.');
     }
     final key = await _driveBackupKey(identity, userId);
-    final aad = utf8.encode('$_driveBackupFormat:$userId');
+    final aad = utf8.encode('$_localBackupFormat:$userId');
     final box = await _aes.encrypt(archiveBytes, secretKey: key, aad: aad);
     return {
-      'format': _driveBackupFormat,
+      'format': _localBackupFormat,
       'nonce': base64Encode(box.nonce),
       'ciphertext': base64Encode(box.cipherText),
       'mac': base64Encode(box.mac.bytes),
     };
   }
 
-  static Future<List<int>> decryptDriveBackup({
+  static Future<List<int>> decryptLocalBackup({
     required Map<String, dynamic> envelope,
     required KeyPair identity,
     required String userId,
   }) async {
-    if (envelope['format'] != _driveBackupFormat || userId.isEmpty) {
+    if (envelope['format'] != _localBackupFormat || userId.isEmpty) {
       throw const FormatException(
-        'Unsupported or invalid CrazeChat Drive backup.',
+        'Unsupported or invalid CrazeChat local backup.',
       );
     }
     final nonce = _decodeBase64Field(envelope, 'nonce', exactLength: 12);
     final ciphertext = _decodeBase64Field(envelope, 'ciphertext');
     final mac = _decodeBase64Field(envelope, 'mac', exactLength: 16);
     if (ciphertext.isEmpty) {
-      throw const FormatException('Drive backup is empty.');
+      throw const FormatException('local backup is empty.');
     }
     final key = await _driveBackupKey(identity, userId);
     return _aes.decrypt(
       SecretBox(ciphertext, nonce: nonce, mac: Mac(mac)),
       secretKey: key,
-      aad: utf8.encode('$_driveBackupFormat:$userId'),
+      aad: utf8.encode('$_localBackupFormat:$userId'),
     );
   }
 
@@ -260,10 +260,10 @@ class CryptoService {
       );
     }
     final privateBytes = keyData.bytes;
-    return _driveBackupKdf.deriveKey(
+    return _localBackupKdf.deriveKey(
       secretKey: SecretKey(privateBytes),
-      nonce: utf8.encode('CrazeChat/drive-backup-salt/v1:$userId'),
-      info: utf8.encode('CrazeChat/google-drive-backup/v1'),
+      nonce: utf8.encode('CrazeChat/local-backup-salt/v1:$userId'),
+      info: utf8.encode('CrazeChat/local-folder-backup/v1'),
     );
   }
 
