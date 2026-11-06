@@ -178,6 +178,22 @@ class CryptoService {
     );
   }
 
+  static Future<IdentityMaterial> rewrapIdentityMaterial({required Map<String, dynamic> envelope, required String currentPassword, required String newPassword}) async {
+    final unlocked = await unlockIdentityMaterial(envelope, currentPassword);
+    final publicKey = envelope['publicKey'] as String;
+    final salt = _randomBytes(16);
+    final wrappingKey = await _identityKdf.deriveKeyFromPassword(password: newPassword, nonce: salt);
+    final box = await _aes.encrypt(unlocked.privateKeyBytes, secretKey: wrappingKey, aad: utf8.encode('$_identityAad:$publicKey'));
+    final nextEnvelope = <String, dynamic>{
+      'version': 1, 'kdf': 'Argon2id', 'kdfMemoryKiB': 32768, 'kdfIterations': 2,
+      'salt': base64Encode(salt), 'nonce': base64Encode(box.nonce),
+      'ciphertext': base64Encode(box.cipherText), 'mac': base64Encode(box.mac.bytes),
+      'publicKey': publicKey,
+    };
+    validateIdentityEnvelope(nextEnvelope);
+    return IdentityMaterial(keyPair: unlocked.keyPair, envelope: nextEnvelope, privateKeyBytes: unlocked.privateKeyBytes);
+  }
+
   static Future<KeyPair> unlockIdentity(
     Map<String, dynamic> envelope,
     String password,
