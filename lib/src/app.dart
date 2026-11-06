@@ -312,8 +312,12 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       } else {
         result = await widget.session.api.login(username: name, password: pass);
+        final envelope = Map<String, dynamic>.from(result['identityEnvelope'] as Map);
+        if (envelope['version'] == 2 && encryptionPass == pass) {
+          throw const FormatException('Your account password and encryption passphrase must be different.');
+        }
         material = await CryptoService.unlockIdentityMaterial(
-          Map<String, dynamic>.from(result['identityEnvelope'] as Map),
+          envelope,
           encryptionPass,
         );
       }
@@ -412,9 +416,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ? AutofillHints.newPassword
                           : AutofillHints.password,
                     ],
-                    textInputAction: TextInputAction.done,
+                    textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
-                      labelText: 'Password',
+                      labelText: 'Account password',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
                         tooltip: showPassword
