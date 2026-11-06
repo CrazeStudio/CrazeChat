@@ -60,7 +60,7 @@ class CryptoService {
   }
 
   static void validateIdentityEnvelope(Map<String, dynamic> envelope) {
-    if (![1, 2].contains(envelope['version']) || envelope['kdf'] != 'Argon2id') {
+    if (![1, 2, 3].contains(envelope['version']) || envelope['kdf'] != 'Argon2id') {
       throw const FormatException(
         'Unsupported encrypted identity version or KDF.',
       );
@@ -86,14 +86,14 @@ class CryptoService {
     }
   }
 
-  static Future<IdentityMaterial> createIdentity(String encryptionPassphrase) async {
+  static Future<IdentityMaterial> createIdentity(String password) async {
     final keyPair = await X25519().newKeyPair();
     final privateBytes = await keyPair.extractPrivateKeyBytes();
     final publicKey = await keyPair.extractPublicKey();
     final publicKeyBase64 = base64Encode(publicKey.bytes);
     final salt = _randomBytes(16);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(
-      password: encryptionPassphrase,
+      password: password,
       nonce: salt,
     );
     final box = await _aes.encrypt(
@@ -102,8 +102,8 @@ class CryptoService {
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
     final envelope = <String, dynamic>{
-      'version': 2,
-      'keyProtection': 'separate-passphrase-v2',
+      'version': 3,
+      'keyProtection': 'account-password-v3',
       'kdf': 'Argon2id',
       'kdfMemoryKiB': 32768,
       'kdfIterations': 2,
@@ -179,11 +179,12 @@ class CryptoService {
     );
   }
 
-  /// Re-wraps the already-unlocked identity using an encryption-only passphrase.
-  /// The passphrase is never sent to the backend.
+  /// Re-wraps the account identity using its account password. The private
+  /// key is never sent to the backend; the password is still sent separately
+  /// as the normal HTTPS login credential for server-side authentication.
   static Future<IdentityMaterial> rewrapUnlockedIdentity({
     required KeyPair identity,
-    required String encryptionPassphrase,
+    required String password,
   }) async {
     final keyData = await identity.extract();
     if (keyData is! SimpleKeyPairData || keyData.type != KeyPairType.x25519) {
@@ -194,7 +195,7 @@ class CryptoService {
     final publicKeyBase64 = base64Encode(publicKey);
     final salt = _randomBytes(16);
     final wrappingKey = await _identityKdf.deriveKeyFromPassword(
-      password: encryptionPassphrase,
+      password: password,
       nonce: salt,
     );
     final box = await _aes.encrypt(
@@ -203,8 +204,8 @@ class CryptoService {
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
     final nextEnvelope = <String, dynamic>{
-      'version': 2,
-      'keyProtection': 'separate-passphrase-v2',
+      'version': 3,
+      'keyProtection': 'account-password-v3',
       'kdf': 'Argon2id',
       'kdfMemoryKiB': 32768,
       'kdfIterations': 2,
