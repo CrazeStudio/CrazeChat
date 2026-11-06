@@ -202,7 +202,6 @@ class ChatSession extends ChangeNotifier {
         value: base64Encode(material.privateKeyBytes),
       );
     }
-    await _storage.delete(key: _autoLockBackgroundedAtKey);
     await _storage.delete(key: _manualLockKey);
     notifyListeners();
   }
@@ -295,7 +294,6 @@ class ChatSession extends ChangeNotifier {
     if (previousUserId != null && !keepSavedIdentity) {
       await _storage.delete(key: 'identityPrivateKey_$previousUserId');
     }
-    await _storage.delete(key: _autoLockBackgroundedAtKey);
     await _storage.delete(key: _manualLockKey);
   }
 
