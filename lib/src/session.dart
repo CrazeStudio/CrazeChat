@@ -309,6 +309,10 @@ class ChatSession extends ChangeNotifier {
   }
 
   Future<void> _clearActiveSession() async {
+    final previousUserId = userId;
+    final keepSavedIdentity =
+        previousUserId != null &&
+        savedAccounts.any((account) => account['userId'] == previousUserId);
     token = null;
     username = null;
     userId = null;
@@ -319,6 +323,9 @@ class ChatSession extends ChangeNotifier {
     await _storage.delete(key: 'username');
     await _storage.delete(key: 'userId');
     await _storage.delete(key: 'identityEnvelope');
+    if (previousUserId != null && !keepSavedIdentity) {
+      await _storage.delete(key: 'identityPrivateKey_$previousUserId');
+    }
     await _storage.delete(key: _autoLockBackgroundedAtKey);
     await _storage.delete(key: _manualLockKey);
   }

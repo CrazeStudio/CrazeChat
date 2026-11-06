@@ -57,6 +57,32 @@ if 'android:allowBackup=' in s:
     s = re.sub(r'android:allowBackup="[^"]*"', 'android:allowBackup="false"', s, count=1)
 else:
     s = s.replace('<application', '<application\n        android:allowBackup="false"', 1)
+if 'android:usesCleartextTraffic=' in s:
+    s = re.sub(
+        r'android:usesCleartextTraffic="[^"]*"',
+        'android:usesCleartextTraffic="false"',
+        s,
+        count=1,
+    )
+else:
+    s = s.replace(
+        '<application',
+        '<application\n        android:usesCleartextTraffic="false"',
+        1,
+    )
+if 'android:networkSecurityConfig=' in s:
+    s = re.sub(
+        r'android:networkSecurityConfig="[^"]*"',
+        'android:networkSecurityConfig="@xml/network_security_config"',
+        s,
+        count=1,
+    )
+else:
+    s = s.replace(
+        '<application',
+        '<application\n        android:networkSecurityConfig="@xml/network_security_config"',
+        1,
+    )
 for permission in (
     "android.permission.INTERNET",
     "android.permission.POST_NOTIFICATIONS",
@@ -75,6 +101,19 @@ if "firebase_messaging_installation_id_enabled" not in s:
 """
     s = s.replace("</application>", metadata + "    </application>", 1)
 manifest.write_text(s)
+
+network_config = Path("android/app/src/main/res/xml/network_security_config.xml")
+network_config.parent.mkdir(parents=True, exist_ok=True)
+network_config.write_text("""<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
+""")
 
 gradle = Path("android/app/build.gradle.kts")
 if gradle.exists():

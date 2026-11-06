@@ -36,5 +36,40 @@ void main() {
       expect(second, matches(RegExp(r'^[a-f0-9]{32}$')));
       expect(second, isNot(first));
     });
+
+    test('rejects insecure remote origins before REST or WebSocket credentials are sent', () async {
+      final insecure = CrazeChatApi(
+        baseUrl: 'http://attacker.example',
+        sharedKey: 'test-shared-key',
+        token: 'test-user-token',
+      );
+      await expectLater(insecure.listChats(), throwsA(isA<ApiException>()));
+      await expectLater(
+        insecure.connectRealtime(validId),
+        throwsA(isA<ApiException>()),
+      );
+    });
+
+    test(
+      'rejects API origins containing credentials, paths, queries or fragments',
+      () async {
+        for (final origin in [
+          'https://user:pass@api.example',
+          'https://api.example/db',
+          'https://api.example/?',
+          'https://api.example/#',
+        ]) {
+          final configured = CrazeChatApi(
+            baseUrl: origin,
+            sharedKey: 'test-shared-key',
+          );
+          await expectLater(
+            configured.listChats(),
+            throwsA(isA<ApiException>()),
+            reason: 'Rejected unsafe origin: $origin',
+          );
+        }
+      },
+    );
   });
 }

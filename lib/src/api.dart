@@ -18,13 +18,17 @@ class ApiException implements Exception {
 /// the app sends the shared build-time KEY in X-Access-Key and the user's
 /// short-lived JWT separately in Authorization.
 class CrazeChatApi {
-  CrazeChatApi({this.token});
+  CrazeChatApi({this.token, String? baseUrl, String? sharedKey})
+      : _baseUrl = baseUrl ?? apiUrl,
+        _sharedKey = sharedKey ?? apiKey;
 
   static const apiUrl = String.fromEnvironment('BURL');
   static const apiKey = String.fromEnvironment('KEY');
   static final http.Client _client = http.Client();
   static const _timeout = Duration(seconds: 20);
   static const _idPattern = r'^[a-f0-9]{32}$';
+  final String _baseUrl;
+  final String _sharedKey;
   String? token;
 
   Future<Map<String, dynamic>> register({
@@ -85,13 +89,12 @@ class CrazeChatApi {
 
   Future<WebSocket> connectRealtime(String chatId) async {
     _validateId(chatId, 'conversation');
-    final configured = apiUrl.trim();
-    final sharedKey = apiKey.trim();
+    final sharedKey = _sharedKey.trim();
     final currentToken = token;
-    if (configured.isEmpty || sharedKey.isEmpty || currentToken == null || currentToken.isEmpty) {
+    if (_baseUrl.trim().isEmpty || sharedKey.isEmpty || currentToken == null || currentToken.isEmpty) {
       throw const ApiException('Realtime connection requires BURL, KEY and a signed-in session.');
     }
-    final base = Uri.parse(configured);
+    final base = _validatedOrigin();
     final uri = base.replace(
       scheme: base.scheme == 'https' ? 'wss' : 'ws',
       path: '/api/realtime/$chatId',
@@ -144,31 +147,19 @@ class CrazeChatApi {
     Map<String, String> query = const {},
     Map<String, dynamic>? body,
   }) async {
-    final configured = apiUrl.trim();
-    if (configured.isEmpty) {
+    if (_baseUrl.trim().isEmpty) {
       throw const ApiException('CrazeChat is not configured. Set the BURL build variable to your CrazeStudio-Web origin.');
     }
-    final sharedKey = apiKey.trim();
+    final sharedKey = _sharedKey.trim();
     if (sharedKey.isEmpty) {
       throw const ApiException('CrazeChat is not configured. Set the KEY build variable to the same value as the backend ACCESS_KEY.');
     }
 
-    late final Uri uri;
-    try {
-      final base = Uri.parse(configured);
-      final localHost = const {'localhost', '127.0.0.1', '10.0.2.2'}.contains(base.host);
-      if (base.host.isEmpty || !{'https', if (localHost) 'http'}.contains(base.scheme) ||
-          (base.path.isNotEmpty && base.path != '/') || base.userInfo.isNotEmpty ||
-          base.query.isNotEmpty || base.fragment.isNotEmpty) {
-        throw const FormatException('Invalid API origin');
-      }
-      uri = base.replace(
-        path: '/db/$path',
-        queryParameters: query.isEmpty ? null : query,
-      );
-    } on FormatException {
-      throw const ApiException('BURL must be an HTTPS CrazeStudio-Web origin, without a path.');
-    }
+    final base = _validatedOrigin();
+    final uri = base.replace(
+      path: '/db/$path',
+      queryParameters: query.isEmpty ? null : query,
+    );
 
     try {
       final headers = <String, String>{
@@ -180,7 +171,9 @@ class CrazeChatApi {
       if (currentToken != null && currentToken.isNotEmpty) {
         headers['Authorization'] = 'Bearer $currentToken';
       }
-      final request = http.Request(method, uri)..headers.addAll(headers);
+      final request = http.Request(method, uri)
+        ..followRedirects = false
+        ..headers.addAll(headers);
       if (body != null) request.body = jsonEncode(body);
       final streamed = await _client.send(request).timeout(_timeout);
       final response = await http.Response.fromStream(streamed).timeout(_timeout);
@@ -221,6 +214,22 @@ class CrazeChatApi {
   void _validateId(String id, String label) {
     if (!RegExp(_idPattern).hasMatch(id)) {
       throw ApiException('Invalid $label identifier.', statusCode: 400);
+    }
+  }
+
+  Uri _validatedOrigin() {
+    try {
+      final base = Uri.parse(_baseUrl.trim());
+      final host = base.host.toLowerCase();
+      final localHost = const {'localhost', '127.0.0.1', '10.0.2.2'}.contains(host);
+      if (host.isEmpty || !{'https', if (localHost) 'http'}.contains(base.scheme) ||
+          (base.path.isNotEmpty && base.path != '/') || base.userInfo.isNotEmpty ||
+          base.hasQuery || base.hasFragment) {
+        throw const FormatException('Invalid API origin');
+      }
+      return base;
+    } on FormatException {
+      throw const ApiException('BURL must be an HTTPS origin without a path, credentials, query, or fragment. HTTP is allowed only for local development.');
     }
   }
 }

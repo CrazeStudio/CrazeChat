@@ -380,6 +380,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     controller: username,
                     autocorrect: false,
                     textCapitalization: TextCapitalization.none,
+                    autofillHints: const [AutofillHints.username],
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Username',
                       prefixIcon: Icon(Icons.alternate_email_rounded),
@@ -389,10 +391,21 @@ class _AuthScreenState extends State<AuthScreen> {
                   TextField(
                     controller: password,
                     obscureText: !showPassword,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    autofillHints: [
+                      creating
+                          ? AutofillHints.newPassword
+                          : AutofillHints.password,
+                    ],
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       labelText: 'Password',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
+                        tooltip: showPassword
+                            ? 'Hide password'
+                            : 'Show password',
                         onPressed: () =>
                             setState(() => showPassword = !showPassword),
                         icon: Icon(
@@ -499,56 +512,71 @@ class _UnlockScreenState extends State<UnlockScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Center(child: _BrandMark(size: 68)),
-                const SizedBox(height: 22),
-                Text(
-                  'Welcome back, @${widget.session.username!}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Unlock your private identity key on this device to open your conversations.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: password,
-                  obscureText: !visible,
-                  onSubmitted: (_) => unlock(),
-                  decoration: InputDecoration(
-                    labelText: 'Account password',
-                    prefixIcon: const Icon(Icons.key_rounded),
-                    suffixIcon: IconButton(
-                      onPressed: () => setState(() => visible = !visible),
-                      icon: Icon(
-                        visible ? Icons.visibility_off : Icons.visibility,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: (constraints.maxHeight - 48)
+                  .clamp(0.0, constraints.maxHeight)
+                  .toDouble(),
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Center(child: _BrandMark(size: 68)),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Welcome back, @${widget.session.username!}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Unlock your private identity key on this device to open your conversations.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: password,
+                      obscureText: !visible,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      autofillHints: const [AutofillHints.password],
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => unlock(),
+                      decoration: InputDecoration(
+                        labelText: 'Account password',
+                        prefixIcon: const Icon(Icons.key_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: visible ? 'Hide password' : 'Show password',
+                          onPressed: () => setState(() => visible = !visible),
+                          icon: Icon(
+                            visible ? Icons.visibility_off : Icons.visibility,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: busy ? null : unlock,
+                      child: busy
+                          ? const CircularProgressIndicator()
+                          : const Text('Unlock CrazeChat'),
+                    ),
+                    TextButton(
+                      onPressed: widget.session.signOut,
+                      child: const Text('Sign in to another account'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: busy ? null : unlock,
-                  child: busy
-                      ? const CircularProgressIndicator()
-                      : const Text('Unlock CrazeChat'),
-                ),
-                TextButton(
-                  onPressed: widget.session.signOut,
-                  child: const Text('Sign in to another account'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -945,7 +973,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: TextField(
             controller: search,
             decoration: InputDecoration(
-              hintText: 'Search people or conversations',
+              hintText: 'Search usernames',
               prefixIcon: Icon(
                 Icons.search_rounded,
                 color: colors.onSurfaceVariant,
@@ -987,13 +1015,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   letterSpacing: 1.4,
                 ),
               ),
-              const Spacer(),
-              Text(
-                '${chats.length} chats · $totalSent sent on device',
-                style: TextStyle(
-                  color: colors.onSurfaceVariant,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '${chats.length} chats · $totalSent sent saved locally',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -1006,10 +1039,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ? ListView(
                   children: [
                     const SizedBox(height: 110),
-                    Icon(
-                      Icons.cloud_off_rounded,
-                      size: 48,
-                      color: colors.onSurfaceVariant,
+                    Center(
+                      child: Icon(
+                        Icons.cloud_off_rounded,
+                        size: 48,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     const Center(
@@ -1020,11 +1055,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     Center(
                       child: Text(
-                        'Reconnecting automatically…',
+                        'Your chats could not be refreshed.',
                         style: TextStyle(
                           color: colors.onSurfaceVariant,
                           fontSize: 12,
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: FilledButton.icon(
+                        onPressed: refreshingChats ? null : () => loadChats(),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Try again'),
                       ),
                     ),
                   ],
@@ -1156,7 +1199,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
-                                      '${sentCounts[chat['id']?.toString()] ?? 0} saved sent',
+                                      '${sentCounts[chat['id']?.toString()] ?? 0} cached sent',
                                       style: TextStyle(
                                         color: colors.onSecondaryContainer,
                                         fontSize: 10,
@@ -2770,6 +2813,18 @@ class _ChatScreenState extends State<ChatScreen> {
                                             color: colors.onSurfaceVariant,
                                           ),
                                         ),
+                                        IconButton(
+                                          tooltip: 'Message actions',
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          onPressed: () =>
+                                              messageActions(message),
+                                          icon: Icon(
+                                            Icons.more_horiz_rounded,
+                                            size: 18,
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                     const SizedBox(height: 7),
@@ -3043,25 +3098,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: AnimatedScale(
                           scale: sending ? .94 : 1,
                           duration: const Duration(milliseconds: 140),
-                          child: FilledButton(
-                            onPressed: sending ? null : send,
-                            style: FilledButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              backgroundColor: colors.primary,
-                              foregroundColor: colors.onPrimary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                          child: Tooltip(
+                            message: sending
+                                ? 'Sending message'
+                                : 'Send message',
+                            child: FilledButton(
+                              onPressed: sending ? null : send,
+                              style: FilledButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                backgroundColor: colors.primary,
+                                foregroundColor: colors.onPrimary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
                               ),
+                              child: sending
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.arrow_upward_rounded),
                             ),
-                            child: sending
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.arrow_upward_rounded),
                           ),
                         ),
                       ),

@@ -362,7 +362,12 @@ class GoogleDriveBackupService extends ChangeNotifier {
       'pageSize': '10',
       'fields': 'files(id,name,size,modifiedTime)',
     });
-    final response = await _client.get(uri, headers: headers).timeout(_timeout);
+    final request = http.Request('GET', uri)
+      ..followRedirects = false
+      ..headers.addAll(headers);
+    final response = await http.Response.fromStream(
+      await _client.send(request).timeout(_timeout),
+    ).timeout(_timeout);
     if (response.statusCode != 200) _throwDriveError(response);
     final decoded = jsonDecode(response.body);
     if (decoded is! Map || decoded['files'] is! List) return null;
@@ -385,7 +390,9 @@ class GoogleDriveBackupService extends ChangeNotifier {
     final uri = Uri.https('www.googleapis.com', '/drive/v3/files/$fileId', {
       'alt': 'media',
     });
-    final request = http.Request('GET', uri)..headers.addAll(headers);
+    final request = http.Request('GET', uri)
+      ..followRedirects = false
+      ..headers.addAll(headers);
     final response = await _client.send(request).timeout(_timeout);
     if (response.statusCode != 200) {
       _throwDriveError(
@@ -439,6 +446,7 @@ class GoogleDriveBackupService extends ChangeNotifier {
         : '{}';
     final initiate = http.Request(isNew ? 'POST' : 'PATCH', initiateUri)
       ..headers.addAll(headers)
+      ..followRedirects = false
       ..headers['Content-Type'] = 'application/json; charset=UTF-8'
       ..headers['X-Upload-Content-Type'] = 'application/json'
       ..headers['X-Upload-Content-Length'] = '${encryptedBytes.length}'
@@ -454,8 +462,25 @@ class GoogleDriveBackupService extends ChangeNotifier {
     if (location == null || location.isEmpty) {
       throw StateError('Google Drive did not start an upload session.');
     }
-    final upload = http.Request('PUT', Uri.parse(location))
+    final uploadUri = Uri.tryParse(location);
+    final allowedUploadPath =
+        uploadUri != null &&
+        (uploadUri.path == '/upload/drive/v3/files' ||
+            uploadUri.path.startsWith('/upload/drive/v3/files/'));
+    if (uploadUri == null ||
+        uploadUri.scheme != 'https' ||
+        uploadUri.host != 'www.googleapis.com' ||
+        uploadUri.port != 443 ||
+        uploadUri.userInfo.isNotEmpty ||
+        uploadUri.hasFragment ||
+        !allowedUploadPath) {
+      throw const FormatException(
+        'Google Drive returned an unsafe resumable-upload URL.',
+      );
+    }
+    final upload = http.Request('PUT', uploadUri)
       ..headers.addAll(headers)
+      ..followRedirects = false
       ..headers['Content-Type'] = 'application/json'
       ..bodyBytes = encryptedBytes;
     final uploadResponse = await http.Response.fromStream(

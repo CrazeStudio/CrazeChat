@@ -85,6 +85,10 @@ Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native
 
 **Security limit:** `KEY` is embedded in the APK and can be extracted. Treat it as a shared app-gateway gate, not as a confidential credential or a replacement for user authentication. Keep per-user JWT checks, participant authorization, and server-side rate limits enabled.
 
+The client accepts only HTTPS API origins for remote servers and uses `wss` for remote realtime traffic. Android blocks cleartext networking except for the explicit local-development hosts `localhost`, `127.0.0.1`, and `10.0.2.2`. Google Drive resumable-upload URLs are checked against Google's HTTPS upload host before any OAuth header is sent.
+
+Signing out clears the session on this device, but the current separately deployed backend has no logout/revocation route in this repository; an already copied JWT may remain usable until its server-side expiry. Keep JWT lifetimes short and add server-side revocation/refresh-token rotation before relying on logout to invalidate stolen tokens.
+
 The CrazeChat REST routes use the existing per-user JWT verification and participant checks in the CrazeStudio-Web dispatcher. Registration and login are public entry points; the gateway currently applies an in-process per-instance request throttle. Before a public production launch, configure a deployment-level rate limit/WAF for `/db/auth/register` and `/db/auth/login`, because serverless instance-local throttling is only best-effort.
 
 ## Android build
@@ -108,12 +112,11 @@ For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque5
 
 Background notifications use Firebase Cloud Messaging HTTP v1. Add an Android app in the **same Firebase project** used by CrazeStudio-Web, with package name `com.crazestudio.crazechat`, then download its `google-services.json`.
 
-- Local build: place the file at `android/app/google-services.json` before running `bash tool/prepare_android.sh`.
-- GitHub Actions: base64-encode the file and add the result as the repository secret `FIREBASE_ANDROID_CONFIG_B64`. The Android setup script generates the Dart Firebase options from it.
+- This repository currently tracks `android/app/google-services.json` as public Firebase Android client configuration; CI verifies its hash and project identity. `tool/prepare_android.sh` generates the Dart Firebase options from that file. If you switch Firebase projects, update the file and the matching CI assertions.
+- The Firebase Android API key in this file is client configuration, not a service-account secret, and can be extracted from the APK. Restrict it in Google Cloud to the CrazeChat Android package/signing certificates and only the APIs the app needs. Never put a Firebase Admin/service-account JSON file in the app or repository.
 - Enable the Firebase Cloud Messaging API for the Google Cloud project used by Firebase. The backend service account must be allowed to send FCM messages.
-- Keep `google-services.json` out of Git. It is ignored by `.gitignore`.
 
-The server sends a generic notification (no message text) and opaque chat/message IDs. The user opens the app to decrypt and view the locally synchronized message. Replies and reactions also travel as encrypted message envelopes. When the Firebase Android app config is absent, the app still builds but the Push notifications setting is disabled and background alerts are unavailable. Android notification permission must also be allowed by the device user.
+The server sends a generic notification (no message text) and opaque chat/message IDs. The user opens the app to decrypt and view the locally synchronized message. Replies and reactions also travel as encrypted message envelopes. Android notification permission must also be allowed by the device user.
 
 ## Encrypted Google Drive sync
 
