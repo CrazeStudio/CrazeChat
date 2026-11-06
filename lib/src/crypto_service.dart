@@ -203,7 +203,7 @@ class CryptoService {
     );
   }
 
-  /// Adds an independent authenticated-encryption layer to a Drive archive.
+  /// Adds an independent authenticated-encryption layer to a local folder archive.
   /// The wrapping key is derived from the account identity key, so only a
   /// device that has unlocked the same identity can open the archive.
   static Future<Map<String, dynamic>> encryptLocalBackup({
