@@ -1950,7 +1950,8 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> messages = [];
   final Set<String> messageIds = <String>{};
   SecretKey? chatKey;
-  String? peerName, error;
+  String? peerName, error, peerId, peerPublicKey, peerFingerprint;
+  String peerKeyStatus = 'unverified';
   Map<String, dynamic>? replyTarget;
   bool loading = true, sending = false, syncing = false, searchOpen = false;
   int? lastServerMessageAt;
@@ -2043,10 +2044,20 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     peerName = other['username']?.toString() ?? 'Conversation';
+    peerId = other['id']?.toString();
+    peerPublicKey = other['publicKey'] as String?;
     try {
+      if (peerId == null || peerPublicKey == null || peerPublicKey!.isEmpty) {
+        throw const FormatException('Contact public key is missing.');
+      }
+      peerFingerprint = await CryptoService.fingerprintPublicKey(peerPublicKey!);
+      peerKeyStatus = await widget.session.contactKeyStatus(
+        contactId: peerId!,
+        publicKey: peerPublicKey!,
+      );
       chatKey = await CryptoService.deriveChatKey(
         myKeyPair: widget.session.identity!,
-        peerPublicKey: other['publicKey'] as String,
+        peerPublicKey: peerPublicKey!,
         chatId: chatId,
       );
       final cached = await widget.session.loadCachedMessages(chatId);
@@ -2068,6 +2079,40 @@ class _ChatScreenState extends State<ChatScreen> {
           loading = false;
         });
       }
+    }
+  }
+
+  Future<void> _showPeerVerification() async {
+    final id = peerId;
+    final publicKey = peerPublicKey;
+    final fingerprint = peerFingerprint;
+    if (id == null || publicKey == null || fingerprint == null) return;
+    final changed = peerKeyStatus == 'changed';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(children: [
+          Icon(changed ? Icons.warning_amber_rounded : Icons.fingerprint_rounded,
+              color: changed ? Colors.orange : _brand),
+          const SizedBox(width: 10),
+          Expanded(child: Text(changed ? 'Contact key changed' : 'Verify contact key')),
+        ]),
+        content: SelectableText(
+          'Contact: @${peerName ?? 'contact'}\n\nSHA-256 fingerprint:\n$fingerprint\n\nCompare this entire fingerprint with your contact using a separate trusted channel (in person or a call). Do not trust a fingerprint sent only through this chat. '
+          '${changed ? 'The public key differs from the one previously verified. Sending remains blocked until you independently confirm this replacement key.' : 'This key is not verified on this device yet. Sending remains blocked until you compare and confirm it.'}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Not now')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('I compared and verified'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true) {
+      await widget.session.trustContactKey(contactId: id, publicKey: publicKey);
+      if (mounted) setState(() => peerKeyStatus = 'verified');
     }
   }
 
@@ -2387,7 +2432,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _retryPendingMessages() async {
-    if (retryingPending || !mounted) return;
+    if (retryingPending || !mounted || peerKeyStatus != 'verified') return;
     retryingPending = true;
     try {
       final cached = await widget.session.loadCachedMessages(chatId);
@@ -2460,6 +2505,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> send() async {
+    if (peerKeyStatus != 'verified') {
+      showMessage(context, 'Verify this contact\'s public-key fingerprint before sending messages.');
+      await _showPeerVerification();
+      return;
+    }
     final text = input.text.trim();
     if (text.isEmpty || sending || chatKey == null) return;
     final words = _wordCount(text);
@@ -2840,17 +2890,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.shield_outlined,
+                      Icon(
+                        peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
                         size: 12,
-                        color: _brand,
+                        color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Private channel',
+                        peerKeyStatus == 'verified'
+                            ? 'Contact key verified'
+                            : peerKeyStatus == 'changed'
+                                ? 'Contact key changed'
+                                : 'Verify contact key',
                         style: TextStyle(
                           fontSize: 10,
-                          color: colors.onSurfaceVariant,
+                          color: peerKeyStatus == 'verified' ? colors.onSurfaceVariant : Colors.orange,
                         ),
                       ),
                     ],
@@ -2861,6 +2915,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Verify contact encryption key',
+            onPressed: _showPeerVerification,
+            icon: Icon(
+              peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.fingerprint_rounded,
+              color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
+            ),
+          ),
           IconButton(
             tooltip: searchOpen ? 'Close search' : 'Search messages',
             onPressed: () => setState(() {
