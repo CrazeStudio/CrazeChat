@@ -2889,7 +2889,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 _replyDragDistance = 0;
                                 if (thresholdReached && swipedTowardCenter) {
                                   HapticFeedback.selectionClick();
-                                  replyToMessage(message);
+                                  _startReply(message);
                                 }
                               },
                               child: AnimatedContainer(
