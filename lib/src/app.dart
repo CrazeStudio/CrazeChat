@@ -848,19 +848,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(
-                  color: dark
-                      ? const Color(0xFF89949A).withValues(alpha: .72)
-                      : const Color(0xFFE7EAEC),
-                  width: dark ? 1.1 : 0.8,
-                ),
-              ),
-              child: Column(
+            child: Column(
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(22, 22, 18, 15),
@@ -906,15 +894,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                       child: TextField(
                         controller: search,
+                        readOnly: true,
+                        onTap: startChat,
                         decoration: InputDecoration(
-                          hintText: 'Search',
+                          hintText: 'Search people',
                           prefixIcon: const Icon(Icons.search_rounded, size: 21),
-                          suffixIcon: search.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: search.clear,
-                                  icon: const Icon(Icons.close_rounded),
-                                ),
                           filled: true,
                           fillColor: dark
                               ? const Color(0xFF252D33)
