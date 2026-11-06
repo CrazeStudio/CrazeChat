@@ -129,8 +129,9 @@ class ChatSession extends ChangeNotifier {
             'userId': userId,
             'identityEnvelope': identityEnvelope,
           });
-          if (savedAccounts.length > 2)
+          if (savedAccounts.length > 2) {
             savedAccounts = savedAccounts.take(2).toList();
+          }
           await _storage.write(
             key: _accountsKey,
             value: jsonEncode(savedAccounts),
@@ -173,16 +174,18 @@ class ChatSession extends ChangeNotifier {
       'userId': userId,
       'identityEnvelope': identityEnvelope,
     });
-    if (savedAccounts.length > 2)
+    if (savedAccounts.length > 2) {
       savedAccounts = savedAccounts.take(2).toList();
+    }
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
   }
 
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
-    if (envelope == null)
+    if (envelope == null) {
       throw const FormatException('No encrypted identity was saved.');
+    }
     final material = await CryptoService.unlockIdentityMaterial(
       envelope,
       password,
@@ -294,8 +297,9 @@ class ChatSession extends ChangeNotifier {
 
   Future<void> signOut() async {
     await PushNotificationService.unregister(api);
-    if (userId != null)
+    if (userId != null) {
       await _storage.delete(key: 'identityPrivateKey_$userId');
+    }
     savedAccounts.removeWhere((account) => account['userId'] == userId);
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     _destroyIdentity();
@@ -425,8 +429,9 @@ class ChatSession extends ChangeNotifier {
     }
     await _withCacheWriteLock(uid, chatId, () async {
       if (await _storage.read(key: _messageTombstoneKey(uid, chatId, id)) ==
-          'true')
+          'true') {
         return;
+      }
       await _writeCachedMessage(uid, chatId, message);
     });
   }
@@ -540,14 +545,16 @@ class ChatSession extends ChangeNotifier {
     final uid = userId;
     if (uid == null ||
         !_chatIdPattern.hasMatch(chatId) ||
-        !_messageIdPattern.hasMatch(messageId))
+        !_messageIdPattern.hasMatch(messageId)) {
       return;
+    }
     await _withCacheWriteLock(uid, chatId, () async {
       if (await _storage.read(
             key: _messageTombstoneKey(uid, chatId, messageId),
           ) ==
-          'true')
+          'true') {
         return;
+      }
       final existing = await _storage.read(
         key: _messageKey(uid, chatId, messageId),
       );
@@ -570,8 +577,9 @@ class ChatSession extends ChangeNotifier {
           'deliveredTo',
           'readBy',
         ]) {
-          if (serverMessage.containsKey(field))
+          if (serverMessage.containsKey(field)) {
             message[field] = serverMessage[field];
+          }
         }
       }
       message['deliveryState'] = deliveryState;
@@ -583,8 +591,9 @@ class ChatSession extends ChangeNotifier {
     final uid = userId;
     if (uid == null ||
         !_chatIdPattern.hasMatch(chatId) ||
-        !_messageIdPattern.hasMatch(messageId))
+        !_messageIdPattern.hasMatch(messageId)) {
       return;
+    }
     await _withCacheWriteLock(uid, chatId, () async {
       await _storage.write(
         key: _messageTombstoneKey(uid, chatId, messageId),
@@ -627,8 +636,9 @@ class ChatSession extends ChangeNotifier {
       );
     }
     final all = await _storage.readAll();
-    if (userId != uid || identity == null || identity!.hasBeenDestroyed)
+    if (userId != uid || identity == null || identity!.hasBeenDestroyed) {
       throw StateError('The active CrazeChat account changed during backup.');
+    }
     final prefix = 'cc_msg_index_${uid}_';
     final tombstonePrefix = 'cc_msg_tombstone_${uid}_';
     final chatIds =
@@ -705,8 +715,9 @@ class ChatSession extends ChangeNotifier {
         >[];
     var totalMessages = 0;
     for (final rawChat in rawChats) {
-      if (rawChat is! Map)
+      if (rawChat is! Map) {
         throw const FormatException('Invalid conversation in Drive backup.');
+      }
       final chatId = rawChat['chatId'];
       final rawMessages = rawChat['messages'];
       final rawTombstones = rawChat['deletedMessageIds'] ?? const [];
@@ -733,8 +744,9 @@ class ChatSession extends ChangeNotifier {
         tombstones.add(rawId);
       }
       for (final rawMessage in rawMessages) {
-        if (rawMessage is! Map)
+        if (rawMessage is! Map) {
           throw const FormatException('Invalid message in Drive backup.');
+        }
         final message = Map<String, dynamic>.from(rawMessage);
         final id = message['id'];
         if (id is! String ||

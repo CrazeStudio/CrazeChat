@@ -108,8 +108,9 @@ class GoogleDriveBackupService extends ChangeNotifier {
     final userId = session.userId;
     if (userId == null || session.identity == null) return;
     if (await _storage.read(key: _enabledKey(userId)) != 'true' ||
-        session.userId != userId)
+        session.userId != userId) {
       return;
+    }
     try {
       await _runSync(session, interactive: false, bindAccount: false);
     } catch (error) {
@@ -278,8 +279,9 @@ class GoogleDriveBackupService extends ChangeNotifier {
           userId: userId,
         );
         final decoded = jsonDecode(utf8.decode(archiveBytes));
-        if (decoded is! Map)
+        if (decoded is! Map) {
           throw const FormatException('Drive backup archive is malformed.');
+        }
         await session.mergeEncryptedDriveArchive(
           Map<String, dynamic>.from(decoded),
         );
@@ -419,8 +421,9 @@ class GoogleDriveBackupService extends ChangeNotifier {
       body.add(chunk);
     }
     final decoded = jsonDecode(utf8.decode(body.takeBytes()));
-    if (decoded is! Map)
+    if (decoded is! Map) {
       throw const FormatException('Drive backup envelope is malformed.');
+    }
     return Map<String, dynamic>.from(decoded);
   }
 

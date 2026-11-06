@@ -499,11 +499,12 @@ class _UnlockScreenState extends State<UnlockScreen> {
     try {
       await widget.session.unlock(password.text);
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         showMessage(
           context,
           'Incorrect password or damaged encrypted key backup.',
         );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -1789,11 +1790,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> prepare() async {
     final other = peer;
     if (other == null || widget.session.identity == null) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           error = 'This conversation is missing an encryption identity.';
           loading = false;
         });
+      }
       return;
     }
     peerName = other['username']?.toString() ?? 'Conversation';
@@ -1813,11 +1815,12 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) setState(() => loading = false);
       _connectRealtime();
     } catch (exception) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           error = 'Could not establish the encrypted conversation: $exception';
           loading = false;
         });
+      }
     }
   }
 
@@ -1909,13 +1912,17 @@ class _ChatScreenState extends State<ChatScreen> {
     if (local == 'queued') return 'queued';
     final recipientId = peer?['id']?.toString();
     final readBy = message['readBy'];
-    if (recipientId != null && readBy is Map && readBy.containsKey(recipientId))
+    if (recipientId != null &&
+        readBy is Map &&
+        readBy.containsKey(recipientId)) {
       return 'read';
+    }
     final deliveredTo = message['deliveredTo'];
     if (recipientId != null &&
         deliveredTo is Map &&
-        deliveredTo.containsKey(recipientId))
+        deliveredTo.containsKey(recipientId)) {
       return 'delivered';
+    }
     return 'sent';
   }
 
@@ -1928,8 +1935,10 @@ class _ChatScreenState extends State<ChatScreen> {
         // Never propagate it into the receiver's durable local message history.
         return;
       }
-      if (decodedEvent['type'] != 'message' || decodedEvent['message'] is! Map)
+      if (decodedEvent['type'] != 'message' ||
+          decodedEvent['message'] is! Map) {
         return;
+      }
       final message = Map<String, dynamic>.from(decodedEvent['message'] as Map);
       final id = message['id']?.toString();
       if (id == null ||
@@ -1949,8 +1958,9 @@ class _ChatScreenState extends State<ChatScreen> {
       message['deliveryState'] = 'saved';
       messageIds.add(id);
       final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!)
+      if (lastMessageAt == null || timestamp > lastMessageAt!) {
         lastMessageAt = timestamp;
+      }
       if (mounted) {
         setState(() {
           _applyDecodedMessage(decoded);
@@ -2043,8 +2053,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       messageIds.add(id);
       final timestamp = (decoded['createdAt'] as num?)?.toInt() ?? 0;
-      if (lastMessageAt == null || timestamp > lastMessageAt!)
+      if (lastMessageAt == null || timestamp > lastMessageAt!) {
         lastMessageAt = timestamp;
+      }
       _applyDecodedMessage(decoded);
     } catch (_) {
       // A damaged cache entry can be recovered from remote sync if it remains.
@@ -2080,8 +2091,9 @@ class _ChatScreenState extends State<ChatScreen> {
           });
           if (!mine) receivedIds.add(id);
           final timestamp = (message['createdAt'] as num?)?.toInt() ?? 0;
-          if (lastMessageAt == null || timestamp > lastMessageAt!)
+          if (lastMessageAt == null || timestamp > lastMessageAt!) {
             lastMessageAt = timestamp;
+          }
           if (!messageIds.contains(id)) {
             messageIds.add(id);
             _applyDecodedMessage(decoded);
@@ -2096,11 +2108,12 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         } catch (exception) {
-          if (!silent && mounted)
+          if (!silent && mounted) {
             showMessage(
               context,
               'Could not save message $id locally: $exception',
             );
+          }
         }
       }
 
@@ -2111,18 +2124,20 @@ class _ChatScreenState extends State<ChatScreen> {
       if (raw.isNotEmpty) {
         GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           loading = false;
           error = null;
         });
+      }
       if (!silent) _scrollToBottom();
     } catch (exception) {
-      if (mounted && !silent)
+      if (mounted && !silent) {
         setState(() {
           error = exception.toString();
           loading = false;
         });
+      }
     } finally {
       syncing = false;
     }
@@ -2135,8 +2150,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final cached = await widget.session.loadCachedMessages(chatId);
       for (final item in cached) {
         if (item['senderId'] != widget.session.userId ||
-            item['deliveryState'] != 'queued')
+            item['deliveryState'] != 'queued') {
           continue;
+        }
         final id = item['id']?.toString();
         if (id == null) continue;
         try {
@@ -2161,10 +2177,12 @@ class _ChatScreenState extends State<ChatScreen> {
             if (index >= 0) {
               setState(() {
                 messages[index]['deliveryState'] = 'sent';
-                if (serverMessage.containsKey('deliveredTo'))
+                if (serverMessage.containsKey('deliveredTo')) {
                   messages[index]['deliveredTo'] = serverMessage['deliveredTo'];
-                if (serverMessage.containsKey('readBy'))
+                }
+                if (serverMessage.containsKey('readBy')) {
                   messages[index]['readBy'] = serverMessage['readBy'];
+                }
               });
             }
           }
@@ -2362,8 +2380,9 @@ class _ChatScreenState extends State<ChatScreen> {
         );
         GoogleDriveBackupService.instance.scheduleAutomaticSync(widget.session);
       } catch (_) {
-        if (mounted)
+        if (mounted) {
           showMessage(context, 'Reaction queued until the connection returns.');
+        }
       }
     } catch (exception) {
       if (mounted) showMessage(context, 'Could not save reaction: $exception');

@@ -39,8 +39,9 @@ class CryptoService {
     int length,
   ) {
     final value = envelope[field];
-    if (value is! String)
+    if (value is! String) {
       throw FormatException('Encrypted identity field "$field" is missing.');
+    }
     try {
       final decoded = base64Decode(value);
       if (decoded.length != length) {
@@ -210,8 +211,9 @@ class CryptoService {
     required KeyPair identity,
     required String userId,
   }) async {
-    if (userId.isEmpty)
+    if (userId.isEmpty) {
       throw const FormatException('A CrazeChat account is required.');
+    }
     final key = await _driveBackupKey(identity, userId);
     final aad = utf8.encode('$_driveBackupFormat:$userId');
     final box = await _aes.encrypt(archiveBytes, secretKey: key, aad: aad);
@@ -236,8 +238,9 @@ class CryptoService {
     final nonce = _decodeBase64Field(envelope, 'nonce', exactLength: 12);
     final ciphertext = _decodeBase64Field(envelope, 'ciphertext');
     final mac = _decodeBase64Field(envelope, 'mac', exactLength: 16);
-    if (ciphertext.isEmpty)
+    if (ciphertext.isEmpty) {
       throw const FormatException('Drive backup is empty.');
+    }
     final key = await _driveBackupKey(identity, userId);
     return _aes.decrypt(
       SecretBox(ciphertext, nonce: nonce, mac: Mac(mac)),
