@@ -265,17 +265,20 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
-  bool creating = false, busy = false, showPassword = false;
+  final encryptionPassphrase = TextEditingController();
+  bool creating = false, busy = false, showPassword = false, showEncryptionPassphrase = false;
   @override
   void dispose() {
     username.dispose();
     password.dispose();
+    encryptionPassphrase.dispose();
     super.dispose();
   }
 
   Future<void> submit() async {
     final name = username.text.trim();
     final pass = password.text;
+    final encryptionPass = encryptionPassphrase.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
       showMessage(context, 'Username: 3–20 letters, numbers, or underscores.');
       return;
@@ -285,7 +288,15 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     if (pass.isEmpty) {
-      showMessage(context, 'Enter your password.');
+      showMessage(context, 'Enter your account password.');
+      return;
+    }
+    if (encryptionPass.length < 12) {
+      showMessage(context, 'Use an encryption passphrase with at least 12 characters.');
+      return;
+    }
+    if (creating && pass == encryptionPass) {
+      showMessage(context, 'Your account password and encryption passphrase must be different.');
       return;
     }
     setState(() => busy = true);
@@ -293,7 +304,7 @@ class _AuthScreenState extends State<AuthScreen> {
       late final Map<String, dynamic> result;
       late final IdentityMaterial material;
       if (creating) {
-        material = await CryptoService.createIdentity(pass);
+        material = await CryptoService.createIdentity(encryptionPass);
         result = await widget.session.api.register(
           username: name,
           password: pass,
@@ -303,7 +314,7 @@ class _AuthScreenState extends State<AuthScreen> {
         result = await widget.session.api.login(username: name, password: pass);
         material = await CryptoService.unlockIdentityMaterial(
           Map<String, dynamic>.from(result['identityEnvelope'] as Map),
-          pass,
+          encryptionPass,
         );
       }
       await widget.session.acceptSession(result, material);
@@ -420,14 +431,31 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     onSubmitted: (_) => submit(),
                   ),
-                  if (creating) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      'Use 12 or more characters. This password protects your private encryption key. Keep it safe.',
-                      style: Theme.of(context).textTheme.bodySmall
-                          ?.copyWith(color: colors.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: encryptionPassphrase,
+                    obscureText: !showEncryptionPassphrase,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textInputAction: TextInputAction.done,
+                    decoration: InputDecoration(
+                      labelText: 'Encryption passphrase',
+                      prefixIcon: const Icon(Icons.key_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: showEncryptionPassphrase ? 'Hide passphrase' : 'Show passphrase',
+                        onPressed: () => setState(() => showEncryptionPassphrase = !showEncryptionPassphrase),
+                        icon: Icon(showEncryptionPassphrase ? Icons.visibility_off : Icons.visibility),
+                      ),
                     ),
-                  ],
+                    onSubmitted: (_) => submit(),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    creating
+                        ? 'Use at least 12 characters and make it different from your account password. This passphrase stays on your device and protects your private key.'
+                        : 'This passphrase unlocks your private key and is never sent to the server. For an older account not yet migrated, enter your old account password here once, then set a separate passphrase in Settings.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                  ),
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: busy ? null : submit,
