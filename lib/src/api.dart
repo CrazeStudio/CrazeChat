@@ -44,6 +44,9 @@ class CrazeChatApi {
   Future<Map<String, dynamic>> login({required String username, required String password}) =>
       _request('POST', 'auth/login', body: {'username': username, 'password': password});
 
+  Future<Map<String, dynamic>> changePassword({required String currentPassword, required String newPassword, required Map<String, dynamic> identityEnvelope}) =>
+      _request('POST', 'auth/change-password', body: {'currentPassword': currentPassword, 'newPassword': newPassword, 'identityEnvelope': identityEnvelope});
+
   Future<Map<String, dynamic>> restoreSession() => _request('GET', 'auth/session');
   Future<Map<String, dynamic>> registerPushFid(
     String fid, {
