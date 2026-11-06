@@ -181,6 +181,24 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
+    final envelope = identityEnvelope;
+    final uid = userId;
+    if (!signedIn || envelope == null || uid == null) throw const FormatException('Sign in before changing your password.');
+    final material = await CryptoService.rewrapIdentityMaterial(envelope: envelope, currentPassword: currentPassword, newPassword: newPassword);
+    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, identityEnvelope: material.envelope);
+    identityEnvelope = material.envelope;
+    _destroyIdentity();
+    identity = material.keyPair;
+    await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
+    await _persistActive();
+    for (final account in savedAccounts) {
+      if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
+    }
+    await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+    notifyListeners();
+  }
+
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
     if (envelope == null) {
