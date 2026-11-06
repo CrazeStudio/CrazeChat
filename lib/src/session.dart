@@ -167,16 +167,40 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
-    final envelope = identityEnvelope;
+  bool get needsEncryptionPassphraseMigration =>
+      identityEnvelope?['version'] == 1;
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!signedIn || identityEnvelope == null) {
+      throw const FormatException('Sign in before changing your password.');
+    }
+    // The account password is authentication-only. It never re-wraps or
+    // otherwise changes the independently protected identity key.
+    await api.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
+  Future<void> updateEncryptionPassphrase(String newPassphrase) async {
+    final currentIdentity = identity;
     final uid = userId;
-    if (!signedIn || envelope == null || uid == null) throw const FormatException('Sign in before changing your password.');
-    final material = await CryptoService.rewrapIdentityMaterial(envelope: envelope, currentPassword: currentPassword, newPassword: newPassword);
-    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, identityEnvelope: material.envelope);
+    if (!signedIn || currentIdentity == null || uid == null) {
+      throw const FormatException('Unlock your identity before changing its encryption passphrase.');
+    }
+    final material = await CryptoService.rewrapUnlockedIdentity(
+      identity: currentIdentity,
+      encryptionPassphrase: newPassphrase,
+    );
+    await api.updateIdentityEnvelope(material.envelope);
     identityEnvelope = material.envelope;
-    _destroyIdentity();
-    identity = material.keyPair;
-    await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
+    await _storage.write(
+      key: 'identityPrivateKey_$uid',
+      value: base64Encode(material.privateKeyBytes),
+    );
     await _persistActive();
     for (final account in savedAccounts) {
       if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
