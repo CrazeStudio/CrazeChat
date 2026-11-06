@@ -310,6 +310,8 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         showMessage(context, error.message);
       }
+    } on FormatException catch (error) {
+      if (mounted) showMessage(context, error.message);
     } catch (_) {
       if (mounted) {
         showMessage(
