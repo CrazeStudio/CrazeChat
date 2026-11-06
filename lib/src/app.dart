@@ -265,20 +265,17 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
-  final encryptionPassphrase = TextEditingController();
-  bool creating = false, busy = false, showPassword = false, showEncryptionPassphrase = false;
+  bool creating = false, busy = false, showPassword = false;
   @override
   void dispose() {
     username.dispose();
     password.dispose();
-    encryptionPassphrase.dispose();
     super.dispose();
   }
 
   Future<void> submit() async {
     final name = username.text.trim();
     final pass = password.text;
-    final encryptionPass = encryptionPassphrase.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
       showMessage(context, 'Username: 3–20 letters, numbers, or underscores.');
       return;
@@ -291,20 +288,12 @@ class _AuthScreenState extends State<AuthScreen> {
       showMessage(context, 'Enter your account password.');
       return;
     }
-    if (encryptionPass.length < 12) {
-      showMessage(context, 'Use an encryption passphrase with at least 12 characters.');
-      return;
-    }
-    if (creating && pass == encryptionPass) {
-      showMessage(context, 'Your account password and encryption passphrase must be different.');
-      return;
-    }
     setState(() => busy = true);
     try {
       late final Map<String, dynamic> result;
       late final IdentityMaterial material;
       if (creating) {
-        material = await CryptoService.createIdentity(encryptionPass);
+        material = await CryptoService.createIdentity(pass);
         result = await widget.session.api.register(
           username: name,
           password: pass,
@@ -313,13 +302,8 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         result = await widget.session.api.login(username: name, password: pass);
         final envelope = Map<String, dynamic>.from(result['identityEnvelope'] as Map);
-        if (envelope['version'] == 2 && encryptionPass == pass) {
-          throw const FormatException('Your account password and encryption passphrase must be different.');
-        }
-        material = await CryptoService.unlockIdentityMaterial(
-          envelope,
-          encryptionPass,
-        );
+        final account = Map<String, dynamic>.from(result['user'] as Map);
+        material = await widget.session.unlockForLogin(envelope: envelope, password: pass, accountId: account['id'] as String);
       }
       await widget.session.acceptSession(result, material);
     } on ApiException catch (error) {
@@ -436,30 +420,6 @@ class _AuthScreenState extends State<AuthScreen> {
                     onSubmitted: (_) => submit(),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: encryptionPassphrase,
-                    obscureText: !showEncryptionPassphrase,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
-                      labelText: 'Encryption passphrase',
-                      prefixIcon: const Icon(Icons.key_rounded),
-                      suffixIcon: IconButton(
-                        tooltip: showEncryptionPassphrase ? 'Hide passphrase' : 'Show passphrase',
-                        onPressed: () => setState(() => showEncryptionPassphrase = !showEncryptionPassphrase),
-                        icon: Icon(showEncryptionPassphrase ? Icons.visibility_off : Icons.visibility),
-                      ),
-                    ),
-                    onSubmitted: (_) => submit(),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    creating
-                        ? 'Use at least 12 characters and make it different from your account password. This passphrase stays on your device and protects your private key.'
-                        : 'This passphrase unlocks your private key and is never sent to the server. For an older account not yet migrated, enter your old account password here once, then set a separate passphrase in Settings.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-                  ),
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: busy ? null : submit,
@@ -1253,18 +1213,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: _showChangePassword,
         )),
-        if (widget.session.needsEncryptionPassphraseMigration) ...[
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.security_rounded, color: Colors.orange),
-              title: const Text('Separate encryption passphrase', style: TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: const Text('Your older account still uses the same password for sign-in and key protection. Migrate it now.'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: _showEncryptionPassphraseMigration,
-            ),
-          ),
-        ],
         const SizedBox(height: 14),
         _LocalFolderSyncCard(session: widget.session),
         const SizedBox(height: 14),
@@ -1388,66 +1336,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showEncryptionPassphraseMigration() async {
-    final next = TextEditingController();
-    final confirm = TextEditingController();
-    try {
-      final passphrase = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Protect your identity key separately'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Choose a new passphrase used only on this device to unlock your private encryption key. It is not sent to CrazeStudio-Web.'),
-              const SizedBox(height: 14),
-              TextField(
-                controller: next,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(labelText: 'New encryption passphrase (12+ characters)'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: confirm,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(labelText: 'Confirm passphrase'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () {
-                if (next.text.length < 12) {
-                  showMessage(dialogContext, 'Use at least 12 characters.');
-                  return;
-                }
-                if (next.text != confirm.text) {
-                  showMessage(dialogContext, 'The passphrases do not match.');
-                  return;
-                }
-                Navigator.pop(dialogContext, next.text);
-              },
-              child: const Text('Update key protection'),
-            ),
-          ],
-        ),
-      );
-      if (passphrase == null || !mounted) return;
-      await widget.session.updateEncryptionPassphrase(passphrase);
-      if (mounted) showMessage(context, 'Your identity key now has a separate encryption passphrase.');
-    } catch (error) {
-      if (mounted) showMessage(context, 'Could not update identity protection: $error');
-    } finally {
-      next.dispose();
-      confirm.dispose();
-    }
-  }
-
   Future<void> _showChangePassword() async {
     final current = TextEditingController(), next = TextEditingController(), confirm = TextEditingController();
     bool busy = false, showCurrent = false, showNext = false, showConfirm = false;
@@ -1459,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
               Text('Change password', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('This changes only your sign-in password. Your separate encryption passphrase stays unchanged.', style: Theme.of(context).textTheme.bodySmall),
+              Text('Your password also protects your private encryption key. CrazeChat updates both securely.', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 18),
               TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 12),
@@ -2075,7 +1963,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // Do not fetch or decrypt remote messages until this contact's public
       // key has been independently verified. Local encrypted history remains
       // available while the user checks the fingerprint.
-      if (peerKeyStatus == 'verified' && !widget.session.needsEncryptionPassphraseMigration) {
+      if (peerKeyStatus == 'verified' && !false) {
         unawaited(loadMessages(silent: true));
         _connectRealtime();
       }
@@ -2121,7 +2009,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await widget.session.trustContactKey(contactId: id, publicKey: publicKey);
       if (mounted) {
         setState(() => peerKeyStatus = 'verified');
-        if (!widget.session.needsEncryptionPassphraseMigration) {
+        if (!false) {
           unawaited(loadMessages(silent: true));
           _connectRealtime();
         }
@@ -2365,7 +2253,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> loadMessages({bool silent = false}) async {
-    if (chatKey == null || syncing || peerKeyStatus != 'verified' || widget.session.needsEncryptionPassphraseMigration) return;
+    if (chatKey == null || syncing || peerKeyStatus != 'verified' || false) return;
     syncing = true;
     try {
       if (!silent) await _retryPendingMessages();
@@ -2445,7 +2333,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _retryPendingMessages() async {
-    if (retryingPending || !mounted || peerKeyStatus != 'verified' || widget.session.needsEncryptionPassphraseMigration) return;
+    if (retryingPending || !mounted || peerKeyStatus != 'verified' || false) return;
     retryingPending = true;
     try {
       final cached = await widget.session.loadCachedMessages(chatId);
@@ -2518,7 +2406,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> send() async {
-    if (widget.session.needsEncryptionPassphraseMigration) {
+    if (false) {
       showMessage(context, 'Update your separate encryption passphrase in Settings before sending messages.');
       return;
     }
@@ -2646,7 +2534,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> reactToMessage(Map<String, dynamic> target, String emoji) async {
-    if (widget.session.needsEncryptionPassphraseMigration) {
+    if (false) {
       showMessage(context, 'Update your separate encryption passphrase in Settings before sending reactions.');
       return;
     }
