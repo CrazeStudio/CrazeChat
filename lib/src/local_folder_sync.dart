@@ -20,6 +20,7 @@ class LocalFolderSyncService extends ChangeNotifier {
   static const _timeout = Duration(seconds: 45);
 
   Future<void>? _activeSync;
+  bool _syncAgain = false;
   Timer? _debounce;
   ChatSession? _pendingSession;
   String? _activeUserId;
@@ -102,10 +103,20 @@ class LocalFolderSyncService extends ChangeNotifier {
   }
 
   Future<void> _runSync(ChatSession session) async {
-    if (_activeSync != null) return _activeSync!;
+    if (_activeSync != null) {
+      _pendingSession = session;
+      _syncAgain = true;
+      return _activeSync!;
+    }
     final task = _performSync(session);
     _activeSync = task.whenComplete(() {
       _activeSync = null;
+      if (_syncAgain) {
+        _syncAgain = false;
+        final pending = _pendingSession ?? session;
+        _pendingSession = null;
+        unawaited(syncIfEnabled(pending));
+      }
     });
     return _activeSync!;
   }
