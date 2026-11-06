@@ -818,141 +818,203 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final isInbox = page == 0;
     final colors = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: colors.surface,
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
-              child: Row(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(
+                  color: dark
+                      ? const Color(0xFF89949A).withValues(alpha: .72)
+                      : const Color(0xFFE7EAEC),
+                  width: dark ? 1.1 : 0.8,
+                ),
+              ),
+              child: Column(
                 children: [
-                  const _BrandMark(size: 42),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 22, 18, 15),
+                    child: Row(
                       children: [
-                        Text(
-                          page == 0 ? 'Messages' : 'Settings',
-                          style: TextStyle(
-                            color: colors.onSurface,
-                            fontSize: 25,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.8,
+                        Expanded(
+                          child: Text(
+                            'CrazeChat',
+                            style: TextStyle(
+                              color: colors.onSurface,
+                              fontSize: 27,
+                              fontWeight: FontWeight.w900,
+                              fontStyle: FontStyle.italic,
+                              letterSpacing: -1.1,
+                            ),
                           ),
                         ),
-                        Text(
-                          '@${widget.session.username ?? 'crazechat'}',
+                        if (isInbox) ...[
+                          IconButton(
+                            tooltip: 'Refresh conversations',
+                            onPressed: refreshingChats
+                                ? null
+                                : () => loadChats(silent: true),
+                            icon: refreshingChats
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.refresh_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'New chat',
+                            onPressed: startChat,
+                            icon: const Icon(Icons.add_comment_outlined),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (isInbox)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                      child: TextField(
+                        controller: search,
+                        decoration: InputDecoration(
+                          hintText: 'Search',
+                          prefixIcon: const Icon(Icons.search_rounded, size: 21),
+                          suffixIcon: search.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: search.clear,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                          filled: true,
+                          fillColor: dark
+                              ? const Color(0xFF252D33)
+                              : const Color(0xFFF2F4F6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 13,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(28),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(28),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(28),
+                            borderSide: const BorderSide(color: _brand, width: 1.2),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 14),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Settings',
                           style: TextStyle(
                             color: colors.onSurfaceVariant,
-                            fontSize: 12,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Divider(
+                      height: 1,
+                      thickness: 1.2,
+                      color: colors.outlineVariant.withValues(alpha: .65),
+                    ),
+                  ),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      reverseDuration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        final slide = Tween<Offset>(
+                          begin: const Offset(0.02, 0),
+                          end: Offset.zero,
+                        ).animate(animation);
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(position: slide, child: child),
+                        );
+                      },
+                      child: KeyedSubtree(
+                        key: ValueKey<int>(page),
+                        child: switch (page) {
+                          0 => _buildInbox(
+                              context,
+                              chats.where((chat) {
+                                final name = _peer(chat)?['username']
+                                        ?.toString()
+                                        .toLowerCase() ??
+                                    '';
+                                return name.contains(
+                                  search.text.trim().toLowerCase(),
+                                );
+                              }).toList(),
+                            ),
+                          _ => _buildSettings(context),
+                        },
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                    child: Divider(
+                      height: 1,
+                      thickness: 1.2,
+                      color: colors.outlineVariant.withValues(alpha: .65),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _CrazeBottomItem(
+                            icon: Icons.chat_bubble_rounded,
+                            label: 'Chats',
+                            selected: page == 0,
+                            onTap: () => setState(() => page = 0),
+                          ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 34,
+                          color: colors.outlineVariant.withValues(alpha: .7),
+                        ),
+                        Expanded(
+                          child: _CrazeBottomItem(
+                            icon: Icons.settings_rounded,
+                            label: 'Settings',
+                            selected: page == 1,
+                            onTap: () => setState(() => page = 1),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Refresh conversations',
-                    onPressed: refreshingChats
-                        ? null
-                        : () => loadChats(silent: true),
-                    style: IconButton.styleFrom(
-                      backgroundColor: colors.surfaceContainerHighest,
-                      foregroundColor: colors.onSurface,
-                      fixedSize: const Size(44, 44),
-                    ),
-                    icon: refreshingChats
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded, size: 20),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Account settings',
-                    onPressed: () => setState(() => page = 1),
-                    style: IconButton.styleFrom(
-                      backgroundColor: colors.surfaceContainerHighest,
-                      foregroundColor: colors.onSurface,
-                      fixedSize: const Size(44, 44),
-                    ),
-                    icon: const Icon(Icons.person_outline_rounded, size: 21),
-                  ),
                 ],
               ),
             ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                reverseDuration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  final slide = Tween<Offset>(
-                    begin: const Offset(0.025, 0),
-                    end: Offset.zero,
-                  ).animate(animation);
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(position: slide, child: child),
-                  );
-                },
-                child: KeyedSubtree(
-                  key: ValueKey<int>(page),
-                  child: switch (page) {
-                    0 => _buildInbox(
-                      context,
-                      chats.where((chat) {
-                        final name =
-                            _peer(
-                              chat,
-                            )?['username']?.toString().toLowerCase() ??
-                            '';
-                        return name.contains(search.text.trim().toLowerCase());
-                      }).toList(),
-                    ),
-                    _ => _buildSettings(context),
-                  },
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
-      floatingActionButton: isInbox
-          ? FloatingActionButton.extended(
-              onPressed: startChat,
-              backgroundColor: _brand,
-              foregroundColor: Colors.white,
-              elevation: 3,
-              icon: const Icon(Icons.add_comment_rounded),
-              label: const Text(
-                'New chat',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            )
-          : null,
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: colors.surfaceContainer,
-        indicatorColor: colors.secondaryContainer,
-        surfaceTintColor: Colors.transparent,
-        selectedIndex: page,
-        onDestinationSelected: (value) => setState(() => page = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_rounded),
-            label: 'Chats',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
-          ),
-        ],
       ),
     );
   }
@@ -962,270 +1024,166 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<Map<String, dynamic>> filtered,
   ) {
     final colors = Theme.of(context).colorScheme;
-    final totalSent = sentCounts.values.fold<int>(
-      0,
-      (sum, count) => sum + count,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-          child: TextField(
-            controller: search,
-            decoration: InputDecoration(
-              hintText: 'Search usernames',
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                color: colors.onSurfaceVariant,
-              ),
-              suffixIcon: search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: search.clear,
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-              filled: true,
-              fillColor: colors.surfaceContainerHighest,
-              contentPadding: const EdgeInsets.symmetric(vertical: 15),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(17),
-                borderSide: const BorderSide(color: _brand, width: 1.2),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
-          child: Row(
-            children: [
-              Text(
-                'YOUR CONVERSATIONS',
-                style: TextStyle(
-                  color: colors.onSurfaceVariant,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  '${chats.length} chats · $totalSent sent saved locally',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    color: colors.onSurfaceVariant,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return loading
+        ? const Center(child: CircularProgressIndicator(color: _brand))
+        : failed && chats.isEmpty
+            ? ListView(
+                children: [
+                  const SizedBox(height: 110),
+                  Icon(Icons.cloud_off_rounded,
+                      size: 46, color: colors.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Text('Could not load your chats',
+                        style: TextStyle(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w700)),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: loading
-              ? const Center(child: CircularProgressIndicator(color: _brand))
-              : failed && chats.isEmpty
-              ? ListView(
-                  children: [
-                    const SizedBox(height: 110),
-                    Center(
-                      child: Icon(
-                        Icons.cloud_off_rounded,
-                        size: 48,
-                        color: colors.onSurfaceVariant,
-                      ),
+                  const SizedBox(height: 6),
+                  Center(
+                    child: Text('Your conversations could not be refreshed.',
+                        style: TextStyle(color: colors.onSurfaceVariant)),
+                  ),
+                  const SizedBox(height: 14),
+                  Center(
+                    child: FilledButton.icon(
+                      onPressed: refreshingChats ? null : () => loadChats(),
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Try again'),
                     ),
-                    const SizedBox(height: 14),
-                    const Center(
-                      child: Text(
-                        'Could not load your chats',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              )
+            : filtered.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      const SizedBox(height: 90),
+                      Center(
+                        child: Icon(Icons.forum_outlined,
+                            size: 42, color: colors.onSurfaceVariant),
                       ),
-                    ),
-                    Center(
-                      child: Text(
-                        'Your chats could not be refreshed.',
-                        style: TextStyle(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Center(
-                      child: FilledButton.icon(
-                        onPressed: refreshingChats ? null : () => loadChats(),
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Try again'),
-                      ),
-                    ),
-                  ],
-                )
-              : filtered.isEmpty
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: [
-                    const SizedBox(height: 78),
-                    Center(
-                      child: Container(
-                        width: 82,
-                        height: 82,
-                        decoration: BoxDecoration(
-                          color: colors.secondaryContainer,
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        child: Icon(
-                          Icons.forum_rounded,
-                          size: 36,
-                          color: colors.onSecondaryContainer,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Center(
-                      child: Text(
-                        search.text.isEmpty
-                            ? 'Your chats start here'
-                            : 'No conversations found',
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w900,
-                          color: colors.onSurface,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    Center(
-                      child: Text(
-                        search.text.isEmpty
-                            ? 'Find someone and start a private conversation.'
-                            : 'Try another name or username.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: colors.onSurfaceVariant,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 100),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 5),
-                  itemBuilder: (context, index) {
-                    final chat = filtered[index];
-                    final peer = _peer(chat);
-                    final name =
-                        peer?['username']?.toString() ?? 'Unknown user';
-                    return Material(
-                      color: colors.surfaceContainer,
-                      borderRadius: BorderRadius.circular(19),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(19),
-                        onTap: () => openChat(chat),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 13,
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Text(
+                          search.text.isEmpty
+                              ? 'Your chats start here'
+                              : 'No conversations found',
+                          style: TextStyle(
+                            color: colors.onSurface,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
                           ),
-                          child: Row(
-                            children: [
-                              _ProfileAvatar(username: name, size: 54),
-                              const SizedBox(width: 13),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: colors.onSurface,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Center(
+                        child: Text(
+                          search.text.isEmpty
+                              ? 'Start a private conversation with someone.'
+                              : 'Try another name or username.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: colors.onSurfaceVariant, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final chat = filtered[index];
+                      final peer = _peer(chat);
+                      final name =
+                          peer?['username']?.toString() ?? 'Unknown user';
+                      const statusColors = [
+                        Color(0xFF9CE9B0),
+                        Color(0xFF82AFFF),
+                        Color(0xFFF0A7C1),
+                        Color(0xFFFFD16F),
+                        Color(0xFFC6A0F6),
+                        Color(0xFF80D8C0),
+                      ];
+                      final hash = name.codeUnits.fold<int>(
+                        0,
+                        (value, unit) => (value * 31 + unit) & 0x7fffffff,
+                      );
+                      final statusColor = statusColors[hash % statusColors.length];
+                      return Material(
+                        color: dark
+                            ? const Color(0xFF252D33)
+                            : const Color(0xFFF3F5F7),
+                        borderRadius: BorderRadius.circular(16),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => openChat(chat),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: dark
+                                    ? const Color(0xFF8B969C).withValues(alpha: .75)
+                                    : const Color(0xFFE7EAEC),
+                                width: .8,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                _ProfileAvatar(username: name, size: 46),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: colors.onSurface,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 5),
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.lock_rounded,
-                                          size: 12,
-                                          color: _brand,
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'End-to-end encrypted',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: colors.onSurfaceVariant,
+                                          fontSize: 11,
                                         ),
-                                        const SizedBox(width: 5),
-                                        Expanded(
-                                          child: Text(
-                                            'End-to-end encrypted conversation',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: colors.onSurfaceVariant,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 9,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: colors.secondaryContainer,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      '${sentCounts[chat['id']?.toString()] ?? 0} cached sent',
-                                      style: TextStyle(
-                                        color: colors.onSecondaryContainer,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  width: 9,
+                                  height: 9,
+                                  decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: colors.onSurfaceVariant,
-                                    size: 19,
-                                  ),
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
+                      );
+                    },
+                  );
   }
 
   Widget _buildSettings(BuildContext context) {
