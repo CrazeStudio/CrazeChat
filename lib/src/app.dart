@@ -1929,6 +1929,9 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
       if (mounted) setState(() => loading = false);
+      // Start the durable REST pull independently of WebSocket availability.
+      // Realtime is an optimization; it must never gate initial history sync.
+      unawaited(loadMessages(silent: true));
       _connectRealtime();
     } catch (exception) {
       if (mounted) {
@@ -2240,7 +2243,9 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (!silent) _scrollToBottom();
     } catch (exception) {
-      if (mounted && !silent) {
+      // Automatic polling is quiet (no snackbar), but a failed REST pull must
+      // remain visible instead of being presented as an empty conversation.
+      if (mounted) {
         setState(() {
           error = exception.toString();
           loading = false;
