@@ -58,13 +58,11 @@ void main() {
       encryptionPassphrase: 'new independent encryption passphrase 2027',
     );
     expect(rotated.envelope['version'], 2);
-    expect(
-      (await CryptoService.unlockIdentity(
-        rotated.envelope,
-        'new independent encryption passphrase 2027',
-      )).extractPublicKey(),
-      completes,
+    final unlockedRotated = await CryptoService.unlockIdentity(
+      rotated.envelope,
+      'new independent encryption passphrase 2027',
     );
+    expect(await unlockedRotated.extractPublicKey(), isA<SimplePublicKey>());
     await expectLater(
       CryptoService.unlockIdentity(
         rotated.envelope,
@@ -74,17 +72,19 @@ void main() {
     );
     final legacyEnvelope = <String, dynamic>{...material.envelope, 'version': 1}
       ..remove('keyProtection');
-    expect(
-      (await CryptoService.unlockIdentity(
-        legacyEnvelope,
-        'private encryption passphrase 2026',
-      )).extractPublicKey(),
-      completes,
+    final unlockedLegacy = await CryptoService.unlockIdentity(
+      legacyEnvelope,
+      'private encryption passphrase 2026',
     );
+    expect(await unlockedLegacy.extractPublicKey(), isA<SimplePublicKey>());
     final fingerprint = await CryptoService.fingerprintPublicKey(
       material.envelope['publicKey'] as String,
     );
-    expect(fingerprint.replaceAll(' ', ''), matches(RegExp(r'^[A-F0-9]{64}
+    expect(fingerprint.replaceAll(' ', ''), matches(RegExp(r'^[A-F0-9]{64}$')));
+  });
+
+  test(
+    'secure-storage restore reconstructs the same identity from private bytes',
     () async {
       final material = await CryptoService.createIdentity(
         'correct horse battery staple 2026',
