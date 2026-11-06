@@ -47,9 +47,11 @@ class CrazeChatApi {
   Future<Map<String, dynamic>> changePassword({
     required String currentPassword,
     required String newPassword,
+    required Map<String, dynamic> identityEnvelope,
   }) => _request('POST', 'auth/change-password', body: {
     'currentPassword': currentPassword,
     'newPassword': newPassword,
+    'identityEnvelope': identityEnvelope,
   });
 
   Future<Map<String, dynamic>> updateIdentityEnvelope(
