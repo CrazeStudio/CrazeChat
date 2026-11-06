@@ -214,7 +214,7 @@ class CryptoService {
     if (userId.isEmpty) {
       throw const FormatException('A CrazeChat account is required.');
     }
-    final key = await _driveBackupKey(identity, userId);
+    final key = await _localBackupKey(identity, userId);
     final aad = utf8.encode('$_localBackupFormat:$userId');
     final box = await _aes.encrypt(archiveBytes, secretKey: key, aad: aad);
     return {
@@ -239,9 +239,9 @@ class CryptoService {
     final ciphertext = _decodeBase64Field(envelope, 'ciphertext');
     final mac = _decodeBase64Field(envelope, 'mac', exactLength: 16);
     if (ciphertext.isEmpty) {
-      throw const FormatException('local backup is empty.');
+      throw const FormatException('Local backup is empty.');
     }
-    final key = await _driveBackupKey(identity, userId);
+    final key = await _localBackupKey(identity, userId);
     return _aes.decrypt(
       SecretBox(ciphertext, nonce: nonce, mac: Mac(mac)),
       secretKey: key,
@@ -249,7 +249,7 @@ class CryptoService {
     );
   }
 
-  static Future<SecretKey> _driveBackupKey(
+  static Future<SecretKey> _localBackupKey(
     KeyPair identity,
     String userId,
   ) async {
