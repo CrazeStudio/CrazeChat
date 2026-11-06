@@ -1226,6 +1226,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
+        Card(child: ListTile(
+          leading: const Icon(Icons.password_rounded),
+          title: const Text('Change password', style: TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: const Text('Update sign-in password and protect your identity key'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: _showChangePassword,
+        )),
+        const SizedBox(height: 14),
         _LocalFolderSyncCard(session: widget.session),
         const SizedBox(height: 14),
         const _Eyebrow('Experience'),
@@ -1356,6 +1364,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const _SecurityNote(),
       ],
     );
+  }
+
+  Future<void> _showChangePassword() async {
+    final current = TextEditingController(), next = TextEditingController(), confirm = TextEditingController();
+    bool busy = false, showCurrent = false, showNext = false, showConfirm = false;
+    try {
+      await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true,
+        builder: (sheetContext) => StatefulBuilder(builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.viewInsetsOf(context).bottom + 24),
+            child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              Text('Change password', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text('Your encryption identity stays the same; only its password protection changes.', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 18),
+              TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
+              const SizedBox(height: 12),
+              TextField(controller: next, obscureText: !showNext, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'New password (12+ characters)', suffixIcon: IconButton(onPressed: () => setSheetState(() => showNext = !showNext), icon: Icon(showNext ? Icons.visibility_off : Icons.visibility)))),
+              const SizedBox(height: 12),
+              TextField(controller: confirm, obscureText: !showConfirm, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Confirm new password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showConfirm = !showConfirm), icon: Icon(showConfirm ? Icons.visibility_off : Icons.visibility)))),
+              const SizedBox(height: 18),
+              FilledButton(onPressed: busy ? null : () async {
+                if (current.text.isEmpty) { showMessage(sheetContext, 'Enter your current password.'); return; }
+                if (next.text.length < 12) { showMessage(sheetContext, 'The new password must have at least 12 characters.'); return; }
+                if (next.text != confirm.text) { showMessage(sheetContext, 'The new passwords do not match.'); return; }
+                if (next.text == current.text) { showMessage(sheetContext, 'Choose a different password.'); return; }
+                setSheetState(() => busy = true);
+                try {
+                  await widget.session.changePassword(currentPassword: current.text, newPassword: next.text);
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (mounted) showMessage(this.context, 'Password updated successfully.');
+                } on ApiException catch (error) {
+                  if (sheetContext.mounted) showMessage(sheetContext, error.message);
+                } catch (_) {
+                  if (sheetContext.mounted) showMessage(sheetContext, 'Password update failed. Your existing password remains active.');
+                } finally { if (sheetContext.mounted) setSheetState(() => busy = false); }
+              }, child: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Update password')),
+            ])),
+          ),
+        )),
+      );
+    } finally { current.dispose(); next.dispose(); confirm.dispose(); }
   }
 
   Future<void> _showAccounts() async {
