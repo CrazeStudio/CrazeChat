@@ -137,7 +137,7 @@ class LocalFolderSyncService extends ChangeNotifier {
         if (decoded is! Map) {
           throw const FormatException('Local encrypted backup is malformed.');
         }
-        await session.mergeEncryptedDriveArchive(
+        await session.mergeEncryptedLocalArchive(
           Map<String, dynamic>.from(decoded),
         );
       }
@@ -145,7 +145,7 @@ class LocalFolderSyncService extends ChangeNotifier {
       _ensureIdentityActive(session, userId, identity);
       _status = 'Encrypting messages for local storage…';
       notifyListeners();
-      final archive = await session.exportEncryptedDriveArchive();
+      final archive = await session.exportEncryptedLocalArchive();
       final archiveBytes = utf8.encode(jsonEncode(archive));
       if (archiveBytes.length > _maxArchiveBytes) {
         throw StateError('The encrypted archive is larger than the 64 MB sync limit.');
