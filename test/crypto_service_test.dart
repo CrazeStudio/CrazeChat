@@ -65,7 +65,7 @@ void main() {
   );
 
   test(
-    'Drive archive is double-encrypted with the account identity key',
+    'Local folder archive is double-encrypted with the account identity key',
     () async {
       final alice = await CryptoService.createIdentity(
         'alice secure password 2026',
@@ -74,14 +74,14 @@ void main() {
         'bob secure password 2026',
       );
       final archive = utf8.encode('{"messages":["ciphertext-only"]}');
-      final envelope = await CryptoService.encryptDriveBackup(
+      final envelope = await CryptoService.encryptLocalBackup(
         archiveBytes: archive,
         identity: alice.keyPair,
         userId: 'alice-user-id',
       );
-      expect(envelope['format'], 'cc-drive-backup-v1');
+      expect(envelope['format'], 'cc-local-backup-v1');
       expect(
-        await CryptoService.decryptDriveBackup(
+        await CryptoService.decryptLocalBackup(
           envelope: envelope,
           identity: alice.keyPair,
           userId: 'alice-user-id',
@@ -93,7 +93,7 @@ void main() {
         alice.privateKeyBytes,
       );
       expect(
-        await CryptoService.decryptDriveBackup(
+        await CryptoService.decryptLocalBackup(
           envelope: envelope,
           identity: restoredAlice,
           userId: 'alice-user-id',
@@ -101,7 +101,7 @@ void main() {
         archive,
       );
       await expectLater(
-        CryptoService.decryptDriveBackup(
+        CryptoService.decryptLocalBackup(
           envelope: envelope,
           identity: bob.keyPair,
           userId: 'alice-user-id',
@@ -109,7 +109,7 @@ void main() {
         throwsA(anything),
       );
       await expectLater(
-        CryptoService.decryptDriveBackup(
+        CryptoService.decryptLocalBackup(
           envelope: envelope,
           identity: alice.keyPair,
           userId: 'different-user-id',
@@ -119,7 +119,7 @@ void main() {
       final ciphertext = base64Decode(envelope['ciphertext'] as String);
       ciphertext[0] ^= 1;
       await expectLater(
-        CryptoService.decryptDriveBackup(
+        CryptoService.decryptLocalBackup(
           envelope: {...envelope, 'ciphertext': base64Encode(ciphertext)},
           identity: alice.keyPair,
           userId: 'alice-user-id',
