@@ -1737,6 +1737,13 @@ class _ChatScreenState extends State<ChatScreen> {
   int reconnectAttempt = 0;
 
   String get chatId => widget.chat['id'] as String;
+
+  static const int _maxMessageWords = 1500;
+
+  int _wordCount(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? 0 : trimmed.split(RegExp(r'\s+')).length;
+  }
   Map<String, dynamic>? get peer {
     final members = (widget.chat['members'] as List? ?? const [])
         .whereType<Map>()
@@ -2199,6 +2206,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> send() async {
     final text = input.text.trim();
     if (text.isEmpty || sending || chatKey == null) return;
+    final words = _wordCount(text);
+    if (words > _maxMessageWords) {
+      showMessage(context, 'Messages can contain up to 1,500 words.');
+      return;
+    }
     final reply = replyTarget == null
         ? null
         : <String, dynamic>{
@@ -2785,12 +2797,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
                                 margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.fromLTRB(
-                                  15,
-                                  13,
-                                  15,
-                                  11,
-                                ),
+                                padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
                                 decoration: BoxDecoration(
                                   color: bubbleColor,
                                   borderRadius: BorderRadius.circular(19),
@@ -2902,8 +2909,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                     Text(
                                       message['clearText']?.toString() ?? '',
                                       style: TextStyle(
-                                        fontSize: 14,
-                                        height: 1.4,
+                                        fontSize: 13,
+                                        height: 1.32,
                                         color: colors.onSurface,
                                       ),
                                     ),
@@ -3090,6 +3097,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           textCapitalization: TextCapitalization.sentences,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => send(),
+                          onChanged: (_) => setState(() {}),
                           decoration: const InputDecoration(
                             hintText: 'Write something…',
                             prefixIcon: Icon(Icons.edit_note_rounded),
@@ -3135,6 +3143,24 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5, left: 4, right: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${_wordCount(input.text)} / 1,500 words',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: _wordCount(input.text) > _maxMessageWords
+                                ? colors.error
+                                : colors.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
