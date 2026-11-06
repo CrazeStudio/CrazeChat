@@ -10,7 +10,7 @@ The `message_deleted` WebSocket event describes remote server-copy deletion only
 
 There is no persistent Firebase `purges` collection or deletion tombstone. Incoming delivery is push-only over the authenticated WebSocket; message history is fetched on initial connection/reconnection. The 20-second timer retries queued outgoing messages only.
 
-**Device-retention limitation:** uninstalling the app, clearing its data, or losing the device without an enabled and recent Drive backup permanently loses that device's locally retained message history after the server copy has been purged. Android secure storage protects individual cache records, but this per-message key/value cache is not a substitute for a scalable encrypted database.
+**Device-retention limitation:** uninstalling the app, clearing its data, or losing the device without an enabled and recent local folder backup permanently loses that device's locally retained message history after the server copy has been purged. Android secure storage protects individual cache records, but this per-message key/value cache is not a substitute for a scalable encrypted database.
 
 Message send/receive actions use the platform's short system sound. Profile avatars currently use generated initials and stable colors; uploaded photo avatars are not supported yet.
 
@@ -85,7 +85,7 @@ Set `ALLOWED_ORIGINS` only when browser clients need an origin allowlist. Native
 
 **Security limit:** `KEY` is embedded in the APK and can be extracted. Treat it as a shared app-gateway gate, not as a confidential credential or a replacement for user authentication. Keep per-user JWT checks, participant authorization, and server-side rate limits enabled.
 
-The client accepts only HTTPS API origins for remote servers and uses `wss` for remote realtime traffic. Android blocks cleartext networking except for the explicit local-development hosts `localhost`, `127.0.0.1`, and `10.0.2.2`. Google Drive resumable-upload URLs are checked against Google's HTTPS upload host before any OAuth header is sent.
+The client accepts only HTTPS API origins for remote servers and uses `wss` for remote realtime traffic. Android blocks cleartext networking except for the explicit local-development hosts `localhost`, `127.0.0.1`, and `10.0.2.2`.
 
 Signing out clears the session on this device, but the current separately deployed backend has no logout/revocation route in this repository; an already copied JWT may remain usable until its server-side expiry. Keep JWT lifetimes short and add server-side revocation/refresh-token rotation before relying on logout to invalidate stolen tokens.
 
@@ -106,7 +106,7 @@ flutter build apk --release \
   --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OAUTH_CLIENT_ID
 ```
 
-For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow has this origin as a fallback), repository secret `KEY` with exactly the same value as backend `ACCESS_KEY`, and optionally repository variable/secret `GOOGLE_SERVER_CLIENT_ID` with the Google **Web application OAuth client ID**. Client IDs are identifiers, not client secrets. `ACCESS_KEY` itself remains a backend environment variable and is not the Flutter build-variable name.
+For GitHub Actions, configure `BURL` with `https://crazestudio-web.mehetabhoque566.workers.dev` (the workflow has this origin as a fallback), repository secret `KEY` with exactly the same value as backend `ACCESS_KEY`, `ACCESS_KEY` itself remains a backend environment variable and is not the Flutter build-variable name.
 
 ### Background notifications (FCM)
 
@@ -118,13 +118,13 @@ Background notifications use Firebase Cloud Messaging HTTP v1. Add an Android ap
 
 The server sends a generic notification (no message text) and opaque chat/message IDs. The user opens the app to decrypt and view the locally synchronized message. Replies and reactions also travel as encrypted message envelopes. Android notification permission must also be allowed by the device user.
 
-## Encrypted Google Drive sync
+## Encrypted local folder sync
 
-Drive sync is opt-in in **Settings → Encrypted Google Drive sync**. The app requests only Google's `drive.appdata` scope and stores an app-private Drive file per CrazeChat account. Before upload, it exports **encrypted message envelopes only** and encrypts the complete archive again with AES-256-GCM using a key derived from the unlocked CrazeChat identity key. Message contents, chat IDs, and sender metadata are inside that encrypted archive; no OAuth access token or plaintext message is written to the backup file. Sync merges message IDs and encrypted deletion tombstones, then uploads the merged snapshot. Auto-sync is debounced after message changes and attempted when the app resumes; syncing requires the CrazeChat identity to be unlocked and a valid Google authorization.
+Local sync is available in **Settings → Local Folder Sync**. Choose a folder through Android's system folder picker. CrazeChat stores a file named `crazechat-encrypted-backup.json` in that folder and retains the folder permission across app restarts. The app reads the previous backup, merges encrypted message envelopes and deletion tombstones, then writes an updated encrypted archive.
 
-To enable it, enable the Google Drive API in the Google Cloud project, register an Android OAuth client for package `com.crazestudio.crazechat` and the signing-certificate SHA fingerprints used by your builds, and provide a Web application OAuth client ID as `GOOGLE_SERVER_CLIENT_ID` at build time. The checked-in Firebase configuration does not include a Web OAuth client ID, so Drive sign-in will not work until this Google OAuth setup is completed. The client ID can be passed locally with `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`; add the same value to GitHub Actions as `GOOGLE_SERVER_CLIENT_ID` for release builds. The app uses the official [Google Sign-In Flutter plugin](https://pub.dev/packages/google_sign_in) and Google's [Drive appData guide](https://developers.google.com/workspace/drive/api/guides/appdata).
+Before writing, the archive is encrypted with AES-256-GCM using a key derived from the unlocked CrazeChat identity key. The selected folder contains no plaintext message text. Restoring requires the same CrazeChat account and unlocked identity. Automatic sync is debounced after message changes and attempted when the app resumes. The archive is limited to 64 MB and includes messages retained in the device's local cache.
 
-The backup is account-keyed: restoring it on another device requires signing into the same CrazeChat account and unlocking the same identity. Disconnecting or pausing sync stops future uploads but intentionally does **not** delete the existing remote file. The current implementation caps a backup at 64 MB; only messages cached on a device are included.
+Changing the selected folder does not erase the previous folder's backup. Copying the encrypted backup file to another device or storage location is supported; select the destination folder on that device and sync using the same CrazeChat identity. Local folder sync is not a live cloud synchronization service: the selected folder must be accessible to Android when sync runs.
 
 ## Database and privacy
 
@@ -132,7 +132,7 @@ The backup is account-keyed: restoring it on another device requires signing int
 - Direct conversations are stored under `Massages/chats/{chatId}`.
 - Participants are recorded in the existing `participents` node for compatibility.
 - Encrypted messages are stored under `Massages/chats/{chatId}/massages/{messageId}`.
-- Read acknowledgements delete the server-side message payload directly; no server-side purge receipts or tombstones are stored. Opt-in Drive archives use client-encrypted deletion tombstones to prevent deleted messages from returning on another device.
+- Read acknowledgements delete the server-side message payload directly; no server-side purge receipts or tombstones are stored. Opt-in local archives use client-encrypted deletion tombstones to prevent deleted messages from returning on another device.
 - Firebase direct-client reads and writes must remain denied. CrazeStudio-Web accesses Firebase using its server-side service account.
 - The API validates JWT sessions and verifies conversation membership before returning or mutating conversation data.
 - The current key agreement does not yet provide forward secrecy or out-of-band public-key verification; the cryptographic design has not been independently audited.
@@ -145,7 +145,7 @@ The backup is account-keyed: restoring it on another device requires signing int
 - Direct conversations, WebSocket foreground delivery, and Firebase Cloud Messaging background alerts.
 - X25519 + HKDF-SHA256 + AES-256-GCM message encryption for text, replies, and reaction events.
 - Encrypted local message cache and offline send retry.
-- Opt-in, identity-key-encrypted Google Drive message sync with account isolation and merge-safe deletion tombstones.
+- Opt-in, identity-key-encrypted local folder message sync with account isolation and merge-safe deletion tombstones.
 - Read acknowledgement triggers server-side payload deletion while retaining the encrypted local copy and local reply/reaction history.
 - WhatsApp-style quoted replies and emoji reactions.
 - In-conversation search, copy, and sender-side deletion.
