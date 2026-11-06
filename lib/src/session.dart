@@ -239,21 +239,31 @@ class ChatSession extends ChangeNotifier {
 
   Future<void> unlock(String password) async {
     final envelope = identityEnvelope;
-    if (envelope == null) {
+    final uid = userId;
+    if (envelope == null || uid == null) {
       throw const FormatException('No encrypted identity was saved.');
     }
-    final material = await CryptoService.unlockIdentityMaterial(
-      envelope,
-      password,
+    final material = await unlockForLogin(
+      envelope: envelope,
+      password: password,
+      accountId: uid,
     );
+    if (material.envelope['version'] != envelope['version'] ||
+        material.envelope['keyProtection'] != envelope['keyProtection']) {
+      await api.updateIdentityEnvelope(material.envelope);
+      identityEnvelope = material.envelope;
+      for (final account in savedAccounts) {
+        if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
+      }
+      await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+      await _persistActive();
+    }
     _destroyIdentity();
     identity = material.keyPair;
-    if (userId != null) {
-      await _storage.write(
-        key: 'identityPrivateKey_$userId',
-        value: base64Encode(material.privateKeyBytes),
-      );
-    }
+    await _storage.write(
+      key: 'identityPrivateKey_$uid',
+      value: base64Encode(material.privateKeyBytes),
+    );
     await _storage.delete(key: _manualLockKey);
     notifyListeners();
   }
