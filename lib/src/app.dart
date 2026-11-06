@@ -1814,6 +1814,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  double _replyDragDistance = 0;
   final input = TextEditingController();
   final composerFocus = FocusNode();
   final scroll = ScrollController();
@@ -2872,6 +2873,25 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             child: GestureDetector(
                               onLongPress: () => messageActions(message),
+                              onHorizontalDragStart: (_) {
+                                _replyDragDistance = 0;
+                              },
+                              onHorizontalDragUpdate: (details) {
+                                _replyDragDistance += details.delta.dx;
+                              },
+                              onHorizontalDragEnd: (details) {
+                                final thresholdReached =
+                                    _replyDragDistance.abs() >= 64 ||
+                                    (details.primaryVelocity?.abs() ?? 0) >= 450;
+                                final swipedTowardCenter = mine
+                                    ? _replyDragDistance < -32
+                                    : _replyDragDistance > 32;
+                                _replyDragDistance = 0;
+                                if (thresholdReached && swipedTowardCenter) {
+                                  HapticFeedback.selectionClick();
+                                  replyToMessage(message);
+                                }
+                              },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 curve: Curves.easeOutCubic,
