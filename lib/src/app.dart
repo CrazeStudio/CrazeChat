@@ -643,7 +643,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
-  Timer? autoLockTimer;
   StreamSubscription<String>? pushOpenSubscription;
   List<Map<String, dynamic>> chats = [];
   final Map<String, int> sentCounts = {};
@@ -672,7 +671,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    autoLockTimer?.cancel();
     pushOpenSubscription?.cancel();
     search.removeListener(_changed);
     search.dispose();
@@ -683,25 +681,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused && widget.session.autoLockEnabled) {
-      unawaited(widget.session.markAppBackgrounded());
-      autoLockTimer?.cancel();
-      autoLockTimer = Timer(ChatSession.autoLockDelay, () {
-        if (mounted &&
-            widget.session.autoLockEnabled &&
-            widget.session.unlocked) {
-          unawaited(widget.session.lock());
-        }
-      });
-    } else if (state == AppLifecycleState.resumed) {
-      autoLockTimer?.cancel();
-      autoLockTimer = null;
+    if (state == AppLifecycleState.resumed) {
       unawaited(_resumeFromBackground());
     }
   }
 
   Future<void> _resumeFromBackground() async {
-    if (await widget.session.lockIfBackgroundedLongEnough()) return;
     if (!mounted) return;
     loadChats(silent: true);
     unawaited(LocalFolderSyncService.instance.syncIfEnabled(widget.session));
@@ -1278,17 +1263,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 activeThumbColor: _brand,
                 onChanged: (value) => widget.session.setVibrationEnabled(value),
               ),
-              const Divider(height: 1),
-              SwitchListTile(
-                secondary: const Icon(Icons.lock_clock_outlined),
-                title: const Text('Auto-lock in background'),
-                subtitle: const Text(
-                  'Lock after 5 minutes away from CrazeChat',
-                ),
-                value: widget.session.autoLockEnabled,
-                activeThumbColor: _brand,
-                onChanged: (value) => widget.session.setAutoLockEnabled(value),
-              ),
+
               const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
