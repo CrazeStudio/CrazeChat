@@ -2153,6 +2153,15 @@ class _ChatScreenState extends State<ChatScreen> {
         final id = item['id']?.toString();
         if (id == null) continue;
         try {
+          final decoded = await _decodeMessage(item);
+          if (decoded['messageKind'] == 'text' &&
+              _wordCount(decoded['clearText']?.toString() ?? '') >
+                  _maxMessageWords) {
+            if (mounted) {
+              showMessage(context, 'A queued message exceeds the 1,500-word limit and was not sent.');
+            }
+            continue;
+          }
           final response = await widget.session.api.sendMessage(chatId, {
             'id': id,
             'format': item['format'],
@@ -3120,7 +3129,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ? 'Sending message'
                                 : 'Send message',
                             child: FilledButton(
-                              onPressed: sending ? null : send,
+                              onPressed: sending || _wordCount(input.text) > _maxMessageWords
+                                  ? null
+                                  : send,
                               style: FilledButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 backgroundColor: colors.primary,
