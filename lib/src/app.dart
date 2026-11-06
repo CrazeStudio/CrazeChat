@@ -1249,6 +1249,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: _showChangePassword,
         )),
+        if (widget.session.needsEncryptionPassphraseMigration) ...[
+          const SizedBox(height: 10),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.security_rounded, color: Colors.orange),
+              title: const Text('Separate encryption passphrase', style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('Your older account still uses the same password for sign-in and key protection. Migrate it now.'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _showEncryptionPassphraseMigration,
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         _LocalFolderSyncCard(session: widget.session),
         const SizedBox(height: 14),
@@ -1372,6 +1384,66 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _showEncryptionPassphraseMigration() async {
+    final next = TextEditingController();
+    final confirm = TextEditingController();
+    try {
+      final passphrase = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Protect your identity key separately'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Choose a new passphrase used only on this device to unlock your private encryption key. It is not sent to CrazeStudio-Web.'),
+              const SizedBox(height: 14),
+              TextField(
+                controller: next,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(labelText: 'New encryption passphrase (12+ characters)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: confirm,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(labelText: 'Confirm passphrase'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                if (next.text.length < 12) {
+                  showMessage(dialogContext, 'Use at least 12 characters.');
+                  return;
+                }
+                if (next.text != confirm.text) {
+                  showMessage(dialogContext, 'The passphrases do not match.');
+                  return;
+                }
+                Navigator.pop(dialogContext, next.text);
+              },
+              child: const Text('Update key protection'),
+            ),
+          ],
+        ),
+      );
+      if (passphrase == null || !mounted) return;
+      await widget.session.updateEncryptionPassphrase(passphrase);
+      if (mounted) showMessage(context, 'Your identity key now has a separate encryption passphrase.');
+    } catch (error) {
+      if (mounted) showMessage(context, 'Could not update identity protection: $error');
+    } finally {
+      next.dispose();
+      confirm.dispose();
+    }
+  }
+
   Future<void> _showChangePassword() async {
     final current = TextEditingController(), next = TextEditingController(), confirm = TextEditingController();
     bool busy = false, showCurrent = false, showNext = false, showConfirm = false;
@@ -1383,7 +1455,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
               Text('Change password', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('Your encryption identity stays the same; only its password protection changes.', style: Theme.of(context).textTheme.bodySmall),
+              Text('This changes only your sign-in password. Your separate encryption passphrase stays unchanged.', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 18),
               TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 12),
