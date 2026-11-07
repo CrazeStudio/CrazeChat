@@ -681,7 +681,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final search = TextEditingController();
   StreamSubscription<String>? pushOpenSubscription;
   List<Map<String, dynamic>> chats = [];
-  final Map<String, int> sentCounts = {};
   bool loading = true, failed = false, syncingChats = false;
   bool refreshingChats = false;
   int page = 0;
@@ -733,49 +732,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     syncingChats = true;
     if (mounted) setState(() => refreshingChats = true);
     try {
+      // The inbox only needs the chat list from the server. It used to read
+      // every chat's full local message history here to compute a count that
+      // no screen displayed, which delayed the first paint.
       final data = await widget.session.api.listChats();
       final list = (data['chats'] as List? ?? const [])
           .whereType<Map>()
           .map((value) => Map<String, dynamic>.from(value))
           .toList();
-      final nextSentCounts = <String, int>{};
-      for (var start = 0; start < list.length; start += 4) {
-        final batch = list.skip(start).take(4).toList();
-        final counts = await Future.wait(
-          batch.map((chat) async {
-            final id = chat['id']?.toString();
-            if (id == null || id.isEmpty) return (id: null, count: 0);
-            try {
-              final cached = await widget.session.loadCachedMessages(id);
-              return (
-                id: id,
-                count: cached
-                    .where(
-                      (message) => message['senderId'] == widget.session.userId,
-                    )
-                    .length,
-              );
-            } catch (_) {
-              // A local cache issue must not prevent the inbox itself from loading.
-              return (id: id, count: 0);
-            }
-          }),
-        );
-        for (final result in counts) {
-          final id = result.id;
-          if (id != null) nextSentCounts[id] = result.count;
-        }
-      }
       if (!mounted) return;
-      final changed =
-          jsonEncode(chats) != jsonEncode(list) ||
-          jsonEncode(sentCounts) != jsonEncode(nextSentCounts);
+      final changed = jsonEncode(chats) != jsonEncode(list);
       if (changed || loading || failed) {
         setState(() {
           chats = list;
-          sentCounts
-            ..clear()
-            ..addAll(nextSentCounts);
           loading = false;
           failed = false;
         });
@@ -1991,6 +1960,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final search = TextEditingController();
   List<Map<String, dynamic>> messages = [];
   final Set<String> messageIds = <String>{};
+  // Messages that arrived live (not from history) and still need their
+  // one-time entrance animation. History and scrolled-back items never animate.
+  final Set<String> _freshIds = <String>{};
+  bool _firstSyncDone = false;
+  int _pollTicks = 0;
   SecretKey? chatKey;
   String? peerName, error, peerId, peerPublicKey, peerFingerprint;
   String peerKeyStatus = 'unverified';
@@ -2044,9 +2018,17 @@ class _ChatScreenState extends State<ChatScreen> {
     search.addListener(_searchChanged);
     // Keep a REST polling fallback active even when the realtime socket is
     // unavailable or silently disconnected by a mobile network/proxy.
-    // WebSocket delivery remains the fast path; polling recovers missed events.
+    // While the WebSocket is connected it delivers new messages and read
+    // receipts, so the poll only runs every 30 seconds as a safety net
+    // (delivered receipts, missed events). Without a socket it stays at 5 s.
     pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!mounted || loading || syncing || chatKey == null) return;
+      if (realtime != null) {
+        _pollTicks = (_pollTicks + 1) % 6;
+        if (_pollTicks != 0) return;
+      } else {
+        _pollTicks = 0;
+      }
       await loadMessages(silent: true);
     });
     syncTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
@@ -2267,13 +2249,61 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'sent';
   }
 
+  // The server sends `message_deleted` to the sender when the recipient has
+  // read (and the server has purged) those messages. That is a read receipt
+  // for our own messages; it never deletes anything from local history.
+  Future<void> _applyPeerReadReceipts(Object? rawIds) async {
+    final recipientId = peer?['id']?.toString();
+    final me = widget.session.userId;
+    if (recipientId == null || me == null || rawIds is! List) return;
+    final readAt = DateTime.now().millisecondsSinceEpoch;
+    final updates = <String, Map<String, dynamic>>{};
+    for (final raw in rawIds) {
+      final id = raw?.toString();
+      if (id == null) continue;
+      final index = messages.indexWhere(
+        (item) => item['id'] == id && item['senderId'] == me,
+      );
+      if (index < 0) continue;
+      final readBy = Map<String, dynamic>.from(
+        messages[index]['readBy'] is Map
+            ? messages[index]['readBy'] as Map
+            : const {},
+      );
+      if (readBy.containsKey(recipientId)) continue;
+      readBy[recipientId] = readAt;
+      messages[index]['readBy'] = readBy;
+      updates[id] = readBy;
+    }
+    if (updates.isEmpty) return;
+    if (mounted) setState(() {});
+    for (final entry in updates.entries) {
+      try {
+        final index = messages.indexWhere((item) => item['id'] == entry.key);
+        final state = index >= 0
+            ? (messages[index]['deliveryState']?.toString() ?? 'sent')
+            : 'sent';
+        await widget.session.updateCachedMessage(
+          chatId,
+          entry.key,
+          deliveryState: state,
+          serverMessage: {'readBy': entry.value},
+        );
+      } catch (_) {
+        // The on-screen state is already updated; the next sync repairs the cache.
+      }
+    }
+  }
+
   Future<void> _handleRealtimeEvent(dynamic event) async {
     try {
       final decodedEvent = jsonDecode(event.toString());
       if (decodedEvent is! Map) return;
       if (decodedEvent['type'] == 'message_deleted') {
         // This event describes deletion of the remote Firebase copy only.
-        // Never propagate it into the receiver's durable local message history.
+        // Never propagate it into the local message history; use it solely
+        // as a read receipt for messages this account sent.
+        await _applyPeerReadReceipts(decodedEvent['messageIds']);
         return;
       }
       if (decodedEvent['type'] != 'message' ||
@@ -2298,6 +2328,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (messageIds.contains(id)) return;
       message['deliveryState'] = 'saved';
       messageIds.add(id);
+      _freshIds.add(id);
       _advanceServerMessageCursor(message['createdAt']);
       if (mounted) {
         setState(() {
@@ -2431,14 +2462,24 @@ class _ChatScreenState extends State<ChatScreen> {
           _advanceServerMessageCursor(message['createdAt']);
           if (!messageIds.contains(id)) {
             messageIds.add(id);
+            if (_firstSyncDone) _freshIds.add(id);
             _applyDecodedMessage(decoded);
           } else {
             final index = messages.indexWhere((item) => item['id'] == id);
             if (index >= 0) {
               final priorReactions = messages[index]['reactionsByUser'];
+              final priorReadBy = messages[index]['readBy'];
+              final serverReadBy = decoded['readBy'];
               messages[index] = {
                 ...decoded,
                 if (priorReactions is Map) 'reactionsByUser': priorReactions,
+                // Keep a read receipt that arrived over the socket even if the
+                // server copy has already been purged of it.
+                if (priorReadBy is Map)
+                  'readBy': {
+                    ...priorReadBy,
+                    if (serverReadBy is Map) ...serverReadBy,
+                  },
               };
             }
           }
@@ -2459,6 +2500,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (raw.isNotEmpty) {
         LocalFolderSyncService.instance.scheduleAutomaticSync(widget.session);
       }
+      _firstSyncDone = true;
       if (mounted) {
         setState(() {
           loading = false;
@@ -2608,6 +2650,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (reply != null) 'replyTo': reply,
           });
           messageIds.add(id);
+          _freshIds.add(id);
           replyTarget = null;
         });
       }
@@ -2911,13 +2954,14 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final searchQuery = search.text.trim().toLowerCase();
     final visible = messages
         .where(
           (message) =>
               message['messageKind'] != 'reaction' &&
-              (message['clearText']?.toString().toLowerCase() ?? '').contains(
-                search.text.trim().toLowerCase(),
-              ),
+              (searchQuery.isEmpty ||
+                  (message['clearText']?.toString().toLowerCase() ?? '')
+                      .contains(searchQuery)),
         )
         .toList();
     return Scaffold(
@@ -3126,19 +3170,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           : (mine
                                 ? const Color(0xFFC6E4D4)
                                 : const Color(0xFFE5ECE8));
-                      return TweenAnimationBuilder<double>(
-                        key: ValueKey(message['id']),
-                        tween: Tween<double>(begin: 0, end: 1),
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, progress, child) => Opacity(
-                          opacity: progress,
-                          child: Transform.translate(
-                            offset: Offset(0, (1 - progress) * 10),
-                            child: child,
-                          ),
-                        ),
-                        child: Align(
+                      final bubble = Align(
                           alignment: mine
                               ? Alignment.centerRight
                               : Alignment.centerLeft,
@@ -3354,7 +3386,31 @@ class _ChatScreenState extends State<ChatScreen> {
                               ),
                             ),
                           ),
+                        );
+                      final messageId = message['id']?.toString();
+                      // Only a message that just arrived plays the entrance
+                      // animation, once. History and items scrolled back into
+                      // view are built plain, so scrolling stays smooth.
+                      if (messageId == null || !_freshIds.contains(messageId)) {
+                        return KeyedSubtree(
+                          key: ValueKey(message['id']),
+                          child: bubble,
+                        );
+                      }
+                      return TweenAnimationBuilder<double>(
+                        key: ValueKey(message['id']),
+                        tween: Tween<double>(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        onEnd: () => _freshIds.remove(messageId),
+                        builder: (context, progress, child) => Opacity(
+                          opacity: progress,
+                          child: Transform.translate(
+                            offset: Offset(0, (1 - progress) * 10),
+                            child: child,
+                          ),
                         ),
+                        child: bubble,
                       );
                     },
                   ),
@@ -3446,7 +3502,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           textCapitalization: TextCapitalization.sentences,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => send(),
-                          onChanged: (_) => setState(() {}),
                           decoration: const InputDecoration(
                             hintText: 'Write something…',
                             prefixIcon: Icon(Icons.edit_note_rounded),
@@ -3461,36 +3516,43 @@ class _ChatScreenState extends State<ChatScreen> {
                       SizedBox(
                         width: 48,
                         height: 48,
-                        child: AnimatedScale(
-                          scale: sending ? .94 : 1,
-                          duration: const Duration(milliseconds: 140),
-                          child: Tooltip(
-                            message: sending
-                                ? 'Sending message'
-                                : 'Send message',
-                            child: FilledButton(
-                              onPressed: sending || _wordCount(input.text) > _maxMessageWords
-                                  ? null
-                                  : send,
-                              style: FilledButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                backgroundColor: colors.primary,
-                                foregroundColor: colors.onPrimary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                        // Only the send button reacts to typing; the message
+                        // list above is not rebuilt on every keystroke.
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: input,
+                          builder: (context, value, _) {
+                            final tooLong =
+                                _wordCount(value.text) > _maxMessageWords;
+                            return AnimatedScale(
+                              scale: sending ? .94 : 1,
+                              duration: const Duration(milliseconds: 140),
+                              child: Tooltip(
+                                message: sending
+                                    ? 'Sending message'
+                                    : 'Send message',
+                                child: FilledButton(
+                                  onPressed: sending || tooLong ? null : send,
+                                  style: FilledButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    backgroundColor: colors.primary,
+                                    foregroundColor: colors.onPrimary,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  child: sending
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.arrow_upward_rounded),
                                 ),
                               ),
-                              child: sending
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.arrow_upward_rounded),
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -3500,15 +3562,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(
-                          '${_wordCount(input.text)} / 1,500 words',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: _wordCount(input.text) > _maxMessageWords
-                                ? colors.error
-                                : colors.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: input,
+                          builder: (context, value, _) {
+                            final words = _wordCount(value.text);
+                            return Text(
+                              '$words / 1,500 words',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: words > _maxMessageWords
+                                    ? colors.error
+                                    : colors.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
