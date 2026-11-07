@@ -149,7 +149,9 @@ activity = Path("android/app/src/main/kotlin/com/crazestudio/crazechat/MainActiv
 activity.parent.mkdir(parents=True, exist_ok=True)
 activity.write_text("""package com.crazestudio.crazechat
 
+import android.app.Notification
 import android.app.NotificationChannel
+import android.app.NotificationChannelGroup
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -304,11 +306,16 @@ class MainActivity : FlutterActivity() {
     private fun createCrazeChatNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannelGroup(
+            NotificationChannelGroup(messageGroupId, "Messages")
+        )
         createMessageChannel(manager, "crazechat_messages_default", true, true)
         createMessageChannel(manager, "crazechat_messages_sound_only", true, false)
         createMessageChannel(manager, "crazechat_messages_vibrate_only", false, true)
         createMessageChannel(manager, "crazechat_messages_silent", false, false)
     }
+
+    private val messageGroupId = "crazechat_messages_group"
 
     private fun createMessageChannel(
         manager: NotificationManager,
@@ -322,6 +329,13 @@ class MainActivity : FlutterActivity() {
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "New encrypted CrazeChat messages"
+            group = messageGroupId
+            setShowBadge(true)
+            enableLights(true)
+            lightColor = 0xFF087E65.toInt()
+            // Message text is never in the push payload, and the lock screen
+            // should not reveal who is writing either.
+            lockscreenVisibility = Notification.VISIBILITY_PRIVATE
             enableVibration(vibrationEnabled)
             if (soundEnabled) {
                 val attributes = AudioAttributes.Builder()
@@ -351,6 +365,17 @@ default_channel = """        <meta-data
 """
 if "com.google.firebase.messaging.default_notification_channel_id" not in source:
     source = source.replace("</application>", default_channel + "    </application>", 1)
+# A dedicated single-colour status-bar icon and brand accent colour. Without
+# these, Android shows the full-colour launcher icon as a grey/white square.
+status_icon = """        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_crazechat" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/crazechat_icon_background" />
+"""
+if "com.google.firebase.messaging.default_notification_icon" not in source:
+    source = source.replace("</application>", status_icon + "    </application>", 1)
 manifest.write_text(source)
 PY
 
@@ -377,6 +402,21 @@ foreground = """<?xml version="1.0" encoding="utf-8"?>
 </vector>
 """
 (res / "drawable" / "ic_crazechat_foreground.xml").write_text(foreground)
+
+# Status-bar notification icon: white shape on transparent, lightning bolt cut out.
+status_bar = """<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M54,16 C34,16 18,30 18,49 C18,60 23,70 32,77 L29,91 L46,83 C49,84 52,84 55,84 C75,84 90,69 90,50 C90,31 74,16 54,16 Z M58,28 L40,55 L53,55 L47,73 L70,46 L56,46 Z" />
+</vector>
+"""
+(res / "drawable" / "ic_stat_crazechat.xml").write_text(status_bar)
 
 adaptive = """<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
