@@ -33,37 +33,73 @@ class ChatSession extends ChangeNotifier {
   static final _messageIdPattern = RegExp(r'^[a-f0-9]{32}$');
   final Map<String, Future<void>> _cacheWriteQueues = {};
 
+  // In-memory copy of the encrypted message envelopes kept in secure storage.
+  // Every read used to cost one platform-channel call per message; now each
+  // chat is read from disk at most once per app session. Records here are the
+  // same envelope-only maps that are persisted (no plaintext).
+  static const _maxCachedRecords = 30000;
+  final Map<String, Map<String, Map<String, dynamic>>> _memory = {};
+  final Set<String> _warmedUsers = <String>{};
+  Future<void>? _warmFuture;
+  int _memoryEpoch = 0;
+  bool _disposed = false;
+
   bool get signedIn => token != null && username != null;
   bool get unlocked => identity != null;
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   Future<void> restore() async {
+    var validateInBackground = false;
     try {
-      notificationsEnabled =
-          (await _storage.read(key: 'pref_notifications')) != 'false';
-      soundEffectsEnabled =
-          (await _storage.read(key: 'pref_sound_effects')) != 'false';
-      vibrationEnabled =
-          (await _storage.read(key: 'pref_vibration')) != 'false';
-      await _storage.delete(key: 'pref_auto_lock_backgrounded_at');
-      await _storage.delete(key: 'pref_auto_lock');
-      final manuallyLocked = await _storage.read(key: _manualLockKey) == 'true';
-      final requireIdentityUnlock = manuallyLocked;
-      themeMode = switch (await _storage.read(key: 'pref_theme_mode')) {
+      // Independent secure-storage reads run together instead of one after
+      // another, which shortens the time spent on the loading spinner.
+      final values = await Future.wait<String?>([
+        _storage.read(key: 'pref_notifications'),
+        _storage.read(key: 'pref_sound_effects'),
+        _storage.read(key: 'pref_vibration'),
+        _storage.read(key: _manualLockKey),
+        _storage.read(key: 'pref_theme_mode'),
+        _storage.read(key: _accountsKey),
+        _storage.read(key: 'token'),
+        _storage.read(key: 'username'),
+        _storage.read(key: 'userId'),
+        _storage.read(key: 'identityEnvelope'),
+      ]);
+      notificationsEnabled = values[0] != 'false';
+      soundEffectsEnabled = values[1] != 'false';
+      vibrationEnabled = values[2] != 'false';
+      unawaited(
+        _storage
+            .delete(key: 'pref_auto_lock_backgrounded_at')
+            .catchError((_) {}),
+      );
+      unawaited(_storage.delete(key: 'pref_auto_lock').catchError((_) {}));
+      final requireIdentityUnlock = values[3] == 'true';
+      themeMode = switch (values[4]) {
         'light' => ThemeMode.light,
         'dark' => ThemeMode.dark,
         _ => ThemeMode.system,
       };
-      final saved = await _storage.read(key: _accountsKey);
+      final saved = values[5];
       if (saved != null) {
         savedAccounts = (jsonDecode(saved) as List)
             .map((value) => Map<String, dynamic>.from(value as Map))
             .toList();
       }
-      token = await _storage.read(key: 'token');
-      username = await _storage.read(key: 'username');
-      userId = await _storage.read(key: 'userId');
-      photoUrl = userId == null ? null : await _storage.read(key: 'profilePhotoUrl_$userId');
-      final encoded = await _storage.read(key: 'identityEnvelope');
+      token = values[6];
+      username = values[7];
+      userId = values[8];
+      final encoded = values[9];
       if (encoded != null) {
         identityEnvelope = Map<String, dynamic>.from(
           jsonDecode(encoded) as Map,
@@ -76,49 +112,26 @@ class ChatSession extends ChangeNotifier {
         await _clearActiveSession();
       } else {
         api.token = token;
-        try {
-          // Previous builds stored unsigned local claims. The new API rejects
-          // them, so users must sign in again instead of trusting local tokens.
-          final restored = await api.restoreSession();
-          final restoredUser = Map<String, dynamic>.from(restored['user'] as Map);
-          photoUrl = restoredUser['photoUrl'] as String?;
-          await _storage.write(key: 'profilePhotoUrl_$userId', value: photoUrl);
-          for (final account in savedAccounts) {
-            if (account['userId'] == userId) account['photoUrl'] = photoUrl;
-          }
-          await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
-        } on ApiException catch (error) {
-          // The generic CrazeStudio-Web gateway also returns 401 for a missing
-          // or mismatched shared gateway credential. That is not proof that the
-          // user's saved JWT is invalid; never erase local accounts on that response.
-          if ((error.statusCode == 401 || error.statusCode == 403) &&
-              error.code != 'UNAUTHORIZED' &&
-              error.code != 'GATEWAY_NOT_CONFIGURED') {
-            savedAccounts.removeWhere((account) => account['userId'] == userId);
-            await _storage.write(
-              key: _accountsKey,
-              value: jsonEncode(savedAccounts),
+        final uid = userId!;
+        final secondary = await Future.wait<String?>([
+          _storage.read(key: 'profilePhotoUrl_$uid'),
+          requireIdentityUnlock
+              ? Future<String?>.value(null)
+              : _storage.read(key: 'identityPrivateKey_$uid'),
+        ]);
+        photoUrl = secondary[0];
+        final savedPrivateKey = secondary[1];
+        if (savedPrivateKey != null) {
+          try {
+            identity = await CryptoService.restoreIdentityFromPrivateBytes(
+              identityEnvelope!,
+              base64Decode(savedPrivateKey),
             );
-            await _clearActiveSession();
+          } catch (_) {
+            await _storage.delete(key: 'identityPrivateKey_$uid');
           }
         }
-        if (token != null && userId != null && identityEnvelope != null) {
-          final savedPrivateKey = await _storage.read(
-            key: 'identityPrivateKey_$userId',
-          );
-          if (savedPrivateKey != null && !requireIdentityUnlock) {
-            try {
-              identity = await CryptoService.restoreIdentityFromPrivateBytes(
-                identityEnvelope!,
-                base64Decode(savedPrivateKey),
-              );
-            } catch (_) {
-              await _storage.delete(key: 'identityPrivateKey_$userId');
-            }
-          }
-        }
-        if (token != null &&
-            !savedAccounts.any((item) => item['userId'] == userId)) {
+        if (!savedAccounts.any((item) => item['userId'] == uid)) {
           savedAccounts.insert(0, {
             'token': token,
             'username': username,
@@ -134,12 +147,68 @@ class ChatSession extends ChangeNotifier {
             value: jsonEncode(savedAccounts),
           );
         }
+        validateInBackground = true;
       }
     } catch (_) {
       // Keep the app recoverable if secure storage or the network is unavailable.
     } finally {
+      // Show the app from the locally stored session straight away. The server
+      // check below used to block this step for up to the full network timeout.
       ready = true;
       notifyListeners();
+      if (validateInBackground) unawaited(_validateRestoredSession());
+      unawaited(warmMessageCache());
+    }
+  }
+
+  Future<void> _validateRestoredSession() async {
+    final restoreToken = token;
+    final restoreUser = userId;
+    if (restoreToken == null || restoreUser == null) return;
+    try {
+      // Previous builds stored unsigned local claims. The API rejects them, so
+      // users must sign in again instead of trusting local tokens.
+      final restored = await api.restoreSession();
+      if (token != restoreToken || userId != restoreUser) return;
+      final restoredUser = Map<String, dynamic>.from(restored['user'] as Map);
+      final nextPhoto = restoredUser['photoUrl'] as String?;
+      final accountsStale = savedAccounts.any(
+        (account) =>
+            account['userId'] == restoreUser && account['photoUrl'] != nextPhoto,
+      );
+      if (nextPhoto != photoUrl || accountsStale) {
+        photoUrl = nextPhoto;
+        for (final account in savedAccounts) {
+          if (account['userId'] == restoreUser) account['photoUrl'] = photoUrl;
+        }
+        await _storage.write(
+          key: 'profilePhotoUrl_$restoreUser',
+          value: photoUrl,
+        );
+        await _storage.write(
+          key: _accountsKey,
+          value: jsonEncode(savedAccounts),
+        );
+        notifyListeners();
+      }
+    } on ApiException catch (error) {
+      if (token != restoreToken || userId != restoreUser) return;
+      // The generic CrazeStudio-Web gateway also returns 401 for a missing
+      // or mismatched shared gateway credential. That is not proof that the
+      // user's saved JWT is invalid; never erase local accounts on that response.
+      if ((error.statusCode == 401 || error.statusCode == 403) &&
+          error.code != 'UNAUTHORIZED' &&
+          error.code != 'GATEWAY_NOT_CONFIGURED') {
+        savedAccounts.removeWhere((account) => account['userId'] == userId);
+        await _storage.write(
+          key: _accountsKey,
+          value: jsonEncode(savedAccounts),
+        );
+        await _clearActiveSession();
+        notifyListeners();
+      }
+    } catch (_) {
+      // Offline or malformed response: keep the locally stored session.
     }
   }
 
@@ -179,6 +248,7 @@ class ChatSession extends ChangeNotifier {
     }
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
+    unawaited(warmMessageCache());
   }
 
   Future<String> contactKeyStatus({
@@ -336,6 +406,7 @@ class ChatSession extends ChangeNotifier {
       }
     }
     notifyListeners();
+    unawaited(warmMessageCache());
   }
 
   Future<void> addAccount() async {
@@ -380,6 +451,7 @@ class ChatSession extends ChangeNotifier {
     photoUrl = null;
     identityEnvelope = null;
     _destroyIdentity();
+    _resetMessageMemory();
     api.token = null;
     await _storage.delete(key: 'token');
     await _storage.delete(key: 'username');
@@ -439,12 +511,23 @@ class ChatSession extends ChangeNotifier {
       'cc_msg_${uid}_${chatId}_$messageId';
   String _messageTombstoneKey(String uid, String chatId, String messageId) =>
       'cc_msg_tombstone_${uid}_${chatId}_$messageId';
+  String _memoryKey(String uid, String chatId) => '$uid:$chatId';
 
-  Future<void> _withCacheWriteLock(
+  Future<T> _withCacheWriteLock<T>(
     String uid,
     String chatId,
-    Future<void> Function() operation,
+    Future<T> Function() operation,
   ) async {
+    // Writes wait for an in-flight cache warm-up so the in-memory copy can
+    // never miss a record that was saved while the snapshot was being read.
+    final warm = _warmFuture;
+    if (warm != null) {
+      try {
+        await warm;
+      } catch (_) {
+        // Warm-up failures fall back to per-chat disk reads.
+      }
+    }
     final key = '$uid:$chatId';
     final previous = _cacheWriteQueues[key] ?? Future<void>.value();
     final release = Completer<void>();
@@ -456,12 +539,118 @@ class ChatSession extends ChangeNotifier {
       } catch (_) {
         // A failed write must not permanently block later cache operations.
       }
-      await operation();
+      return await operation();
     } finally {
       release.complete();
       if (identical(_cacheWriteQueues[key], current)) {
         _cacheWriteQueues.remove(key);
       }
+    }
+  }
+
+  void _resetMessageMemory() {
+    _memory.clear();
+    _warmedUsers.clear();
+    _memoryEpoch++;
+    _warmFuture = null;
+  }
+
+  int _memoryRecordCount() =>
+      _memory.values.fold<int>(0, (sum, chat) => sum + chat.length);
+
+  List<Map<String, dynamic>> _snapshot(
+    Map<String, Map<String, dynamic>> records,
+  ) {
+    final list = [
+      for (final record in records.values) Map<String, dynamic>.from(record),
+    ];
+    list.sort(
+      (a, b) => _asInt(a['createdAt']).compareTo(_asInt(b['createdAt'])),
+    );
+    return list;
+  }
+
+  /// Loads every cached envelope for the active account with one secure-storage
+  /// call instead of one call per message. Safe to call repeatedly.
+  Future<void> warmMessageCache() {
+    final uid = userId;
+    if (uid == null || _warmedUsers.contains(uid)) return Future<void>.value();
+    final running = _warmFuture;
+    if (running != null) return running;
+    final epoch = _memoryEpoch;
+    late final Future<void> future;
+    future = _warmFromStorage(uid, epoch).whenComplete(() {
+      if (identical(_warmFuture, future)) _warmFuture = null;
+    });
+    _warmFuture = future;
+    return future;
+  }
+
+  Future<void> _warmFromStorage(String uid, int epoch) async {
+    try {
+      final all = await _storage.readAll();
+      if (epoch != _memoryEpoch) return;
+      final recordPrefix = 'cc_msg_${uid}_';
+      final indexPrefix = 'cc_msg_index_${uid}_';
+      final indexes = <String, Set<String>>{};
+      final records = <String, Map<String, Map<String, dynamic>>>{};
+      var total = 0;
+      for (final entry in all.entries) {
+        final key = entry.key;
+        if (key.startsWith(indexPrefix)) {
+          final chatId = key.substring(indexPrefix.length);
+          if (!_chatIdPattern.hasMatch(chatId)) continue;
+          try {
+            final decoded = jsonDecode(entry.value);
+            if (decoded is List) {
+              indexes[chatId] = decoded
+                  .whereType<String>()
+                  .where(_messageIdPattern.hasMatch)
+                  .toSet();
+            }
+          } catch (_) {
+            // A malformed index behaves like a missing one.
+          }
+          continue;
+        }
+        if (!key.startsWith(recordPrefix)) continue;
+        final rest = key.substring(recordPrefix.length);
+        if (rest.length != 65 || rest[32] != '_') continue;
+        final chatId = rest.substring(0, 32);
+        final messageId = rest.substring(33);
+        if (!_chatIdPattern.hasMatch(chatId) ||
+            !_messageIdPattern.hasMatch(messageId)) {
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(entry.value);
+          if (decoded is Map) {
+            (records[chatId] ??= {})[messageId] = Map<String, dynamic>.from(
+              decoded,
+            );
+            total++;
+          }
+        } catch (_) {
+          // Ignore corrupt cache entries; the next sync can recover them.
+        }
+      }
+      if (total > _maxCachedRecords || epoch != _memoryEpoch) return;
+      records.forEach((chatId, byId) {
+        final index = indexes[chatId];
+        if (index == null) return;
+        final visible = <String, Map<String, dynamic>>{
+          for (final entry in byId.entries)
+            if (index.contains(entry.key) && entry.value['id'] is String)
+              entry.key: entry.value,
+        };
+        final key = _memoryKey(uid, chatId);
+        final existing = _memory[key];
+        // Anything already in memory is at least as new as the snapshot.
+        _memory[key] = existing == null ? visible : {...visible, ...existing};
+      });
+      _warmedUsers.add(uid);
+    } catch (_) {
+      // Keep working through the per-chat disk path.
     }
   }
 
@@ -479,9 +668,13 @@ class ChatSession extends ChangeNotifier {
         !_messageIdPattern.hasMatch(id)) {
       throw const FormatException('Invalid local message cache record.');
     }
-    await _withCacheWriteLock(uid, chatId, () async {
-      if (await _storage.read(key: _messageTombstoneKey(uid, chatId, id)) ==
-          'true') {
+    await _withCacheWriteLock<void>(uid, chatId, () async {
+      // A record that is in memory cannot be tombstoned (deleting removes it),
+      // so the extra storage read is only needed for unknown messages.
+      final known = _memory[_memoryKey(uid, chatId)]?.containsKey(id) == true;
+      if (!known &&
+          await _storage.read(key: _messageTombstoneKey(uid, chatId, id)) ==
+              'true') {
         return;
       }
       await _writeCachedMessage(uid, chatId, message);
@@ -510,37 +703,50 @@ class ChatSession extends ChangeNotifier {
       for (final field in allowed)
         if (message.containsKey(field)) field: message[field],
     };
+    final memoryKey = _memoryKey(uid, chatId);
+    final cachedChat = _memory[memoryKey];
+    final alreadyIndexed = cachedChat != null && cachedChat.containsKey(id);
     await _storage.write(
       key: _messageKey(uid, chatId, id),
       value: jsonEncode(safe),
     );
 
-    final indexKey = _messageIndexKey(uid, chatId);
-    final encodedIndex = await _storage.read(key: indexKey);
-    List<String> ids = [];
-    if (encodedIndex != null) {
-      try {
-        final decoded = jsonDecode(encodedIndex);
-        if (decoded is List) {
-          ids = decoded
-              .whereType<String>()
-              .where(_messageIdPattern.hasMatch)
-              .toSet()
-              .toList();
+    if (!alreadyIndexed) {
+      final indexKey = _messageIndexKey(uid, chatId);
+      final encodedIndex = await _storage.read(key: indexKey);
+      List<String> ids = [];
+      if (encodedIndex != null) {
+        try {
+          final decoded = jsonDecode(encodedIndex);
+          if (decoded is List) {
+            ids = decoded
+                .whereType<String>()
+                .where(_messageIdPattern.hasMatch)
+                .toSet()
+                .toList();
+          }
+        } catch (_) {
+          ids = [];
         }
-      } catch (_) {
-        ids = [];
+      }
+      if (!ids.contains(id)) {
+        ids.add(id);
+        await _storage.write(key: indexKey, value: jsonEncode(ids));
       }
     }
-    if (!ids.contains(id)) {
-      ids.add(id);
-      await _storage.write(key: indexKey, value: jsonEncode(ids));
+
+    if (cachedChat != null) {
+      cachedChat[id] = safe;
+    } else if (_warmedUsers.contains(uid)) {
+      // The warm-up saw no messages for this chat, so this is its first one.
+      _memory[memoryKey] = {id: safe};
     }
   }
 
-  Future<List<Map<String, dynamic>>> loadCachedMessages(String chatId) async {
-    final uid = userId;
-    if (uid == null || !_chatIdPattern.hasMatch(chatId)) return [];
+  Future<List<Map<String, dynamic>>> _readChatFromStorage(
+    String uid,
+    String chatId,
+  ) async {
     final encodedIndex = await _storage.read(
       key: _messageIndexKey(uid, chatId),
     );
@@ -561,8 +767,8 @@ class ChatSession extends ChangeNotifier {
     final records = <Map<String, dynamic>>[];
     // Secure-storage platform-channel calls are expensive; bounded batches
     // reduce chat-open latency without flooding the Android keystore bridge.
-    for (var start = 0; start < ids.length; start += 16) {
-      final batch = ids.skip(start).take(16).toList();
+    for (var start = 0; start < ids.length; start += 32) {
+      final batch = ids.skip(start).take(32).toList();
       final encodedRecords = await Future.wait(
         batch.map((id) async {
           try {
@@ -588,6 +794,40 @@ class ChatSession extends ChangeNotifier {
     return records;
   }
 
+  Future<List<Map<String, dynamic>>> loadCachedMessages(String chatId) async {
+    final uid = userId;
+    if (uid == null || !_chatIdPattern.hasMatch(chatId)) return [];
+    final warm = _warmFuture;
+    if (warm != null) {
+      try {
+        await warm;
+      } catch (_) {
+        // Fall through to the per-chat disk path.
+      }
+    }
+    final key = _memoryKey(uid, chatId);
+    final cached = _memory[key];
+    if (cached != null) return _snapshot(cached);
+    if (_warmedUsers.contains(uid)) return [];
+    return _withCacheWriteLock<List<Map<String, dynamic>>>(
+      uid,
+      chatId,
+      () async {
+        final again = _memory[key];
+        if (again != null) return _snapshot(again);
+        final records = await _readChatFromStorage(uid, chatId);
+        if (records.every((record) => record['id'] is String) &&
+            _memoryRecordCount() + records.length <= _maxCachedRecords) {
+          _memory[key] = {
+            for (final record in records)
+              record['id'] as String: Map<String, dynamic>.from(record),
+          };
+        }
+        return records;
+      },
+    );
+  }
+
   Future<void> updateCachedMessage(
     String chatId,
     String messageId, {
@@ -600,22 +840,28 @@ class ChatSession extends ChangeNotifier {
         !_messageIdPattern.hasMatch(messageId)) {
       return;
     }
-    await _withCacheWriteLock(uid, chatId, () async {
-      if (await _storage.read(
-            key: _messageTombstoneKey(uid, chatId, messageId),
-          ) ==
-          'true') {
-        return;
-      }
-      final existing = await _storage.read(
-        key: _messageKey(uid, chatId, messageId),
-      );
-      if (existing == null) return;
-      late final Map<String, dynamic> message;
-      try {
-        message = Map<String, dynamic>.from(jsonDecode(existing) as Map);
-      } catch (_) {
-        return;
+    await _withCacheWriteLock<void>(uid, chatId, () async {
+      final cachedRecord = _memory[_memoryKey(uid, chatId)]?[messageId];
+      Map<String, dynamic> message;
+      if (cachedRecord != null) {
+        // In memory means it is stored and not tombstoned.
+        message = Map<String, dynamic>.from(cachedRecord);
+      } else {
+        if (await _storage.read(
+              key: _messageTombstoneKey(uid, chatId, messageId),
+            ) ==
+            'true') {
+          return;
+        }
+        final existing = await _storage.read(
+          key: _messageKey(uid, chatId, messageId),
+        );
+        if (existing == null) return;
+        try {
+          message = Map<String, dynamic>.from(jsonDecode(existing) as Map);
+        } catch (_) {
+          return;
+        }
       }
       message['id'] = messageId;
       if (serverMessage != null) {
@@ -646,12 +892,13 @@ class ChatSession extends ChangeNotifier {
         !_messageIdPattern.hasMatch(messageId)) {
       return;
     }
-    await _withCacheWriteLock(uid, chatId, () async {
+    await _withCacheWriteLock<void>(uid, chatId, () async {
       await _storage.write(
         key: _messageTombstoneKey(uid, chatId, messageId),
         value: 'true',
       );
       await _storage.delete(key: _messageKey(uid, chatId, messageId));
+      _memory[_memoryKey(uid, chatId)]?.remove(messageId);
       final indexKey = _messageIndexKey(uid, chatId);
       final encoded = await _storage.read(key: indexKey);
       if (encoded == null) return;
