@@ -30,7 +30,9 @@ class ProfilePhotoCache {
       final cachedUrl = await _storage.read(key: urlKey);
       final cachedBytes = await _storage.read(key: bytesKey);
       if (cachedUrl == url && cachedBytes != null) {
-        final decoded = UriData.parse('data:application/octet-stream;base64,$cachedBytes').contentAsBytes();
+        final decoded = UriData.parse(
+          'data:application/octet-stream;base64,$cachedBytes',
+        ).contentAsBytes();
         if (decoded.isNotEmpty && decoded.length <= _maxBytes) return decoded;
       }
 
@@ -40,7 +42,9 @@ class ProfilePhotoCache {
           ..followRedirects = true
           ..maxRedirects = 3
           ..headers['Accept'] = 'image/jpeg,image/png,image/webp,image/gif';
-        final response = await client.send(request).timeout(const Duration(seconds: 15));
+        final response = await client
+            .send(request)
+            .timeout(const Duration(seconds: 15));
         final finalUrl = response.request?.url;
         final contentType = (response.headers['content-type'] ?? '')
             .split(';')
@@ -50,7 +54,8 @@ class ProfilePhotoCache {
         if (response.statusCode != 200 ||
             finalUrl == null ||
             finalUrl.scheme != 'https' ||
-            !{'image/jpeg', 'image/png', 'image/webp', 'image/gif'}.contains(contentType)) {
+            !{'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+                .contains(contentType)) {
           return null;
         }
 
