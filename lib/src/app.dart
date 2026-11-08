@@ -12,6 +12,7 @@ import 'session.dart';
 import 'profile_photo.dart';
 import 'push_notifications.dart';
 import 'local_folder_sync.dart';
+import 'security_prefs.dart';
 import 'sound_effects.dart';
 
 const _brand = Color(0xFF087E65);
@@ -31,6 +32,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     super.initState();
     session.addListener(_syncPushRegistration);
     unawaited(CrazeChatSoundEffects.initialize());
+    unawaited(SecurityPrefs.applyStoredScreenSecure());
     session.restore();
   }
 
@@ -294,6 +296,62 @@ class _Eyebrow extends StatelessWidget {
   );
 }
 
+// Live strength hint shown while creating an account. The password also
+// protects the private encryption key, so length matters more than symbols.
+class _PasswordStrength extends StatelessWidget {
+  const _PasswordStrength({required this.password});
+  final String password;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    var score = 0;
+    if (password.length >= 12) score++;
+    if (password.length >= 16) score++;
+    if (RegExp(r'[a-z]').hasMatch(password) &&
+        RegExp(r'[A-Z]').hasMatch(password)) {
+      score++;
+    }
+    if (RegExp(r'\d').hasMatch(password) &&
+        RegExp(r'[^A-Za-z0-9]').hasMatch(password)) {
+      score++;
+    }
+    final tooShort = password.length < 12;
+    const labels = ['Too short', 'Weak', 'Okay', 'Strong', 'Very strong'];
+    final label = tooShort ? labels[0] : labels[score.clamp(1, 4)];
+    final fraction = password.isEmpty ? 0.0 : (tooShort ? .15 : score / 4);
+    final color = tooShort
+        ? colors.error
+        : score >= 3
+        ? _brand
+        : const Color(0xFFD9822B);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, left: 4, right: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 5,
+              color: color,
+              backgroundColor: colors.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            password.isEmpty
+                ? 'Use 12+ characters. This password also protects your encryption key.'
+                : '$label \u00b7 12+ characters; a long passphrase works best.',
+            style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key, required this.session});
   final ChatSession session;
@@ -316,7 +374,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final name = username.text.trim();
     final pass = password.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
-      showMessage(context, 'Username: 3–20 letters, numbers, or underscores.');
+      showMessage(context, 'Username: 3\u201320 letters, numbers, or underscores.');
       return;
     }
     if (creating && pass.length < 12) {
@@ -380,7 +438,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 children: [
                   const _BrandMark(size: 64),
                   const SizedBox(height: 28),
-                  const _Eyebrow('CrazeStudio · Private network'),
+                  const _Eyebrow('CrazeStudio \u00b7 Private network'),
                   const SizedBox(height: 8),
                   Text(
                     'Conversations,\nwithout the noise.',
@@ -460,8 +518,13 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     onSubmitted: (_) => submit(),
                   ),
-                  const SizedBox(height: 12),
-                  const SizedBox(height: 20),
+                  if (creating)
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: password,
+                      builder: (context, value, _) =>
+                          _PasswordStrength(password: value.text),
+                    ),
+                  const SizedBox(height: 24),
                   FilledButton(
                     onPressed: busy ? null : submit,
                     style: FilledButton.styleFrom(
@@ -1021,10 +1084,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     final colors = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return loading
+    final Widget content = loading
         ? const Center(child: CircularProgressIndicator(color: _brand))
         : failed && chats.isEmpty
             ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
                   const SizedBox(height: 110),
                   Icon(Icons.cloud_off_rounded,
@@ -1084,6 +1148,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               color: colors.onSurfaceVariant, fontSize: 12),
                         ),
                       ),
+                      if (search.text.isEmpty) ...[
+                        const SizedBox(height: 18),
+                        Center(
+                          child: FilledButton.icon(
+                            onPressed: startChat,
+                            icon: const Icon(Icons.add_comment_outlined),
+                            label: const Text('Start a chat'),
+                          ),
+                        ),
+                      ],
                     ],
                   )
                 : ListView.separated(
@@ -1164,6 +1238,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       );
                     },
                   );
+    // Pull down on the chat list to refresh it.
+    return RefreshIndicator(
+      color: _brand,
+      onRefresh: () => loadChats(silent: true),
+      child: content,
+    );
   }
 
   Widget _buildSettings(BuildContext context) {
@@ -1228,6 +1308,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
+        const _Eyebrow('Security'),
+        const SizedBox(height: 8),
+        _SecurityCard(session: widget.session),
+        const SizedBox(height: 8),
         Card(child: ListTile(
           leading: const Icon(Icons.password_rounded),
           title: const Text('Change password', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -1321,12 +1405,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
-        _SettingsAction(
-          icon: Icons.lock_outline_rounded,
-          title: 'Lock CrazeChat',
-          subtitle: 'Lock the local encryption identity',
-          onTap: () => unawaited(widget.session.lock()),
-        ),
         _SettingsAction(
           icon: Icons.switch_account_outlined,
           title: 'Switch account',
@@ -1464,6 +1542,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 12),
               TextField(controller: next, obscureText: !showNext, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'New password (12+ characters)', suffixIcon: IconButton(onPressed: () => setSheetState(() => showNext = !showNext), icon: Icon(showNext ? Icons.visibility_off : Icons.visibility)))),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: next,
+                builder: (context, value, _) => _PasswordStrength(password: value.text),
+              ),
               const SizedBox(height: 12),
               TextField(controller: confirm, obscureText: !showConfirm, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Confirm new password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showConfirm = !showConfirm), icon: Icon(showConfirm ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 18),
@@ -1541,6 +1623,73 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _SecurityCard extends StatefulWidget {
+  const _SecurityCard({required this.session});
+  final ChatSession session;
+
+  @override
+  State<_SecurityCard> createState() => _SecurityCardState();
+}
+
+class _SecurityCardState extends State<_SecurityCard> {
+  bool? screenSecure;
+
+  @override
+  void initState() {
+    super.initState();
+    SecurityPrefs.screenSecureEnabled().then((value) {
+      if (mounted) setState(() => screenSecure = value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.visibility_off_outlined),
+          title: const Text('Block screenshots'),
+          subtitle: const Text(
+            'Hide chats from screenshots, screen recording and the recent-apps preview',
+          ),
+          value: screenSecure ?? true,
+          activeThumbColor: _brand,
+          onChanged: screenSecure == null
+              ? null
+              : (value) async {
+                  setState(() => screenSecure = value);
+                  await SecurityPrefs.setScreenSecure(value);
+                },
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.lock_outline_rounded),
+          title: const Text(
+            'Lock CrazeChat now',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: const Text(
+            'Remove the unlocked key from memory until you enter your password',
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => unawaited(widget.session.lock()),
+        ),
+        const Divider(height: 1),
+        const ListTile(
+          leading: Icon(Icons.verified_user_outlined),
+          title: Text(
+            'Contact keys',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(
+            'Open a chat and compare the fingerprint with your contact. Sending stays blocked until you verify it.',
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _FindPeopleDialog extends StatefulWidget {
@@ -1685,7 +1834,7 @@ class _FindPeopleDialogState extends State<_FindPeopleDialog> {
                                   child: Text(
                                     query.length < 2
                                         ? 'Enter at least 2 characters to find people.'
-                                        : 'No users found for “$query”.',
+                                        : 'No users found for \u201c$query\u201d.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: colors.onSurfaceVariant,
@@ -1780,7 +1929,7 @@ class _LocalFolderSyncCardState extends State<_LocalFolderSyncCard> {
       final lastSync = service.lastSyncedAt;
       final lastSyncLabel = lastSync == null
           ? null
-          : '${MaterialLocalizations.of(context).formatMediumDate(lastSync)} · '
+          : '${MaterialLocalizations.of(context).formatMediumDate(lastSync)} \u00b7 '
                 '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(lastSync))}';
       return Card(
         child: Padding(
@@ -2971,7 +3120,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: ['❤️', '😂', '😮', '😢', '🙏', '👍']
+                children: ['\u2764\ufe0f', '\ud83d\ude02', '\ud83d\ude2e', '\ud83d\ude22', '\ud83d\ude4f', '\ud83d\udc4d']
                     .map(
                       (emoji) => InkWell(
                         borderRadius: BorderRadius.circular(24),
@@ -3146,6 +3295,42 @@ class _ChatScreenState extends State<ChatScreen> {
                 decoration: const InputDecoration(
                   hintText: 'Search in this conversation',
                   prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+            ),
+          if (!loading && peerId != null && peerKeyStatus != 'verified')
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Material(
+                color: peerKeyStatus == 'changed'
+                    ? colors.errorContainer
+                    : colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(
+                    peerKeyStatus == 'changed'
+                        ? Icons.warning_amber_rounded
+                        : Icons.fingerprint_rounded,
+                    color: peerKeyStatus == 'changed'
+                        ? colors.onErrorContainer
+                        : Colors.orange,
+                  ),
+                  title: Text(
+                    peerKeyStatus == 'changed'
+                        ? 'This contact\u2019s key changed. Verify it before sending.'
+                        : 'Verify ${peerName ?? 'this contact'}\u2019s key to send and receive new messages.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: peerKeyStatus == 'changed'
+                          ? colors.onErrorContainer
+                          : colors.onSurface,
+                    ),
+                  ),
+                  trailing: TextButton(
+                    onPressed: _showPeerVerification,
+                    child: const Text('Verify'),
+                  ),
                 ),
               ),
             ),
@@ -3702,7 +3887,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => send(),
                           decoration: const InputDecoration(
-                            hintText: 'Write something…',
+                            hintText: 'Write something\u2026',
                             prefixIcon: Icon(Icons.edit_note_rounded),
                             contentPadding: EdgeInsets.symmetric(
                               horizontal: 16,
