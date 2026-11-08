@@ -1996,12 +1996,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  static const int _maxMessageWords = 1500;
+  static const int _maxMessageCharacters = 1500;
 
-  int _wordCount(String value) {
-    final trimmed = value.trim();
-    return trimmed.isEmpty ? 0 : trimmed.split(RegExp(r'\s+')).length;
-  }
+  int _characterCount(String value) => value.characters.length;
   Map<String, dynamic>? get peer {
     final members = (widget.chat['members'] as List? ?? const [])
         .whereType<Map>()
@@ -2535,15 +2532,6 @@ class _ChatScreenState extends State<ChatScreen> {
         final id = item['id']?.toString();
         if (id == null) continue;
         try {
-          final decoded = await _decodeMessage(item);
-          if (decoded['messageKind'] == 'text' &&
-              _wordCount(decoded['clearText']?.toString() ?? '') >
-                  _maxMessageWords) {
-            if (mounted) {
-              showMessage(context, 'A queued message exceeds the 1,500-word limit and was not sent.');
-            }
-            continue;
-          }
           final response = await widget.session.api.sendMessage(chatId, {
             'id': id,
             'format': item['format'],
@@ -2603,9 +2591,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final text = input.text.trim();
     if (text.isEmpty || sending || chatKey == null) return;
-    final words = _wordCount(text);
-    if (words > _maxMessageWords) {
-      showMessage(context, 'Messages can contain up to 1,500 words.');
+    final characters = _characterCount(text);
+    if (characters > _maxMessageCharacters) {
+      showMessage(context, 'Messages can contain up to 1,500 characters.');
       return;
     }
     final reply = replyTarget == null
@@ -3501,6 +3489,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           maxLines: 5,
                           textCapitalization: TextCapitalization.sentences,
                           textInputAction: TextInputAction.send,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(_maxMessageCharacters),
+                          ],
                           onSubmitted: (_) => send(),
                           decoration: const InputDecoration(
                             hintText: 'Write something…',
@@ -3522,7 +3513,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           valueListenable: input,
                           builder: (context, value, _) {
                             final tooLong =
-                                _wordCount(value.text) > _maxMessageWords;
+                                _characterCount(value.text) > _maxMessageCharacters;
                             return AnimatedScale(
                               scale: sending ? .94 : 1,
                               duration: const Duration(milliseconds: 140),
@@ -3565,12 +3556,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         ValueListenableBuilder<TextEditingValue>(
                           valueListenable: input,
                           builder: (context, value, _) {
-                            final words = _wordCount(value.text);
+                            final characters = _characterCount(value.text);
                             return Text(
-                              '$words / 1,500 words',
+                              '$characters / 1,500 characters',
                               style: TextStyle(
                                 fontSize: 10,
-                                color: words > _maxMessageWords
+                                color: characters > _maxMessageCharacters
                                     ? colors.error
                                     : colors.onSurfaceVariant,
                                 fontWeight: FontWeight.w600,
