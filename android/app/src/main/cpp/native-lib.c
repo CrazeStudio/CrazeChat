@@ -1,38 +1,47 @@
-#include <jni.h>
 #include <string.h>
 #include <stdlib.h>
+#include <jni.h>
 
-// Simple XOR decryption function for obfuscated keys in the binary
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Simple XOR decryption function
 void xor_cipher(char *data, size_t len, char key) {
     for (size_t i = 0; i < len; i++) {
         data[i] ^= key;
     }
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_crazestudio_crazechat_MainActivity_getNativeKey(JNIEnv *env, jobject thiz) {
-    // Example XOR obfuscated key bytes (derived by applying XOR with key 0x5A)
+// Clean C exported function for direct Dart FFI usage
+__attribute__((visibility("default"))) __attribute__((used))
+const char* get_secret_key() {
+    // Example XOR obfuscated key bytes (derived with XOR key 0x5A)
     // Replace these bytes with your actual XOR-encoded secret key bytes
+    static char decrypted_cache[64];
     char obfuscated_key[] = {0x13, 0x18, 0x07, 0x08, 0x60, 0x13, 0x18, 0x07, 0x08}; 
     char xor_key = 0x5A;
 
     size_t len = sizeof(obfuscated_key) / sizeof(obfuscated_key[0]);
-    
-    // Allocate a temporary buffer to decrypt at runtime
-    char *decrypted = (char *)malloc(len + 1);
-    if (decrypted == NULL) {
-        return (*env)->NewStringUTF(env, "");
+    if (len >= sizeof(decrypted_cache)) {
+        return "";
     }
-    memcpy(decrypted, obfuscated_key, len);
-    decrypted[len] = '\0';
 
-    // Decrypt the string in memory
-    xor_cipher(decrypted, len, xor_key);
+    memcpy(decrypted_cache, obfuscated_key, len);
+    decrypted_cache[len] = '\0';
 
-    jstring result = (*env)->NewStringUTF(env, decrypted);
-    
-    // Free the allocated memory
-    free(decrypted);
+    xor_cipher(decrypted_cache, len, xor_key);
 
-    return result;
+    return decrypted_cache;
 }
+
+// JNI wrapper method for Android Java/Kotlin layer compatibility if needed
+JNIEXPORT jstring JNICALL
+Java_com_crazestudio_crazechat_MainActivity_getNativeKey(JNIEnv *env, jobject thiz) {
+    const char *key = get_secret_key();
+    return (*env)->NewStringUTF(env, key);
+}
+
+#ifdef __cplusplus
+}
+#endif
