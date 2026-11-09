@@ -2142,6 +2142,8 @@ class _ChatScreenState extends State<ChatScreen> {
   // Messages that arrived live (not from history) and still need their
   // one-time entrance animation. History and scrolled-back items never animate.
   final Set<String> _freshIds = <String>{};
+  // Long messages that the reader has expanded with "Read more".
+  final Set<String> _expandedIds = <String>{};
   bool _firstSyncDone = false;
   int _pollTicks = 0;
   SecretKey? chatKey;
@@ -2176,6 +2178,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   static const int _maxMessageWords = 1500;
+  static const int _collapseAfterChars = 600;
 
   int _wordCount(String value) {
     final trimmed = value.trim();
@@ -2196,6 +2199,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     search.addListener(_searchChanged);
     scroll.addListener(_onScroll);
+    composerFocus.addListener(_onComposerFocus);
     // Keep a REST polling fallback active even when the realtime socket is
     // unavailable or silently disconnected by a mobile network/proxy.
     // While the WebSocket is connected it delivers new messages and read
@@ -2227,6 +2231,7 @@ class _ChatScreenState extends State<ChatScreen> {
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
+    composerFocus.removeListener(_onComposerFocus);
     composerFocus.dispose();
     search.removeListener(_searchChanged);
     search.dispose();
@@ -2242,6 +2247,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!scroll.hasClients) return;
     final away = scroll.position.maxScrollExtent - scroll.position.pixels > 320;
     if (_showJump.value != away) _showJump.value = away;
+  }
+
+  // When the keyboard opens the list shrinks; keep the newest message in view
+  // if the reader was already at the bottom.
+  void _onComposerFocus() {
+    if (!composerFocus.hasFocus) return;
+    final wasAtBottom = _isNearBottom();
+    Future<void>.delayed(const Duration(milliseconds: 320), () {
+      if (mounted && wasAtBottom) _scrollToBottom();
+    });
   }
 
   bool _isNearBottom() =>
@@ -2302,6 +2317,165 @@ class _ChatScreenState extends State<ChatScreen> {
         tb > 0 &&
         _sameDay(ta, tb) &&
         (tb - ta).abs() < 5 * 60 * 1000;
+  }
+
+  // Splits text so every occurrence of the search query is highlighted.
+  List<InlineSpan> _highlightSpans(String text, String query, Color highlight) {
+    if (query.isEmpty) return [TextSpan(text: text)];
+    final lower = text.toLowerCase();
+    // Some scripts change length when lower-cased; skip highlighting then.
+    if (lower.length != text.length) return [TextSpan(text: text)];
+    final spans = <InlineSpan>[];
+    var start = 0;
+    while (true) {
+      final index = lower.indexOf(query, start);
+      if (index < 0) break;
+      if (index > start) spans.add(TextSpan(text: text.substring(start, index)));
+      spans.add(
+        TextSpan(
+          text: text.substring(index, index + query.length),
+          style: TextStyle(
+            backgroundColor: highlight,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+      start = index + query.length;
+    }
+    if (start < text.length) spans.add(TextSpan(text: text.substring(start)));
+    return spans;
+  }
+
+  Future<void> _showContactInfo() async {
+    final fingerprint = peerFingerprint;
+    final status = peerKeyStatus;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        final verified = status == 'verified';
+        final changed = status == 'changed';
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    _ProfileAvatar(
+                      username: peerName ?? 'contact',
+                      userId: peerId,
+                      photoUrl: peer?['photoUrl']?.toString(),
+                      size: 56,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '@${peerName ?? 'contact'}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                verified
+                                    ? Icons.verified_user_rounded
+                                    : changed
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.shield_outlined,
+                                size: 15,
+                                color: verified
+                                    ? colors.primary
+                                    : changed
+                                    ? colors.error
+                                    : Colors.orange,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                verified
+                                    ? 'Key verified on this device'
+                                    : changed
+                                    ? 'Key changed since you verified it'
+                                    : 'Key not verified yet',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (fingerprint != null) ...[
+                  const SizedBox(height: 18),
+                  const _Eyebrow('Key fingerprint'),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SelectableText(
+                      fingerprint,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    if (fingerprint != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: fingerprint),
+                            );
+                            if (sheetContext.mounted) Navigator.pop(sheetContext);
+                            if (mounted) showMessage(context, 'Fingerprint copied.');
+                          },
+                          icon: const Icon(Icons.copy_rounded, size: 18),
+                          label: const Text('Copy'),
+                        ),
+                      ),
+                    if (fingerprint != null && !verified) const SizedBox(width: 10),
+                    if (!verified)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _showPeerVerification();
+                          },
+                          icon: const Icon(Icons.fingerprint_rounded, size: 18),
+                          label: const Text('Verify key'),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> prepare() async {
@@ -3250,46 +3424,50 @@ class _ChatScreenState extends State<ChatScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         titleSpacing: 0,
-        title: Row(
-          children: [
-            _ProfileAvatar(username: peerName ?? 'contact', userId: peerId, photoUrl: peer?['photoUrl']?.toString(), size: 40),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    peerName ?? 'Conversation',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+        title: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _showContactInfo,
+          child: Row(
+            children: [
+              _ProfileAvatar(username: peerName ?? 'contact', userId: peerId, photoUrl: peer?['photoUrl']?.toString(), size: 40),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      peerName ?? 'Conversation',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  Row(
-                    children: [
-                      Icon(
-                        peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
-                        size: 12,
-                        color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        peerKeyStatus == 'verified'
-                            ? 'Contact key verified'
-                            : peerKeyStatus == 'changed'
-                                ? 'Contact key changed'
-                                : 'Verify contact key',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: peerKeyStatus == 'verified' ? colors.onSurfaceVariant : Colors.orange,
+                    Row(
+                      children: [
+                        Icon(
+                          peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
+                          size: 12,
+                          color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 4),
+                        Text(
+                          peerKeyStatus == 'verified'
+                              ? 'Contact key verified'
+                              : peerKeyStatus == 'changed'
+                                  ? 'Contact key changed'
+                                  : 'Verify contact key',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: peerKeyStatus == 'verified' ? colors.onSurfaceVariant : Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           IconButton(
@@ -3316,13 +3494,32 @@ class _ChatScreenState extends State<ChatScreen> {
           if (searchOpen)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search in this conversation',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: search,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Search in this conversation',
+                      prefixIcon: Icon(Icons.search_rounded),
+                    ),
+                  ),
+                  if (searchQuery.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 6),
+                      child: Text(
+                        visible.length == 1
+                            ? '1 message found'
+                            : '${visible.length} messages found',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           if (!loading && peerId != null && peerKeyStatus != 'verified')
@@ -3430,9 +3627,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           const _BrandMark(size: 52),
                           const SizedBox(height: 14),
                           Text(
-                            search.text.isEmpty
-                                ? 'This channel is yours.'
+                            searchQuery.isEmpty
+                                ? 'Say hello to ${peerName ?? 'your contact'}'
                                 : 'No matching messages.',
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -3454,6 +3652,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 : ListView.builder(
                     key: const PageStorageKey<String>('chat-message-list'),
                     controller: scroll,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
                     itemCount: items.length,
                     itemBuilder: (context, index) {
@@ -3483,6 +3683,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       }
                       final messageIndex = item as int;
                       final message = visible[messageIndex];
+                      final messageId = message['id']?.toString();
                       final previous =
                           messageIndex > 0 ? visible[messageIndex - 1] : null;
                       final following = messageIndex + 1 < visible.length
@@ -3546,6 +3747,15 @@ class _ChatScreenState extends State<ChatScreen> {
                           : state == 'delivered'
                           ? 'Delivered'
                           : 'Sent';
+                      final fullText = message['clearText']?.toString() ?? '';
+                      final collapsed =
+                          fullText.length > _collapseAfterChars &&
+                          searchQuery.isEmpty &&
+                          !(messageId != null &&
+                              _expandedIds.contains(messageId));
+                      final shownText = collapsed
+                          ? '${fullText.substring(0, _collapseAfterChars).trimRight()}\u2026'
+                          : fullText;
                       final meta = Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -3558,18 +3768,28 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           if (mine && state.isNotEmpty) ...[
                             const SizedBox(width: 3),
-                            Semantics(
-                              label: stateLabel,
-                              child: Icon(
-                                state == 'queued'
-                                    ? Icons.schedule_rounded
-                                    : (state == 'read' || state == 'delivered')
-                                    ? Icons.done_all_rounded
-                                    : Icons.check_rounded,
-                                size: 14,
-                                color: state == 'read'
-                                    ? colors.primary
-                                    : colors.onSurfaceVariant,
+                            // Tapping the clock on a waiting message retries now.
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: state == 'queued'
+                                  ? () {
+                                      showMessage(context, 'Retrying\u2026');
+                                      unawaited(_retryPendingMessages());
+                                    }
+                                  : null,
+                              child: Semantics(
+                                label: stateLabel,
+                                child: Icon(
+                                  state == 'queued'
+                                      ? Icons.schedule_rounded
+                                      : (state == 'read' || state == 'delivered')
+                                      ? Icons.done_all_rounded
+                                      : Icons.check_rounded,
+                                  size: 14,
+                                  color: state == 'read'
+                                      ? colors.primary
+                                      : colors.onSurfaceVariant,
+                                ),
                               ),
                             ),
                           ],
@@ -3648,8 +3868,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               children: [
                                 Text.rich(
                                   TextSpan(
-                                    text: message['clearText']?.toString() ?? '',
                                     children: [
+                                      ..._highlightSpans(
+                                        shownText,
+                                        searchQuery,
+                                        colors.primary.withValues(alpha: .28),
+                                      ),
                                       WidgetSpan(
                                         child: SizedBox(
                                           width: mine ? 62 : 40,
@@ -3667,6 +3891,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                 Positioned(right: 0, bottom: 0, child: meta),
                               ],
                             ),
+                            if (collapsed && messageId != null)
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () =>
+                                    setState(() => _expandedIds.add(messageId)),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Read more',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: colors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       );
@@ -3770,7 +4011,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                       );
-                      final messageId = message['id']?.toString();
                       // Only a message that just arrived plays the entrance
                       // animation, once. History and items scrolled back into
                       // view are built plain, so scrolling stays smooth.
