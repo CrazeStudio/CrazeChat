@@ -161,22 +161,44 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val localSyncChannel = "com.crazestudio.crazechat/local_sync"
+    private val securityChannel = "com.crazestudio.crazechat/security"
     private val folderRequestCode = 7821
     private var pendingFolderResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Block screenshots and the recent-apps preview from the very first
+        // frame; the in-app setting can turn this off after startup.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         createCrazeChatNotificationChannels()
         super.onCreate(savedInstanceState)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, securityChannel)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setSecure" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        runOnUiThread {
+                            if (enabled) {
+                                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            } else {
+                                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            }
+                        }
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, localSyncChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -450,6 +472,104 @@ s = manifest.read_text()
 s = s.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/ic_crazechat"')
 s = s.replace('android:label="crazechat"', 'android:label="CrazeChat"')
 manifest.write_text(s)
+PY
+
+# Native library that stores the API origin and shared key XOR-masked.
+# The values default to empty here; CI overwrites config.h with real ones
+# (tool/gen_native_config.py) before a release build.
+python3 - <<'PY'
+from pathlib import Path
+
+cpp = Path("android/app/src/main/cpp")
+cpp.mkdir(parents=True, exist_ok=True)
+
+(cpp / "CMakeLists.txt").write_text("""cmake_minimum_required(VERSION 3.13)
+project(crazecfg C)
+add_library(crazecfg SHARED crazecfg.c)
+target_link_options(crazecfg PRIVATE -Wl,-z,max-page-size=16384)
+""")
+
+(cpp / "crazecfg.c").write_text("""#include <stddef.h>
+#include "config.h"
+
+#define CC_EXPORT __attribute__((visibility("default")))
+
+static char url_buf[CC_URL_LEN + 1];
+static char key_buf[CC_KEY_LEN + 1];
+static int decoded = 0;
+
+static void decode_all(void) {
+    if (decoded) return;
+    for (size_t i = 0; i < CC_URL_LEN; i++) {
+        url_buf[i] = (char)(cc_url_enc[i] ^ cc_mask[i % CC_MASK_LEN]);
+    }
+    url_buf[CC_URL_LEN] = 0;
+    for (size_t i = 0; i < CC_KEY_LEN; i++) {
+        key_buf[i] = (char)(cc_key_enc[i] ^ cc_mask[(i + 7) % CC_MASK_LEN]);
+    }
+    key_buf[CC_KEY_LEN] = 0;
+    decoded = 1;
+}
+
+CC_EXPORT const char *cc_url(void) {
+    decode_all();
+    return url_buf;
+}
+
+CC_EXPORT const char *cc_key(void) {
+    decode_all();
+    return key_buf;
+}
+""")
+
+config = cpp / "config.h"
+if not config.exists():
+    config.write_text("""/* Default empty config: the app falls back to --dart-define values. */
+#define CC_MASK_LEN 16
+#define CC_URL_LEN 0
+#define CC_KEY_LEN 0
+static const unsigned char cc_mask[CC_MASK_LEN] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+static const unsigned char cc_url_enc[CC_URL_LEN + 1] = {0};
+static const unsigned char cc_key_enc[CC_KEY_LEN + 1] = {0};
+""")
+
+gradle = Path("android/app/build.gradle.kts")
+if gradle.exists():
+    source = gradle.read_text()
+    marker = "    defaultConfig {"
+    if "externalNativeBuild" not in source and marker in source:
+        block = '''    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("CRAZECHAT_KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("CRAZECHAT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CRAZECHAT_KEY_ALIAS")
+                keyPassword = System.getenv("CRAZECHAT_KEY_PASSWORD")
+            }
+        }
+    }
+
+'''
+        source = source.replace(marker, block + marker, 1)
+    else:
+        print("WARNING: could not add native build block to build.gradle.kts")
+    needle = 'signingConfig = signingConfigs.getByName("debug")'
+    if needle in source:
+        source = source.replace(
+            needle,
+            'signingConfig = if (System.getenv("CRAZECHAT_KEYSTORE_PATH") != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")',
+            1,
+        )
+    else:
+        print("WARNING: release signing line not found; keeping default signing")
+    gradle.write_text(source)
 PY
 
 echo "CrazeChat Android project is ready."

@@ -5,6 +5,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'native_config.dart';
+
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode, this.code});
   final String message;
@@ -19,8 +21,8 @@ class ApiException implements Exception {
 /// short-lived JWT separately in Authorization.
 class CrazeChatApi {
   CrazeChatApi({this.token, String? baseUrl, String? sharedKey})
-      : _baseUrl = baseUrl ?? apiUrl,
-        _sharedKey = sharedKey ?? apiKey;
+      : _baseUrl = baseUrl ?? NativeConfig.url,
+        _sharedKey = sharedKey ?? NativeConfig.key;
 
   static const apiUrl = String.fromEnvironment('BURL');
   static const apiKey = String.fromEnvironment('KEY');

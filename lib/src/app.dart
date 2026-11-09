@@ -12,6 +12,7 @@ import 'session.dart';
 import 'profile_photo.dart';
 import 'push_notifications.dart';
 import 'local_folder_sync.dart';
+import 'security_prefs.dart';
 import 'sound_effects.dart';
 
 const _brand = Color(0xFF087E65);
@@ -31,6 +32,7 @@ class _CrazeChatAppState extends State<CrazeChatApp> {
     super.initState();
     session.addListener(_syncPushRegistration);
     unawaited(CrazeChatSoundEffects.initialize());
+    unawaited(SecurityPrefs.applyStoredScreenSecure());
     session.restore();
   }
 
@@ -294,6 +296,62 @@ class _Eyebrow extends StatelessWidget {
   );
 }
 
+// Live strength hint shown while creating an account. The password also
+// protects the private encryption key, so length matters more than symbols.
+class _PasswordStrength extends StatelessWidget {
+  const _PasswordStrength({required this.password});
+  final String password;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    var score = 0;
+    if (password.length >= 12) score++;
+    if (password.length >= 16) score++;
+    if (RegExp(r'[a-z]').hasMatch(password) &&
+        RegExp(r'[A-Z]').hasMatch(password)) {
+      score++;
+    }
+    if (RegExp(r'\d').hasMatch(password) &&
+        RegExp(r'[^A-Za-z0-9]').hasMatch(password)) {
+      score++;
+    }
+    final tooShort = password.length < 12;
+    const labels = ['Too short', 'Weak', 'Okay', 'Strong', 'Very strong'];
+    final label = tooShort ? labels[0] : labels[score.clamp(1, 4)];
+    final fraction = password.isEmpty ? 0.0 : (tooShort ? .15 : score / 4);
+    final color = tooShort
+        ? colors.error
+        : score >= 3
+        ? _brand
+        : const Color(0xFFD9822B);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, left: 4, right: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: fraction,
+              minHeight: 5,
+              color: color,
+              backgroundColor: colors.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            password.isEmpty
+                ? 'Use 12+ characters. This password also protects your encryption key.'
+                : '$label \u00b7 12+ characters; a long passphrase works best.',
+            style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key, required this.session});
   final ChatSession session;
@@ -316,7 +374,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final name = username.text.trim();
     final pass = password.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
-      showMessage(context, 'Username: 3–20 letters, numbers, or underscores.');
+      showMessage(context, 'Username: 3\u201320 letters, numbers, or underscores.');
       return;
     }
     if (creating && pass.length < 12) {
@@ -380,7 +438,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 children: [
                   const _BrandMark(size: 64),
                   const SizedBox(height: 28),
-                  const _Eyebrow('CrazeStudio · Private network'),
+                  const _Eyebrow('CrazeStudio \u00b7 Private network'),
                   const SizedBox(height: 8),
                   Text(
                     'Conversations,\nwithout the noise.',
@@ -460,8 +518,13 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     onSubmitted: (_) => submit(),
                   ),
-                  const SizedBox(height: 12),
-                  const SizedBox(height: 20),
+                  if (creating)
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: password,
+                      builder: (context, value, _) =>
+                          _PasswordStrength(password: value.text),
+                    ),
+                  const SizedBox(height: 24),
                   FilledButton(
                     onPressed: busy ? null : submit,
                     style: FilledButton.styleFrom(
@@ -622,54 +685,6 @@ class _UnlockScreenState extends State<UnlockScreen> {
   );
 }
 
-class _CrazeBottomItem extends StatelessWidget {
-  const _CrazeBottomItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final accent = Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFF9BE8C5)
-        : const Color(0xFF398F70);
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 21,
-              color: selected ? accent : colors.onSurfaceVariant,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? accent : colors.onSurfaceVariant,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.session});
   final ChatSession session;
@@ -684,6 +699,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool loading = true, failed = false, syncingChats = false;
   bool refreshingChats = false;
   int page = 0;
+  // Bumped after returning from a chat so each tile re-reads its contact's
+  // key status (the user may have verified it inside the chat).
+  int _tileEpoch = 0;
 
   @override
   void initState() {
@@ -802,7 +820,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         },
       ),
     );
-    if (mounted) loadChats(silent: true);
+    if (mounted) {
+      setState(() => _tileEpoch++);
+      loadChats(silent: true);
+    }
   }
 
   Future<void> _openNotificationChat(String chatId) async {
@@ -834,181 +855,158 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: colors.surface,
+      floatingActionButton: isInbox && !loading
+          ? FloatingActionButton.extended(
+              onPressed: startChat,
+              icon: const Icon(Icons.add_comment_outlined),
+              label: const Text('New chat'),
+            )
+          : null,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: page,
+        onDestinationSelected: (value) => setState(() => page = value),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline_rounded),
+            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            label: 'Chats',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+        ],
+      ),
       body: SafeArea(
+        bottom: false,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 22, 18, 15),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'CrazeChat',
-                            style: TextStyle(
-                              color: colors.onSurface,
-                              fontSize: 27,
-                              fontWeight: FontWeight.w900,
-                              fontStyle: FontStyle.italic,
-                              letterSpacing: -1.1,
-                            ),
-                          ),
-                        ),
-                        if (isInbox) ...[
-                          IconButton(
-                            tooltip: 'Refresh conversations',
-                            onPressed: refreshingChats
-                                ? null
-                                : () => loadChats(silent: true),
-                            icon: refreshingChats
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.refresh_rounded),
-                          ),
-                          IconButton(
-                            tooltip: 'New chat',
-                            onPressed: startChat,
-                            icon: const Icon(Icons.add_comment_outlined),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (isInbox)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                      child: TextField(
-                        controller: search,
-                        readOnly: true,
-                        onTap: startChat,
-                        decoration: InputDecoration(
-                          hintText: 'Search people',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 21),
-                          filled: true,
-                          fillColor: dark
-                              ? const Color(0xFF252D33)
-                              : const Color(0xFFF2F4F6),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 13,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
-                            borderSide: const BorderSide(color: _brand, width: 1.2),
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 14),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 16, 12),
+                  child: Row(
+                    children: [
+                      const _BrandMark(size: 34),
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Text(
-                          'Settings',
+                          'CrazeChat',
                           style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            color: colors.onSurface,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            fontStyle: FontStyle.italic,
+                            letterSpacing: -1,
                           ),
                         ),
                       ),
-                    ),
+                      if (refreshingChats)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 12),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      Semantics(
+                        button: true,
+                        label: 'Open settings',
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => setState(() => page = 1),
+                          child: _ProfileAvatar(
+                            username: widget.session.username ?? 'user',
+                            userId: widget.session.userId,
+                            photoUrl: widget.session.photoUrl,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isInbox)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Divider(
-                      height: 1,
-                      thickness: 1.2,
-                      color: colors.outlineVariant.withValues(alpha: .65),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                    child: TextField(
+                      controller: search,
+                      textInputAction: TextInputAction.search,
+                      autocorrect: false,
+                      decoration: InputDecoration(
+                        hintText: 'Search chats',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 21),
+                        suffixIcon: search.text.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Clear search',
+                                onPressed: search.clear,
+                                icon: const Icon(Icons.close_rounded, size: 20),
+                              ),
+                        filled: true,
+                        fillColor: dark
+                            ? const Color(0xFF252D33)
+                            : const Color(0xFFE9EFEC),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 13,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: const BorderSide(color: _brand, width: 1.2),
+                        ),
+                      ),
                     ),
                   ),
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      reverseDuration: const Duration(milliseconds: 180),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      transitionBuilder: (child, animation) {
-                        final slide = Tween<Offset>(
-                          begin: const Offset(0.02, 0),
-                          end: Offset.zero,
-                        ).animate(animation);
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(position: slide, child: child),
-                        );
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    reverseDuration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final slide = Tween<Offset>(
+                        begin: const Offset(0.02, 0),
+                        end: Offset.zero,
+                      ).animate(animation);
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(position: slide, child: child),
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey<int>(page),
+                      child: switch (page) {
+                        0 => _buildInbox(
+                            context,
+                            chats.where((chat) {
+                              final name = _peer(chat)?['username']
+                                      ?.toString()
+                                      .toLowerCase() ??
+                                  '';
+                              return name.contains(
+                                search.text.trim().toLowerCase(),
+                              );
+                            }).toList(),
+                          ),
+                        _ => _buildSettings(context),
                       },
-                      child: KeyedSubtree(
-                        key: ValueKey<int>(page),
-                        child: switch (page) {
-                          0 => _buildInbox(
-                              context,
-                              chats.where((chat) {
-                                final name = _peer(chat)?['username']
-                                        ?.toString()
-                                        .toLowerCase() ??
-                                    '';
-                                return name.contains(
-                                  search.text.trim().toLowerCase(),
-                                );
-                              }).toList(),
-                            ),
-                          _ => _buildSettings(context),
-                        },
-                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                    child: Divider(
-                      height: 1,
-                      thickness: 1.2,
-                      color: colors.outlineVariant.withValues(alpha: .65),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _CrazeBottomItem(
-                            icon: Icons.chat_bubble_rounded,
-                            label: 'Chats',
-                            selected: page == 0,
-                            onTap: () => setState(() => page = 0),
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 34,
-                          color: colors.outlineVariant.withValues(alpha: .7),
-                        ),
-                        Expanded(
-                          child: _CrazeBottomItem(
-                            icon: Icons.settings_rounded,
-                            label: 'Settings',
-                            selected: page == 1,
-                            onTap: () => setState(() => page = 1),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1020,11 +1018,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<Map<String, dynamic>> filtered,
   ) {
     final colors = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return loading
+    final Widget content = loading
         ? const Center(child: CircularProgressIndicator(color: _brand))
         : failed && chats.isEmpty
             ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
                   const SizedBox(height: 110),
                   Icon(Icons.cloud_off_rounded,
@@ -1078,98 +1076,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: Text(
                           search.text.isEmpty
                               ? 'Start a private conversation with someone.'
-                              : 'Try another name or username.',
+                              : 'Try another name, or find someone new.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               color: colors.onSurfaceVariant, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Center(
+                        child: FilledButton.icon(
+                          onPressed: startChat,
+                          icon: Icon(
+                            search.text.isEmpty
+                                ? Icons.add_comment_outlined
+                                : Icons.person_search_rounded,
+                          ),
+                          label: Text(
+                            search.text.isEmpty
+                                ? 'Start a chat'
+                                : 'Find new people',
+                          ),
                         ),
                       ),
                     ],
                   )
                 : ListView.separated(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
                     itemCount: filtered.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final chat = filtered[index];
                       final peer = _peer(chat);
-                      final name =
-                          peer?['username']?.toString() ?? 'Unknown user';
-                      return Material(
-                        color: dark
-                            ? const Color(0xFF252D33)
-                            : const Color(0xFFF3F5F7),
-                        borderRadius: BorderRadius.circular(16),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () => openChat(chat),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 13,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: dark
-                                    ? const Color(0xFF8B969C).withValues(alpha: .75)
-                                    : const Color(0xFFE7EAEC),
-                                width: .8,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                _ProfileAvatar(username: name, userId: peer?['id']?.toString(), photoUrl: peer?['photoUrl']?.toString(), size: 46),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: colors.onSurface,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'End-to-end encrypted',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: colors.onSurfaceVariant,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: colors.onSurfaceVariant,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      return _ChatTile(
+                        key: ValueKey('${chat['id']}#$_tileEpoch'),
+                        session: widget.session,
+                        name: peer?['username']?.toString() ?? 'Unknown user',
+                        peer: peer,
+                        onTap: () => openChat(chat),
                       );
                     },
                   );
+    // Pull down on the chat list to refresh it.
+    return RefreshIndicator(
+      color: _brand,
+      onRefresh: () => loadChats(silent: true),
+      child: content,
+    );
   }
 
   Widget _buildSettings(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
         const _Eyebrow('Your account'),
         const SizedBox(height: 8),
@@ -1228,6 +1187,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
+        const _Eyebrow('Security'),
+        const SizedBox(height: 8),
+        _SecurityCard(session: widget.session),
+        const SizedBox(height: 8),
         Card(child: ListTile(
           leading: const Icon(Icons.password_rounded),
           title: const Text('Change password', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -1321,12 +1284,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
-        _SettingsAction(
-          icon: Icons.lock_outline_rounded,
-          title: 'Lock CrazeChat',
-          subtitle: 'Lock the local encryption identity',
-          onTap: () => unawaited(widget.session.lock()),
-        ),
         _SettingsAction(
           icon: Icons.switch_account_outlined,
           title: 'Switch account',
@@ -1464,6 +1421,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 12),
               TextField(controller: next, obscureText: !showNext, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'New password (12+ characters)', suffixIcon: IconButton(onPressed: () => setSheetState(() => showNext = !showNext), icon: Icon(showNext ? Icons.visibility_off : Icons.visibility)))),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: next,
+                builder: (context, value, _) => _PasswordStrength(password: value.text),
+              ),
               const SizedBox(height: 12),
               TextField(controller: confirm, obscureText: !showConfirm, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Confirm new password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showConfirm = !showConfirm), icon: Icon(showConfirm ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 18),
@@ -1541,6 +1502,221 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+// One row of the chat list. It reads this contact's key-verification status
+// once, so the list shows at a glance which conversations are verified.
+class _ChatTile extends StatefulWidget {
+  const _ChatTile({
+    super.key,
+    required this.session,
+    required this.name,
+    required this.peer,
+    required this.onTap,
+  });
+  final ChatSession session;
+  final String name;
+  final Map<String, dynamic>? peer;
+  final VoidCallback onTap;
+
+  @override
+  State<_ChatTile> createState() => _ChatTileState();
+}
+
+class _ChatTileState extends State<_ChatTile> {
+  String keyStatus = 'unverified';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadStatus());
+  }
+
+  Future<void> _loadStatus() async {
+    final id = widget.peer?['id']?.toString();
+    final key = widget.peer?['publicKey']?.toString();
+    if (id == null || key == null || key.isEmpty) return;
+    try {
+      final status = await widget.session.contactKeyStatus(
+        contactId: id,
+        publicKey: key,
+      );
+      if (mounted && status != keyStatus) setState(() => keyStatus = status);
+    } catch (_) {
+      // Keep the neutral "unverified" presentation.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final verified = keyStatus == 'verified';
+    final changed = keyStatus == 'changed';
+    final badgeColor = verified
+        ? colors.primary
+        : changed
+        ? colors.error
+        : const Color(0xFFD9822B);
+    final subtitle = verified
+        ? 'Verified \u00b7 end-to-end encrypted'
+        : changed
+        ? 'Key changed \u00b7 verify before sending'
+        : 'End-to-end encrypted \u00b7 verify key';
+    return Material(
+      color: dark ? const Color(0xFF1A2925) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: dark ? const Color(0xFF2E4840) : const Color(0xFFE2EAE6),
+            ),
+          ),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _ProfileAvatar(
+                    username: widget.name,
+                    userId: widget.peer?['id']?.toString(),
+                    photoUrl: widget.peer?['photoUrl']?.toString(),
+                    size: 48,
+                  ),
+                  Positioned(
+                    right: -3,
+                    bottom: -3,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: dark ? const Color(0xFF1A2925) : Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        verified
+                            ? Icons.verified_user_rounded
+                            : changed
+                            ? Icons.warning_amber_rounded
+                            : Icons.shield_outlined,
+                        size: 15,
+                        color: badgeColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: changed ? colors.error : colors.onSurfaceVariant,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colors.onSurfaceVariant,
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SecurityCard extends StatefulWidget {
+  const _SecurityCard({required this.session});
+  final ChatSession session;
+
+  @override
+  State<_SecurityCard> createState() => _SecurityCardState();
+}
+
+class _SecurityCardState extends State<_SecurityCard> {
+  bool? screenSecure;
+
+  @override
+  void initState() {
+    super.initState();
+    SecurityPrefs.screenSecureEnabled().then((value) {
+      if (mounted) setState(() => screenSecure = value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.visibility_off_outlined),
+          title: const Text('Block screenshots'),
+          subtitle: const Text(
+            'Hide chats from screenshots, screen recording and the recent-apps preview',
+          ),
+          value: screenSecure ?? true,
+          activeThumbColor: _brand,
+          onChanged: screenSecure == null
+              ? null
+              : (value) async {
+                  setState(() => screenSecure = value);
+                  await SecurityPrefs.setScreenSecure(value);
+                },
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.lock_outline_rounded),
+          title: const Text(
+            'Lock CrazeChat now',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: const Text(
+            'Remove the unlocked key from memory until you enter your password',
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => unawaited(widget.session.lock()),
+        ),
+        const Divider(height: 1),
+        const ListTile(
+          leading: Icon(Icons.verified_user_outlined),
+          title: Text(
+            'Contact keys',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(
+            'Open a chat and compare the fingerprint with your contact. Sending stays blocked until you verify it.',
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _FindPeopleDialog extends StatefulWidget {
@@ -1685,7 +1861,7 @@ class _FindPeopleDialogState extends State<_FindPeopleDialog> {
                                   child: Text(
                                     query.length < 2
                                         ? 'Enter at least 2 characters to find people.'
-                                        : 'No users found for “$query”.',
+                                        : 'No users found for \u201c$query\u201d.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: colors.onSurfaceVariant,
@@ -1780,7 +1956,7 @@ class _LocalFolderSyncCardState extends State<_LocalFolderSyncCard> {
       final lastSync = service.lastSyncedAt;
       final lastSyncLabel = lastSync == null
           ? null
-          : '${MaterialLocalizations.of(context).formatMediumDate(lastSync)} · '
+          : '${MaterialLocalizations.of(context).formatMediumDate(lastSync)} \u00b7 '
                 '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(lastSync))}';
       return Card(
         child: Padding(
@@ -1958,11 +2134,16 @@ class _ChatScreenState extends State<ChatScreen> {
   final composerFocus = FocusNode();
   final scroll = ScrollController();
   final search = TextEditingController();
+  // True while the user has scrolled away from the newest message; drives the
+  // floating "jump to latest" button without rebuilding the message list.
+  final ValueNotifier<bool> _showJump = ValueNotifier<bool>(false);
   List<Map<String, dynamic>> messages = [];
   final Set<String> messageIds = <String>{};
   // Messages that arrived live (not from history) and still need their
   // one-time entrance animation. History and scrolled-back items never animate.
   final Set<String> _freshIds = <String>{};
+  // Long messages that the reader has expanded with "Read more".
+  final Set<String> _expandedIds = <String>{};
   bool _firstSyncDone = false;
   int _pollTicks = 0;
   SecretKey? chatKey;
@@ -1997,6 +2178,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   static const int _maxMessageCharacters = 1500;
+  static const int _collapseAfterChars = 600;
 
   int _characterCount(String value) => value.characters.length;
   Map<String, dynamic>? get peer {
@@ -2013,6 +2195,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     search.addListener(_searchChanged);
+    scroll.addListener(_onScroll);
+    composerFocus.addListener(_onComposerFocus);
     // Keep a REST polling fallback active even when the realtime socket is
     // unavailable or silently disconnected by a mobile network/proxy.
     // While the WebSocket is connected it delivers new messages and read
@@ -2044,14 +2228,252 @@ class _ChatScreenState extends State<ChatScreen> {
     realtimeSubscription?.cancel();
     realtime?.close();
     input.dispose();
+    composerFocus.removeListener(_onComposerFocus);
     composerFocus.dispose();
     search.removeListener(_searchChanged);
     search.dispose();
+    scroll.removeListener(_onScroll);
     scroll.dispose();
+    _showJump.dispose();
     super.dispose();
   }
 
   void _searchChanged() => setState(() {});
+
+  void _onScroll() {
+    if (!scroll.hasClients) return;
+    final away = scroll.position.maxScrollExtent - scroll.position.pixels > 320;
+    if (_showJump.value != away) _showJump.value = away;
+  }
+
+  // When the keyboard opens the list shrinks; keep the newest message in view
+  // if the reader was already at the bottom.
+  void _onComposerFocus() {
+    if (!composerFocus.hasFocus) return;
+    final wasAtBottom = _isNearBottom();
+    Future<void>.delayed(const Duration(milliseconds: 320), () {
+      if (mounted && wasAtBottom) _scrollToBottom();
+    });
+  }
+
+  bool _isNearBottom() =>
+      !scroll.hasClients ||
+      scroll.position.maxScrollExtent - scroll.position.pixels < 240;
+
+  // Open a conversation on its newest message instead of the oldest one.
+  // Item heights are measured lazily, so settle once more on the next frame.
+  void _jumpToBottomSoon() {
+    void jump() {
+      if (scroll.hasClients) scroll.jumpTo(scroll.position.maxScrollExtent);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      jump();
+      WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+    });
+  }
+
+  bool _sameDay(int a, int b) {
+    final x = DateTime.fromMillisecondsSinceEpoch(a);
+    final y = DateTime.fromMillisecondsSinceEpoch(b);
+    return x.year == y.year && x.month == y.month && x.day == y.day;
+  }
+
+  String _dayLabel(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    final difference = today.difference(day).inDays;
+    if (difference == 0) return 'Today';
+    if (difference == 1) return 'Yesterday';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final suffix = date.year == now.year ? '' : ', ${date.year}';
+    return '${months[date.month - 1]} ${date.day}$suffix';
+  }
+
+  // Consecutive messages from the same sender within five minutes form one
+  // visual group: tighter spacing and joined corners.
+  bool _groupsWith(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final ta = _time(a), tb = _time(b);
+    return a['senderId'] == b['senderId'] &&
+        ta > 0 &&
+        tb > 0 &&
+        _sameDay(ta, tb) &&
+        (tb - ta).abs() < 5 * 60 * 1000;
+  }
+
+  // Splits text so every occurrence of the search query is highlighted.
+  List<InlineSpan> _highlightSpans(String text, String query, Color highlight) {
+    if (query.isEmpty) return [TextSpan(text: text)];
+    final lower = text.toLowerCase();
+    // Some scripts change length when lower-cased; skip highlighting then.
+    if (lower.length != text.length) return [TextSpan(text: text)];
+    final spans = <InlineSpan>[];
+    var start = 0;
+    while (true) {
+      final index = lower.indexOf(query, start);
+      if (index < 0) break;
+      if (index > start) spans.add(TextSpan(text: text.substring(start, index)));
+      spans.add(
+        TextSpan(
+          text: text.substring(index, index + query.length),
+          style: TextStyle(
+            backgroundColor: highlight,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+      start = index + query.length;
+    }
+    if (start < text.length) spans.add(TextSpan(text: text.substring(start)));
+    return spans;
+  }
+
+  Future<void> _showContactInfo() async {
+    final fingerprint = peerFingerprint;
+    final status = peerKeyStatus;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        final verified = status == 'verified';
+        final changed = status == 'changed';
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    _ProfileAvatar(
+                      username: peerName ?? 'contact',
+                      userId: peerId,
+                      photoUrl: peer?['photoUrl']?.toString(),
+                      size: 56,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '@${peerName ?? 'contact'}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                verified
+                                    ? Icons.verified_user_rounded
+                                    : changed
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.shield_outlined,
+                                size: 15,
+                                color: verified
+                                    ? colors.primary
+                                    : changed
+                                    ? colors.error
+                                    : Colors.orange,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                verified
+                                    ? 'Key verified on this device'
+                                    : changed
+                                    ? 'Key changed since you verified it'
+                                    : 'Key not verified yet',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (fingerprint != null) ...[
+                  const SizedBox(height: 18),
+                  const _Eyebrow('Key fingerprint'),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SelectableText(
+                      fingerprint,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    if (fingerprint != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: fingerprint),
+                            );
+                            if (sheetContext.mounted) Navigator.pop(sheetContext);
+                            if (mounted) showMessage(context, 'Fingerprint copied.');
+                          },
+                          icon: const Icon(Icons.copy_rounded, size: 18),
+                          label: const Text('Copy'),
+                        ),
+                      ),
+                    if (fingerprint != null && !verified) const SizedBox(width: 10),
+                    if (!verified)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _showPeerVerification();
+                          },
+                          icon: const Icon(Icons.fingerprint_rounded, size: 18),
+                          label: const Text('Verify key'),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> prepare() async {
     final other = peer;
@@ -2088,7 +2510,10 @@ class _ChatScreenState extends State<ChatScreen> {
         await _addLocalMessage(message);
       }
       messages.sort((a, b) => _time(a).compareTo(_time(b)));
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+        _jumpToBottomSoon();
+      }
       // Do not fetch or decrypt remote messages until this contact's public
       // key has been independently verified. Local encrypted history remains
       // available while the user checks the fingerprint.
@@ -2328,11 +2753,20 @@ class _ChatScreenState extends State<ChatScreen> {
       _freshIds.add(id);
       _advanceServerMessageCursor(message['createdAt']);
       if (mounted) {
+        // Only follow new messages when the reader is already at the bottom;
+        // otherwise leave their scroll position alone and offer a jump button.
+        final followNewest = _isNearBottom();
         setState(() {
           _applyDecodedMessage(decoded);
           messages.sort((a, b) => _time(a).compareTo(_time(b)));
         });
-        _scrollToBottom();
+        if (decoded['messageKind'] != 'reaction') {
+          if (followNewest) {
+            _scrollToBottom();
+          } else {
+            _showJump.value = true;
+          }
+        }
         unawaited(
           CrazeChatSoundEffects.playIncoming(
             enabled: widget.session.soundEffectsEnabled,
@@ -2431,6 +2865,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> loadMessages({bool silent = false}) async {
     if (chatKey == null || syncing || peerKeyStatus != 'verified') return;
     syncing = true;
+    final followNewest = _isNearBottom();
+    var addedVisible = false;
     try {
       if (!silent) await _retryPendingMessages();
       final messageResponse = await widget.session.api.getMessages(
@@ -2460,6 +2896,7 @@ class _ChatScreenState extends State<ChatScreen> {
           if (!messageIds.contains(id)) {
             messageIds.add(id);
             if (_firstSyncDone) _freshIds.add(id);
+            if (decoded['messageKind'] != 'reaction') addedVisible = true;
             _applyDecodedMessage(decoded);
           } else {
             final index = messages.indexWhere((item) => item['id'] == id);
@@ -2504,7 +2941,11 @@ class _ChatScreenState extends State<ChatScreen> {
           error = null;
         });
       }
-      if (!silent) _scrollToBottom();
+      if (!silent || (addedVisible && followNewest)) {
+        _scrollToBottom();
+      } else if (addedVisible) {
+        _showJump.value = true;
+      }
     } catch (exception) {
       // Automatic polling is quiet (no snackbar), but a failed REST pull must
       // remain visible instead of being presented as an empty conversation.
@@ -2868,7 +3309,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.fromLTRB(18, 2, 18, 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: ['❤️', '😂', '😮', '😢', '🙏', '👍']
+                children: ['\u2764\ufe0f', '\ud83d\ude02', '\ud83d\ude2e', '\ud83d\ude22', '\ud83d\ude4f', '\ud83d\udc4d']
                     .map(
                       (emoji) => InkWell(
                         borderRadius: BorderRadius.circular(24),
@@ -2952,6 +3393,18 @@ class _ChatScreenState extends State<ChatScreen> {
                       .contains(searchQuery)),
         )
         .toList();
+    // Day labels (String) and message positions (int) in display order.
+    final items = <Object>[];
+    for (var i = 0; i < visible.length; i++) {
+      final stamp = _time(visible[i]);
+      if (stamp > 0 &&
+          (i == 0 ||
+              _time(visible[i - 1]) <= 0 ||
+              !_sameDay(_time(visible[i - 1]), stamp))) {
+        items.add(_dayLabel(stamp));
+      }
+      items.add(i);
+    }
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -2959,46 +3412,50 @@ class _ChatScreenState extends State<ChatScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         titleSpacing: 0,
-        title: Row(
-          children: [
-            _ProfileAvatar(username: peerName ?? 'contact', userId: peerId, photoUrl: peer?['photoUrl']?.toString(), size: 40),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    peerName ?? 'Conversation',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+        title: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _showContactInfo,
+          child: Row(
+            children: [
+              _ProfileAvatar(username: peerName ?? 'contact', userId: peerId, photoUrl: peer?['photoUrl']?.toString(), size: 40),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      peerName ?? 'Conversation',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  Row(
-                    children: [
-                      Icon(
-                        peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
-                        size: 12,
-                        color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        peerKeyStatus == 'verified'
-                            ? 'Contact key verified'
-                            : peerKeyStatus == 'changed'
-                                ? 'Contact key changed'
-                                : 'Verify contact key',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: peerKeyStatus == 'verified' ? colors.onSurfaceVariant : Colors.orange,
+                    Row(
+                      children: [
+                        Icon(
+                          peerKeyStatus == 'verified' ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
+                          size: 12,
+                          color: peerKeyStatus == 'verified' ? _brand : Colors.orange,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 4),
+                        Text(
+                          peerKeyStatus == 'verified'
+                              ? 'Contact key verified'
+                              : peerKeyStatus == 'changed'
+                                  ? 'Contact key changed'
+                                  : 'Verify contact key',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: peerKeyStatus == 'verified' ? colors.onSurfaceVariant : Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           IconButton(
@@ -3025,12 +3482,67 @@ class _ChatScreenState extends State<ChatScreen> {
           if (searchOpen)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search in this conversation',
-                  prefixIcon: Icon(Icons.search_rounded),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: search,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Search in this conversation',
+                      prefixIcon: Icon(Icons.search_rounded),
+                    ),
+                  ),
+                  if (searchQuery.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 6),
+                      child: Text(
+                        visible.length == 1
+                            ? '1 message found'
+                            : '${visible.length} messages found',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (!loading && peerId != null && peerKeyStatus != 'verified')
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Material(
+                color: peerKeyStatus == 'changed'
+                    ? colors.errorContainer
+                    : colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(
+                    peerKeyStatus == 'changed'
+                        ? Icons.warning_amber_rounded
+                        : Icons.fingerprint_rounded,
+                    color: peerKeyStatus == 'changed'
+                        ? colors.onErrorContainer
+                        : Colors.orange,
+                  ),
+                  title: Text(
+                    peerKeyStatus == 'changed'
+                        ? 'This contact\u2019s key changed. Verify it before sending.'
+                        : 'Verify ${peerName ?? 'this contact'}\u2019s key to send and receive new messages.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: peerKeyStatus == 'changed'
+                          ? colors.onErrorContainer
+                          : colors.onSurface,
+                    ),
+                  ),
+                  trailing: TextButton(
+                    onPressed: _showPeerVerification,
+                    child: const Text('Verify'),
+                  ),
                 ),
               ),
             ),
@@ -3061,7 +3573,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           Expanded(
-            child: loading
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: loading
                 ? const Center(child: CircularProgressIndicator())
                 : error != null && messages.isEmpty
                 ? Center(
@@ -3100,9 +3615,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           const _BrandMark(size: 52),
                           const SizedBox(height: 14),
                           Text(
-                            search.text.isEmpty
-                                ? 'This channel is yours.'
+                            searchQuery.isEmpty
+                                ? 'Say hello to ${peerName ?? 'your contact'}'
                                 : 'No matching messages.',
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -3124,10 +3640,47 @@ class _ChatScreenState extends State<ChatScreen> {
                 : ListView.builder(
                     key: const PageStorageKey<String>('chat-message-list'),
                     controller: scroll,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
-                    itemCount: visible.length,
+                    itemCount: items.length,
                     itemBuilder: (context, index) {
-                      final message = visible[index];
+                      final item = items[index];
+                      if (item is String) {
+                        return Center(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.surfaceContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              item,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final messageIndex = item as int;
+                      final message = visible[messageIndex];
+                      final messageId = message['id']?.toString();
+                      final previous =
+                          messageIndex > 0 ? visible[messageIndex - 1] : null;
+                      final following = messageIndex + 1 < visible.length
+                          ? visible[messageIndex + 1]
+                          : null;
+                      final joinedAbove =
+                          previous != null && _groupsWith(previous, message);
+                      final joinedBelow =
+                          following != null && _groupsWith(message, following);
                       final mine = message['senderId'] == widget.session.userId;
                       final state = mine
                           ? _outgoingState(message)
@@ -3158,131 +3711,248 @@ class _ChatScreenState extends State<ChatScreen> {
                           : (mine
                                 ? const Color(0xFFC6E4D4)
                                 : const Color(0xFFE5ECE8));
-                      final bubble = Align(
-                          alignment: mine
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.sizeOf(context).width * .78,
+                      // One tail corner on the sender's side; inner corners of a
+                      // group are tightened so consecutive bubbles read as one.
+                      const round = Radius.circular(20);
+                      const tight = Radius.circular(6);
+                      final radius = mine
+                          ? BorderRadius.only(
+                              topLeft: round,
+                              bottomLeft: round,
+                              topRight: joinedAbove ? tight : round,
+                              bottomRight: tight,
+                            )
+                          : BorderRadius.only(
+                              topRight: round,
+                              bottomRight: round,
+                              topLeft: joinedAbove ? tight : round,
+                              bottomLeft: tight,
+                            );
+                      final stateLabel = state == 'queued'
+                          ? 'Waiting to send'
+                          : state == 'read'
+                          ? 'Read'
+                          : state == 'delivered'
+                          ? 'Delivered'
+                          : 'Sent';
+                      final fullText = message['clearText']?.toString() ?? '';
+                      final collapsed =
+                          fullText.length > _collapseAfterChars &&
+                          searchQuery.isEmpty &&
+                          !(messageId != null &&
+                              _expandedIds.contains(messageId));
+                      final shownText = collapsed
+                          ? '${fullText.substring(0, _collapseAfterChars).trimRight()}\u2026'
+                          : fullText;
+                      final meta = Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _clock(message['createdAt']),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: colors.onSurfaceVariant,
                             ),
-                            child: GestureDetector(
-                              onLongPress: () => messageActions(message),
-                              onHorizontalDragStart: (_) {
-                                _replyDragDistance = 0;
-                              },
-                              onHorizontalDragUpdate: (details) {
-                                _replyDragDistance += details.delta.dx;
-                              },
-                              onHorizontalDragEnd: (details) {
-                                final thresholdReached =
-                                    _replyDragDistance.abs() >= 64 ||
-                                    (details.primaryVelocity?.abs() ?? 0) >= 450;
-                                final swipedTowardCenter = mine
-                                    ? _replyDragDistance < -32
-                                    : _replyDragDistance > 32;
-                                _replyDragDistance = 0;
-                                if (thresholdReached && swipedTowardCenter) {
-                                  HapticFeedback.selectionClick();
-                                  _startReply(message);
-                                }
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOutCubic,
-                                margin: const EdgeInsets.only(bottom: 7),
-                                padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
-                                decoration: BoxDecoration(
-                                  color: bubbleColor,
-                                  borderRadius: BorderRadius.circular(17),
-                                  border: Border.all(color: bubbleBorder),
+                          ),
+                          if (mine && state.isNotEmpty) ...[
+                            const SizedBox(width: 3),
+                            // Tapping the clock on a waiting message retries now.
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: state == 'queued'
+                                  ? () {
+                                      showMessage(context, 'Retrying\u2026');
+                                      unawaited(_retryPendingMessages());
+                                    }
+                                  : null,
+                              child: Semantics(
+                                label: stateLabel,
+                                child: Icon(
+                                  state == 'queued'
+                                      ? Icons.schedule_rounded
+                                      : (state == 'read' || state == 'delivered')
+                                      ? Icons.done_all_rounded
+                                      : Icons.check_rounded,
+                                  size: 14,
+                                  color: state == 'read'
+                                      ? colors.primary
+                                      : colors.onSurfaceVariant,
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (reply != null) ...[
-                                      ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth:
-                                              MediaQuery.sizeOf(context).width *
-                                              .68,
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                      final bubbleBox = Container(
+                        padding: const EdgeInsets.fromLTRB(13, 9, 11, 7),
+                        decoration: BoxDecoration(
+                          color: bubbleColor,
+                          borderRadius: radius,
+                          border: Border.all(color: bubbleBorder),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (reply != null)
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth:
+                                      MediaQuery.sizeOf(context).width * .68,
+                                ),
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    9,
+                                    6,
+                                    9,
+                                    6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.surface.withValues(
+                                      alpha: .72,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border(
+                                      left: BorderSide(
+                                        color: colors.primary,
+                                        width: 3,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        reply['senderId'] ==
+                                                widget.session.userId
+                                            ? 'You'
+                                            : (peerName ?? 'Contact'),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          color: colors.primary,
                                         ),
-                                        child: Container(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 6,
-                                          ),
-                                          padding: const EdgeInsets.fromLTRB(
-                                            9,
-                                            6,
-                                            9,
-                                            6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: colors.surface.withValues(
-                                              alpha: .72,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border(
-                                              left: BorderSide(
-                                                color: colors.primary,
-                                                width: 3,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                reply['senderId'] ==
-                                                        widget.session.userId
-                                                    ? 'You'
-                                                    : (peerName ?? 'Contact'),
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w900,
-                                                  color: colors.primary,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                reply['text']?.toString() ?? '',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color:
-                                                      colors.onSurfaceVariant,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        reply['text']?.toString() ?? '',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: colors.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
-                                    Text(
-                                      message['clearText']?.toString() ?? '',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        height: 1.32,
-                                        color: colors.onSurface,
+                                  ),
+                                ),
+                              ),
+                            // The time and delivery tick sit in the bottom-right
+                            // corner of the text; a transparent spacer at the end
+                            // of the text keeps the last line clear of them.
+                            Stack(
+                              children: [
+                                Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      ..._highlightSpans(
+                                        shownText,
+                                        searchQuery,
+                                        colors.primary.withValues(alpha: .28),
                                       ),
-                                    ),
-                                    if (reactionCounts.isNotEmpty) ...[
-                                      const SizedBox(height: 5),
-                                      AnimatedSize(
-                                        duration: const Duration(
-                                          milliseconds: 180,
+                                      WidgetSpan(
+                                        child: SizedBox(
+                                          width: mine ? 62 : 40,
+                                          height: 1,
                                         ),
-                                        curve: Curves.easeOutCubic,
-                                        child: Wrap(
-                                          spacing: 4,
-                                          runSpacing: 3,
-                                          children: reactionCounts.entries
-                                              .map(
-                                                (reactionEntry) => InkWell(
+                                      ),
+                                    ],
+                                  ),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    height: 1.34,
+                                    color: colors.onSurface,
+                                  ),
+                                ),
+                                Positioned(right: 0, bottom: 0, child: meta),
+                              ],
+                            ),
+                            if (collapsed && messageId != null)
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () =>
+                                    setState(() => _expandedIds.add(messageId)),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Read more',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: colors.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                      final bubble = Align(
+                        alignment: mine
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.sizeOf(context).width * .78,
+                          ),
+                          child: GestureDetector(
+                            onLongPress: () => messageActions(message),
+                            onHorizontalDragStart: (_) {
+                              _replyDragDistance = 0;
+                            },
+                            onHorizontalDragUpdate: (details) {
+                              _replyDragDistance += details.delta.dx;
+                            },
+                            onHorizontalDragEnd: (details) {
+                              final thresholdReached =
+                                  _replyDragDistance.abs() >= 64 ||
+                                  (details.primaryVelocity?.abs() ?? 0) >= 450;
+                              final swipedTowardCenter = mine
+                                  ? _replyDragDistance < -32
+                                  : _replyDragDistance > 32;
+                              _replyDragDistance = 0;
+                              if (thresholdReached && swipedTowardCenter) {
+                                HapticFeedback.selectionClick();
+                                _startReply(message);
+                              }
+                            },
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    (joinedBelow ? 2.0 : 10.0) +
+                                    (reactionCounts.isEmpty ? 0.0 : 12.0),
+                              ),
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  bubbleBox,
+                                  if (reactionCounts.isNotEmpty)
+                                    Positioned(
+                                      bottom: -12,
+                                      left: mine ? 10 : null,
+                                      right: mine ? null : 10,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: reactionCounts.entries
+                                            .map(
+                                              (reactionEntry) => Padding(
+                                                padding:
+                                                    const EdgeInsets.only(
+                                                      right: 4,
+                                                    ),
+                                                child: InkWell(
                                                   borderRadius:
                                                       BorderRadius.circular(18),
                                                   onTap: () => reactToMessage(
@@ -3292,8 +3962,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   child: Container(
                                                     padding:
                                                         const EdgeInsets.symmetric(
-                                                          horizontal: 6,
-                                                          vertical: 3,
+                                                          horizontal: 7,
+                                                          vertical: 2,
                                                         ),
                                                     decoration: BoxDecoration(
                                                       color: colors
@@ -3311,71 +3981,24 @@ class _ChatScreenState extends State<ChatScreen> {
                                                       '${reactionEntry.key} ${reactionEntry.value}',
                                                       style: TextStyle(
                                                         fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
                                                         color: colors.onSurface,
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              )
-                                              .toList(),
-                                        ),
-                                      ),
-                                    ],
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          _clock(message['createdAt']),
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: colors.onSurfaceVariant,
-                                          ),
-                                        ),
+                                              ),
+                                            )
+                                            .toList(),
                                       ),
                                     ),
-                                    if (mine && state.isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            state == 'queued'
-                                                ? Icons.schedule_rounded
-                                                : state == 'read'
-                                                ? Icons.done_all_rounded
-                                                : state == 'delivered'
-                                                ? Icons.done_all_rounded
-                                                : Icons.check_rounded,
-                                            size: 12,
-                                            color: colors.primary,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            state == 'queued'
-                                                ? 'WAITING TO SEND'
-                                                : state == 'read'
-                                                ? 'READ'
-                                                : state == 'delivered'
-                                                ? 'DELIVERED'
-                                                : 'SENT',
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              color: colors.primary,
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: .3,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ],
-                                ),
+                                ],
                               ),
                             ),
                           ),
-                        );
-                      final messageId = message['id']?.toString();
+                        ),
+                      );
                       // Only a message that just arrived plays the entrance
                       // animation, once. History and items scrolled back into
                       // view are built plain, so scrolling stays smooth.
@@ -3402,6 +4025,34 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     },
                   ),
+                ),
+                Positioned(
+                  right: 14,
+                  bottom: 12,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _showJump,
+                    builder: (context, show, _) => IgnorePointer(
+                      ignoring: !show,
+                      child: AnimatedOpacity(
+                        opacity: show ? 1 : 0,
+                        duration: const Duration(milliseconds: 160),
+                        child: FloatingActionButton.small(
+                          heroTag: null,
+                          tooltip: 'Jump to latest',
+                          onPressed: () {
+                            _showJump.value = false;
+                            _scrollToBottom();
+                          },
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           SafeArea(
             top: false,
@@ -3494,7 +4145,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ],
                           onSubmitted: (_) => send(),
                           decoration: const InputDecoration(
-                            hintText: 'Write something…',
+                            hintText: 'Write something\u2026',
                             prefixIcon: Icon(Icons.edit_note_rounded),
                             contentPadding: EdgeInsets.symmetric(
                               horizontal: 16,
@@ -3512,8 +4163,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: ValueListenableBuilder<TextEditingValue>(
                           valueListenable: input,
                           builder: (context, value, _) {
-                            final tooLong =
-                                _characterCount(value.text) > _maxMessageCharacters;
+                            final characters = _characterCount(value.text);
+                            final canSend =
+                                !sending &&
+                                characters > 0 &&
+                                characters <= _maxMessageCharacters;
                             return AnimatedScale(
                               scale: sending ? .94 : 1,
                               duration: const Duration(milliseconds: 140),
@@ -3522,7 +4176,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ? 'Sending message'
                                     : 'Send message',
                                 child: FilledButton(
-                                  onPressed: sending || tooLong ? null : send,
+                                  onPressed: canSend ? send : null,
                                   style: FilledButton.styleFrom(
                                     padding: EdgeInsets.zero,
                                     backgroundColor: colors.primary,
@@ -3548,29 +4202,33 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5, left: 4, right: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: input,
-                          builder: (context, value, _) {
-                            final characters = _characterCount(value.text);
-                            return Text(
-                              '$characters / 1,500 characters',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: characters > _maxMessageCharacters
-                                    ? colors.error
-                                    : colors.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            );
-                          },
+                  // The word counter only appears once a message gets long.
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: input,
+                    builder: (context, value, _) {
+                      final characters = _characterCount(value.text);
+                      if (characters < 800) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(
+                          top: 5,
+                          left: 4,
+                          right: 4,
                         ),
-                      ],
-                    ),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '$characters / 1,500 characters',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: characters > _maxMessageCharacters
+                                  ? colors.error
+                                  : colors.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
