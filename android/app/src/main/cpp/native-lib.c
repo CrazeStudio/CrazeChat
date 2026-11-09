@@ -6,40 +6,42 @@
 extern "C" {
 #endif
 
-// Simple XOR decryption function
-void xor_cipher(char *data, size_t len, char key) {
+// Generic XOR decryption utility
+void xor_decrypt(const unsigned char *src, size_t len, char xor_key, char *dest) {
     for (size_t i = 0; i < len; i++) {
-        data[i] ^= key;
+        dest[i] = (char)(src[i] ^ xor_key);
     }
+    dest[len] = '\0';
 }
 
-// Clean C exported function for direct Dart FFI usage
+// Exported function for Secret Key 1 (e.g., API Key)
 __attribute__((visibility("default"))) __attribute__((used))
-const char* get_secret_key() {
-    // Example XOR obfuscated key bytes (derived with XOR key 0x5A)
-    // Replace these bytes with your actual XOR-encoded secret key bytes
+const char* get_secret_key_1() {
     static char decrypted_cache[64];
-    char obfuscated_key[] = {0x13, 0x18, 0x07, 0x08, 0x60, 0x13, 0x18, 0x07, 0x08}; 
+    // Obfuscated bytes for Key 1
+    const unsigned char obfuscated[] = {0x13, 0x18, 0x07, 0x08, 0x60, 0x13, 0x18, 0x07, 0x08};
     char xor_key = 0x5A;
+    
+    size_t len = sizeof(obfuscated) / sizeof(obfuscated[0]);
+    if (len >= sizeof(decrypted_cache)) return "";
 
-    size_t len = sizeof(obfuscated_key) / sizeof(obfuscated_key[0]);
-    if (len >= sizeof(decrypted_cache)) {
-        return "";
-    }
-
-    memcpy(decrypted_cache, obfuscated_key, len);
-    decrypted_cache[len] = '\0';
-
-    xor_cipher(decrypted_cache, len, xor_key);
-
+    xor_decrypt(obfuscated, len, xor_key, decrypted_cache);
     return decrypted_cache;
 }
 
-// JNI wrapper method for Android Java/Kotlin layer compatibility if needed
-JNIEXPORT jstring JNICALL
-Java_com_crazestudio_crazechat_MainActivity_getNativeKey(JNIEnv *env, jobject thiz) {
-    const char *key = get_secret_key();
-    return (*env)->NewStringUTF(env, key);
+// Exported function for Secret Key 2 (e.g., Firebase / Encryption Salt / Auth Token)
+__attribute__((visibility("default"))) __attribute__((used))
+const char* get_secret_key_2() {
+    static char decrypted_cache_2[64];
+    // Obfuscated bytes for Key 2 (using a distinct or same XOR key)
+    const unsigned char obfuscated[] = {0x35, 0x32, 0x25, 0x26, 0x42, 0x35, 0x32, 0x25, 0x26};
+    char xor_key = 0x3C;
+    
+    size_t len = sizeof(obfuscated) / sizeof(obfuscated[0]);
+    if (len >= sizeof(decrypted_cache_2)) return "";
+
+    xor_decrypt(obfuscated, len, xor_key, decrypted_cache_2);
+    return decrypted_cache_2;
 }
 
 #ifdef __cplusplus
