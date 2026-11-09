@@ -3745,7 +3745,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       // Truncate by grapheme clusters, never in the middle of
                       // an emoji, combining mark, or multi-code-unit character.
                       final shownText = collapsed
-                          ? '${fullCharacters.take(_collapseAfterChars).toString().trimRight()}\\u2026'
+                          ? '${fullCharacters.take(_collapseAfterChars).toString().trimRight()}\u2026'
                           : fullText;
                       final meta = Row(
                         mainAxisSize: MainAxisSize.min,
