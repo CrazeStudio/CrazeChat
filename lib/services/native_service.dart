@@ -3,40 +3,55 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
-// Define the C function signatures
 typedef NativeGetSecretFunc = ffi.Pointer<Utf8> Function();
 typedef DartGetSecretFunc = ffi.Pointer<Utf8> Function();
 
 class NativeKeyLoader {
-  static String? _cachedKey;
+  static String? _cachedKey1;
+  static String? _cachedKey2;
 
-  /// Loads the shared library and retrieves the decrypted secret key via FFI
-  static String getSecretKey() {
-    if (_cachedKey != null) {
-      return _cachedKey!;
-    }
+  static ffi.DynamicLibrary? _nativeLib;
 
-    if (!Platform.isAndroid) {
-      return "Mock-Secret-Key-Non-Android";
-    }
+  static ffi.DynamicLibrary _getLibrary() {
+    if (_nativeLib != null) return _nativeLib!;
+    _nativeLib = ffi.DynamicLibrary.open('libcrazechat-native.so');
+    return _nativeLib!;
+  }
+
+  /// Retrieves Secret Key 1 (e.g., Main API Key) without overwriting Key 2
+  static String getSecretKey1() {
+    if (_cachedKey1 != null) return _cachedKey1!;
+    if (!Platform.isAndroid) return "Mock-Key-1";
 
     try {
-      // Open the compiled native shared library (.so)
-      final ffi.DynamicLibrary nativeLib =
-          ffi.DynamicLibrary.open('libcrazechat-native.so');
-
-      // Look up the clean exported C function
-      final DartGetSecretFunc getSecret = nativeLib
-          .lookup<ffi.NativeFunction<NativeGetSecretFunc>>('get_secret_key')
+      final lib = _getLibrary();
+      final getSecret = lib
+          .lookup<ffi.NativeFunction<NativeGetSecretFunc>>('get_secret_key_1')
           .asFunction<DartGetSecretFunc>();
 
-      // Call the native function and convert the returned C string to Dart
-      final ffi.Pointer<Utf8> charPtr = getSecret();
-      _cachedKey = charPtr.toDartString();
-
-      return _cachedKey!;
+      _cachedKey1 = getSecret().toDartString();
+      return _cachedKey1!;
     } catch (e) {
-      debugPrint("Failed to load native secret library: $e");
+      debugPrint("Error loading Secret Key 1: $e");
+      return "";
+    }
+  }
+
+  /// Retrieves Secret Key 2 (e.g., Secondary Token / Salt) into an isolated cache
+  static String getSecretKey2() {
+    if (_cachedKey2 != null) return _cachedKey2!;
+    if (!Platform.isAndroid) return "Mock-Key-2";
+
+    try {
+      final lib = _getLibrary();
+      final getSecret = lib
+          .lookup<ffi.NativeFunction<NativeGetSecretFunc>>('get_secret_key_2')
+          .asFunction<DartGetSecretFunc>();
+
+      _cachedKey2 = getSecret().toDartString();
+      return _cachedKey2!;
+    } catch (e) {
+      debugPrint("Error loading Secret Key 2: $e");
       return "";
     }
   }
