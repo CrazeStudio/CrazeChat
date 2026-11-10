@@ -5,6 +5,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'api.dart';
 import 'firebase_options.dart';
 
+/// A new-message push that arrived while the app was open. It carries only the
+/// conversation id; the push payload never contains message text.
+class IncomingPush {
+  const IncomingPush(this.chatId);
+  final String chatId;
+}
+
 // FCM notifications are generic. The background OS notification never carries
 // decrypted text, reply quotes or reaction payloads.
 @pragma('vm:entry-point')
@@ -34,6 +41,9 @@ class PushNotificationService {
   static Future<void>? _initializing;
   static final StreamController<String> _chatOpenController =
       StreamController<String>.broadcast();
+  static final StreamController<IncomingPush> _foregroundController =
+      StreamController<IncomingPush>.broadcast();
+  static final RegExp _chatIdPattern = RegExp(r'^[a-f0-9]{32}$');
 
   static String? _pendingChatId;
   static String _fidKey(String userId) => 'cc_push_fid_$userId';
@@ -41,20 +51,37 @@ class PushNotificationService {
       firebasePushConfigured;
   static Stream<String> get chatOpened => _chatOpenController.stream;
 
+  /// New-message pushes received while the app is in the foreground.
+  static Stream<IncomingPush> get foregroundMessages =>
+      _foregroundController.stream;
+
   static String? consumePendingChatId() {
     final value = _pendingChatId;
     _pendingChatId = null;
     return value;
   }
 
-  static void _handleNotificationTap(RemoteMessage message) {
-    final chatId = message.data['chatId']?.toString();
-    if (chatId == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(chatId)) return;
+  /// Asks the home screen to open a conversation (used by the in-app banner).
+  static void requestOpenChat(String chatId) {
+    if (!_chatIdPattern.hasMatch(chatId)) return;
     if (_chatOpenController.hasListener) {
       _chatOpenController.add(chatId);
     } else {
       _pendingChatId = chatId;
     }
+  }
+
+  static void _handleNotificationTap(RemoteMessage message) {
+    final chatId = message.data['chatId']?.toString();
+    if (chatId == null) return;
+    requestOpenChat(chatId);
+  }
+
+  static void _handleForegroundMessage(RemoteMessage message) {
+    if (message.data['type']?.toString() != 'new_message') return;
+    final chatId = message.data['chatId']?.toString();
+    if (chatId == null || !_chatIdPattern.hasMatch(chatId)) return;
+    _foregroundController.add(IncomingPush(chatId));
   }
 
   static Future<void> _persistFid(String fid) async {
@@ -112,6 +139,7 @@ class PushNotificationService {
         unawaited(_persistFid(fid));
       });
       FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
       final initial = await messaging.getInitialMessage();
       if (initial != null) _handleNotificationTap(initial);
       _initialized = true;
