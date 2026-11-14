@@ -125,11 +125,11 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
         activity?.window?.let { window ->
             // The inbox header and bottom navigation both use surfaceVariant.
             // Match Android's system bars to those surfaces instead of leaving mismatched strips.
-            val barColor = if (state.page == AppPage.INBOX) {
+            val barColor = (if (state.page == AppPage.INBOX) {
                 scheme.surfaceVariant
             } else {
                 scheme.background
-            }.toArgb()
+            }).toArgb()
             window.statusBarColor = barColor
             window.navigationBarColor = barColor
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
