@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -67,6 +68,9 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
     LaunchedEffect(state.screenSecureEnabled) {
         activity?.setScreenSecure(state.screenSecureEnabled)
     }
+    LaunchedEffect(state.userId, state.notificationsEnabled) {
+        if (state.userId != null && state.notificationsEnabled) activity?.requestNotificationPermission()
+    }
     LaunchedEffect(state.error) {
         state.error?.let { snackbar.showSnackbar(it); model.consumeMessage() }
     }
@@ -74,7 +78,10 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
         state.info?.let { snackbar.showSnackbar(it); model.consumeMessage() }
     }
 
-    val scheme = when (state.themeMode) {
+    val effectiveTheme = if (state.themeMode == "system") {
+        if (isSystemInDarkTheme()) "dark" else "light"
+    } else state.themeMode
+    val scheme = when (effectiveTheme) {
         "light" -> lightColorScheme(
             primary = Color(0xFF7045E8),
             onPrimary = Color.White,
