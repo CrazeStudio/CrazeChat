@@ -389,79 +389,64 @@ private fun UnlockPage(model: MainViewModel, state: CrazeUiState) {
 @Composable
 private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
     var showNewChat by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = Ink,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showNewChat = true },
                 containerColor = Purple,
                 contentColor = Color.White,
-                shape = RoundedCornerShape(20.dp)
-            ) { Icon(Icons.Default.Edit, contentDescription = "New chat") }
+                shape = RoundedCornerShape(18.dp),
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("New chat", fontWeight = FontWeight.SemiBold) }
+            )
         },
         bottomBar = { BottomTabs(AppPage.INBOX, model) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(
-                Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 17.dp, bottom = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BrandTitle(23)
-                Spacer(Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text("Messages", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (state.chats.isEmpty()) "Your private conversations" else "${state.chats.size} conversations",
+                        color = Muted, fontSize = 12.sp
+                    )
+                }
                 if (state.refreshingChats) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = PurpleLight, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(19.dp), color = PurpleLight, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
                 }
-                IconButton(onClick = { model.refreshChats(silent = true) }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh chats", tint = TextMain)
-                }
-                IconButton(onClick = { showSearch = !showSearch }) {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = TextMain)
+                IconButton(onClick = { model.refreshChats(silent = false) }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh messages", tint = TextMain)
                 }
                 IconButton(onClick = model::openSettings) {
-                    Avatar(state.username, state.photoUrl, 36)
+                    Avatar(state.username, state.photoUrl, 38)
                 }
             }
-            if (showSearch) {
-                Box(Modifier.padding(horizontal = 20.dp)) {
-                    DarkField(state.search, model::setSearch, "Search conversations")
-                }
-                Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                DarkField(state.search, model::setSearch, "Search conversations", leading = "⌕")
             }
-            Text("YOUR CONVERSATIONS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, modifier = Modifier.padding(horizontal = 24.dp))
-            Spacer(Modifier.height(12.dp))
-            val contacts = state.chats.mapNotNull { it.peer(state.userId.orEmpty()) }.distinctBy { it.id }.take(8)
-            if (contacts.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().height(82.dp).padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    contacts.forEach { peer ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(54.dp)) {
-                            Avatar(peer.username, peer.photoUrl, 48)
-                            Spacer(Modifier.height(4.dp))
-                            Text(peer.username.take(9), color = Muted, fontSize = 10.sp, maxLines = 1)
-                        }
-                    }
-                }
-            } else {
-                Spacer(Modifier.height(12.dp))
-            }
-            if (state.chats.isEmpty() && !state.loading) {
-                EmptyState(
-                    title = "Your chats start here",
-                    subtitle = "Find a CrazeChat username and start an end-to-end encrypted conversation.",
-                    action = "Start a chat",
+            Spacer(Modifier.height(18.dp))
+            when {
+                state.loading && state.chats.isEmpty() -> Box(
+                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                ) { CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp) }
+                state.chats.isEmpty() -> EmptyState(
+                    title = "No conversations yet",
+                    subtitle = "Start a private, end-to-end encrypted conversation with someone on CrazeChat.",
+                    action = "Find someone",
                     onAction = { showNewChat = true }
                 )
-            } else if (state.filteredChats.isEmpty() && !state.loading) {
-                EmptyState("No conversations found", "Try a different search or start a new chat.", null, null)
-            } else {
-                LazyColumn(
+                state.filteredChats.isEmpty() -> EmptyState(
+                    "No matches", "Try another username or clear your search.", null, null
+                )
+                else -> LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 90.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, top = 2.dp, bottom = 92.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(state.filteredChats, key = { it.id }) { chat ->
                         val peer = chat.peer(state.userId.orEmpty())
@@ -513,18 +498,26 @@ private fun navColors() = NavigationBarItemDefaults.colors(
 @Composable
 private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Ink)
-            .clickable(onClick = onClick).padding(vertical = 11.dp, horizontal = 3.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Avatar(peer.username, peer.photoUrl, 55)
-        Spacer(Modifier.width(14.dp))
+        Avatar(peer.username, peer.photoUrl, 52)
+        Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
-            Text(peer.username, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("@${peer.username}", color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
-            Text("End-to-end encrypted conversation", color = Muted, fontSize = 11.sp, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Lock, null, tint = Green, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("End-to-end encrypted", color = Muted, fontSize = 11.sp, maxLines = 1)
+            }
         }
-        Text(formatListTime(chat.updatedAt), color = Muted, fontSize = 11.sp)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(formatListTime(chat.updatedAt), color = Muted, fontSize = 10.sp)
+            Spacer(Modifier.height(7.dp))
+            Icon(Icons.Default.ChevronRight, null, tint = Muted, modifier = Modifier.size(17.dp))
+        }
     }
 }
 
