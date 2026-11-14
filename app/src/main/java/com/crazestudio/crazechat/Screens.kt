@@ -1,5 +1,6 @@
 package com.crazestudio.crazechat
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -331,7 +333,7 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                 horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 FilterChip(selected = !state.unreadOnly, onClick = { model.setUnreadOnly(false) }, label = { Text("All") })
-                FilterChip(selected = state.unreadOnly, onClick = { model.setUnreadOnly(true) }, label = { Text("Unread") })
+                FilterChip(selected = false, onClick = { model.showInfo("Unread status is not exposed by the current CrazeChat API yet.") }, label = { Text("Unread") })
                 FilterChip(selected = false, onClick = { model.showInfo("Group conversations are not available in the current CrazeChat backend.") }, label = { Text("Groups") })
             }
             if (state.chats.isEmpty() && !state.loading) {
@@ -687,7 +689,18 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
                     Button(onClick = { editPhoto = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Purple)) {
                         Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Edit profile")
                     }
-                    OutlinedButton(onClick = { model.showInfo("Share profile: @${state.username}") }, modifier = Modifier.weight(1f), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+                    val context = LocalContext.current
+                    OutlinedButton(
+                        onClick = {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Find me on CrazeChat: @${state.username}")
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share CrazeChat profile"))
+                        },
+                        modifier = Modifier.weight(1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Line)
+                    ) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Share")
                     }
                 }
@@ -755,7 +768,7 @@ private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
                 SettingSwitch(Icons.Default.Notifications, "Notifications", "Generic encrypted-message alerts", state.notificationsEnabled, model::setNotificationsEnabled)
             }
             item {
-                SettingSwitch(Icons.Default.DarkMode, "Dark mode", "Use the CrazeChat dark appearance", state.darkMode, model::setDarkMode)
+                SettingsRow(Icons.Default.DarkMode, "Dark mode", "Always on in this version") { model.showInfo("The current CrazeChat design supports the dark theme only.") }
             }
             item {
                 SettingsRow(Icons.Default.Language, "Language", state.language) { model.showInfo("English is the current app language.") }
