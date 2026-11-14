@@ -362,17 +362,20 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final username = TextEditingController();
   final password = TextEditingController();
-  bool creating = false, busy = false, showPassword = false;
+  final encryptionPassphrase = TextEditingController();
+  bool creating = false, busy = false, showPassword = false, showEncryptionPassphrase = false;
   @override
   void dispose() {
     username.dispose();
     password.dispose();
+    encryptionPassphrase.dispose();
     super.dispose();
   }
 
   Future<void> submit() async {
     final name = username.text.trim();
     final pass = password.text;
+    final encryptionPass = encryptionPassphrase.text;
     if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
       showMessage(context, 'Username: 3\u201320 letters, numbers, or underscores.');
       return;
@@ -385,12 +388,20 @@ class _AuthScreenState extends State<AuthScreen> {
       showMessage(context, 'Enter your account password.');
       return;
     }
+    if (creating && encryptionPass.length < 12) {
+      showMessage(context, 'Use an encryption passphrase with at least 12 characters.');
+      return;
+    }
+    if (creating && encryptionPass == pass) {
+      showMessage(context, 'Use a different encryption passphrase from your account password.');
+      return;
+    }
     setState(() => busy = true);
     try {
       late final Map<String, dynamic> result;
       late final IdentityMaterial material;
       if (creating) {
-        material = await CryptoService.createIdentity(pass);
+        material = await CryptoService.createIdentity(encryptionPass, separatePassphrase: true);
         result = await widget.session.api.register(
           username: name,
           password: pass,
@@ -400,7 +411,12 @@ class _AuthScreenState extends State<AuthScreen> {
         result = await widget.session.api.login(username: name, password: pass);
         final envelope = Map<String, dynamic>.from(result['identityEnvelope'] as Map);
         final account = Map<String, dynamic>.from(result['user'] as Map);
-        material = await widget.session.unlockForLogin(envelope: envelope, password: pass, accountId: account['id'] as String);
+        material = await widget.session.unlockForLogin(
+          envelope: envelope,
+          password: pass,
+          accountId: account['id'] as String,
+          encryptionPassphrase: encryptionPass.isEmpty ? null : encryptionPass,
+        );
       }
       await widget.session.acceptSession(result, material);
     } on ApiException catch (error) {
@@ -517,6 +533,24 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                     onSubmitted: (_) => submit(),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: encryptionPassphrase,
+                    obscureText: !showEncryptionPassphrase,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textInputAction: TextInputAction.done,
+                    decoration: InputDecoration(
+                      labelText: 'Encryption passphrase',
+                      helperText: creating ? 'Different from your account password; used only to protect your private key.' : 'Required for separate-passphrase accounts. Older accounts can use their account password here.',
+                      prefixIcon: const Icon(Icons.key_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: showEncryptionPassphrase ? 'Hide passphrase' : 'Show passphrase',
+                        onPressed: () => setState(() => showEncryptionPassphrase = !showEncryptionPassphrase),
+                        icon: Icon(showEncryptionPassphrase ? Icons.visibility_off : Icons.visibility),
+                      ),
+                    ),
                   ),
                   if (creating)
                     ValueListenableBuilder<TextEditingValue>(
@@ -1284,6 +1318,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(height: 14),
+        if (widget.session.needsEncryptionPassphraseMigration)
+          _SettingsAction(
+            icon: Icons.key_rounded,
+            title: 'Set separate encryption passphrase',
+            subtitle: 'Protect your private identity key with a different passphrase',
+            onTap: _showEncryptionPassphraseMigration,
+          ),
         _SettingsAction(
           icon: Icons.switch_account_outlined,
           title: 'Switch account',
@@ -1416,7 +1457,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
               Text('Change password', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text('Your password also protects your private encryption key. CrazeChat updates both securely.', style: Theme.of(context).textTheme.bodySmall),
+              Text('This changes only your sign-in password. Your separate encryption passphrase remains unchanged.', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 18),
               TextField(controller: current, obscureText: !showCurrent, autocorrect: false, enableSuggestions: false, decoration: InputDecoration(labelText: 'Current password', suffixIcon: IconButton(onPressed: () => setSheetState(() => showCurrent = !showCurrent), icon: Icon(showCurrent ? Icons.visibility_off : Icons.visibility)))),
               const SizedBox(height: 12),
@@ -1449,6 +1490,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         )),
       );
     } finally { current.dispose(); next.dispose(); confirm.dispose(); }
+  }
+
+  Future<void> _showEncryptionPassphraseMigration() async {
+    final next = TextEditingController();
+    final confirm = TextEditingController();
+    try {
+      final value = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Separate encryption passphrase'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('This passphrase protects your private identity key on this device. It is never sent to the server. Keep it safe; it cannot be recovered if lost.'),
+              const SizedBox(height: 12),
+              TextField(controller: next, obscureText: true, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'New passphrase (12+ characters)')),
+              const SizedBox(height: 10),
+              TextField(controller: confirm, obscureText: true, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'Confirm passphrase')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                if (next.text.length < 12) { showMessage(dialogContext, 'Use at least 12 characters.'); return; }
+                if (next.text != confirm.text) { showMessage(dialogContext, 'Passphrases do not match.'); return; }
+                Navigator.pop(dialogContext, next.text);
+              },
+              child: const Text('Update key protection'),
+            ),
+          ],
+        ),
+      );
+      if (value == null || !mounted) return;
+      await widget.session.updateEncryptionPassphrase(value);
+      if (mounted) showMessage(context, 'Encryption passphrase updated. Save it somewhere safe.');
+    } catch (error) {
+      if (mounted) showMessage(context, 'Could not update encryption passphrase: $error');
+    } finally {
+      next.dispose();
+      confirm.dispose();
+    }
   }
 
   Future<void> _showAccounts() async {
