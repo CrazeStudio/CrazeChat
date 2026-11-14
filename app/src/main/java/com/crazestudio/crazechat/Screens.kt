@@ -563,16 +563,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
 }
 
 @Composable
-private fun AuthTab(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Box(
-        modifier.clip(RoundedCornerShape(15.dp))
-            .background(if (selected) PanelRaised else Color.Transparent)
-            .clickable(onClick = onClick).padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center
-    ) { Text(label, color = if (selected) TextMain else Muted, fontWeight = FontWeight.SemiBold) }
-}
-
-@Composable
 private fun FormLabel(value: String) {
     Text(value, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(7.dp))
