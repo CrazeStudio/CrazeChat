@@ -84,42 +84,26 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
     } else state.themeMode
     val scheme = when (effectiveTheme) {
         "light" -> lightColorScheme(
-            primary = Color(0xFF5558C9),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFE8E9FF),
-            onPrimaryContainer = Color(0xFF20235F),
-            secondary = Color(0xFF7479DE),
-            onSecondary = Color.White,
-            secondaryContainer = Color(0xFFEDEEFF),
-            onSecondaryContainer = Color(0xFF292D70),
-            background = Color(0xFFF6F7FB),
-            surface = Color(0xFFFFFFFF),
-            surfaceVariant = Color(0xFFEEF0F6),
-            onSurface = Color(0xFF191D2B),
-            onSurfaceVariant = Color(0xFF626A7D),
-            outline = Color(0xFFDCE1EB),
-            outlineVariant = Color(0xFFE8EBF2),
-            tertiary = Color(0xFF16836B),
-            error = Color(0xFFB9384D)
+            primary = Color(0xFF2766E8), onPrimary = Color.White,
+            primaryContainer = Color(0xFFDCE8FF), onPrimaryContainer = Color(0xFF112E67),
+            secondary = Color(0xFF548CFF), onSecondary = Color.White,
+            secondaryContainer = Color(0xFFE8F0FF), onSecondaryContainer = Color(0xFF193B78),
+            background = Color(0xFFF4F7FC), surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFEBF0F8), onSurface = Color(0xFF142036),
+            onSurfaceVariant = Color(0xFF64748B), outline = Color(0xFFD9E2EF),
+            outlineVariant = Color(0xFFE7EDF5), tertiary = Color(0xFF159B84),
+            error = Color(0xFFCF3E57)
         )
         else -> darkColorScheme(
-            primary = Color(0xFF9295FF),
-            onPrimary = Color(0xFF171947),
-            primaryContainer = Color(0xFF34377F),
-            onPrimaryContainer = Color(0xFFE5E6FF),
-            secondary = Color(0xFFB1B4FF),
-            onSecondary = Color(0xFF20235D),
-            secondaryContainer = Color(0xFF303466),
-            onSecondaryContainer = Color(0xFFE4E5FF),
-            background = Color(0xFF10131D),
-            surface = Color(0xFF191E2B),
-            surfaceVariant = Color(0xFF222A3A),
-            onSurface = Color(0xFFF1F3FA),
-            onSurfaceVariant = Color(0xFFAAB3C5),
-            outline = Color(0xFF3A4559),
-            outlineVariant = Color(0xFF2C3547),
-            tertiary = Color(0xFF55C9A8),
-            error = Color(0xFFFF7888)
+            primary = Color(0xFF397BFF), onPrimary = Color.White,
+            primaryContainer = Color(0xFF173C85), onPrimaryContainer = Color(0xFFE2ECFF),
+            secondary = Color(0xFF69A0FF), onSecondary = Color(0xFF081D42),
+            secondaryContainer = Color(0xFF203B68), onSecondaryContainer = Color(0xFFE4EEFF),
+            background = Color(0xFF080F1D), surface = Color(0xFF111B2C),
+            surfaceVariant = Color(0xFF1A2940), onSurface = Color(0xFFF4F7FF),
+            onSurfaceVariant = Color(0xFF9EADC4), outline = Color(0xFF2B3D58),
+            outlineVariant = Color(0xFF203149), tertiary = Color(0xFF4BD6B4),
+            error = Color(0xFFFF718A)
         )
     }
 
@@ -188,19 +172,25 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
 private fun BrandMark(size: Int) {
     Box(
         Modifier.size(size.dp).clip(RoundedCornerShape((size * .31f).dp))
-            .background(Brush.linearGradient(listOf(Purple, PurpleLight))),
+            .background(Brush.linearGradient(listOf(Color(0xFF2367F4), Color(0xFF59A3FF))))
+            .border(1.dp, Color.White.copy(alpha = .16f), RoundedCornerShape((size * .31f).dp)),
         contentAlignment = Alignment.Center
     ) {
-        Text("ϟ", color = Color.White, fontSize = (size * .62f).sp, fontWeight = FontWeight.Black)
+        Icon(Icons.Default.ChatBubble, contentDescription = "CrazeChat", tint = Color.White,
+            modifier = Modifier.size((size * .48f).dp))
     }
 }
 
 @Composable
 private fun BrandTitle(size: Int = 24) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        BrandMark(36)
-        Spacer(Modifier.width(10.dp))
-        Text("CrazeChat", color = TextMain, fontSize = size.sp, fontWeight = FontWeight.ExtraBold)
+        BrandMark(38)
+        Spacer(Modifier.width(11.dp))
+        Column {
+            Text("CrazeChat", color = TextMain, fontSize = size.sp, fontWeight = FontWeight.ExtraBold)
+            Text("PRIVATE. ENCRYPTED. YOURS.", color = Muted, fontSize = 9.sp,
+                letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -208,112 +198,73 @@ private fun BrandTitle(size: Int = 24) {
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var passphrase by remember { mutableStateOf("") }
-    var phraseSaved by remember { mutableStateOf(false) }
+    var confirmation by remember { mutableStateOf("") }
     val signup = state.signup
-    val context = LocalContext.current
-    LaunchedEffect(signup) {
-        passphrase = if (signup) CryptoService.generateEncryptionPhrase() else ""
-        phraseSaved = false
-    }
-
+    val cleanUsername = username.trim()
+    val usernameValid = Regex("^[a-zA-Z0-9_]{3,20}$").matches(cleanUsername)
+    val passwordValid = password.length >= 12
+    val formValid = usernameValid && passwordValid && (!signup || confirmation == password)
     Column(
-        Modifier.fillMaxSize().imePadding().background(Ink)
-            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
-        horizontalAlignment = Alignment.Start
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink, Panel.copy(alpha = .72f))))
+            .imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.Center
     ) {
-        BrandTitle(25)
-        Spacer(Modifier.height(34.dp))
-        Text(if (signup) "Create your account" else "Welcome back", color = TextMain, fontSize = 29.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(7.dp))
-        Text(
-            if (signup) "A private space for your conversations." else "Sign in to continue to your conversations.",
-            color = Muted, fontSize = 14.sp
-        )
-        Spacer(Modifier.height(25.dp))
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PanelRaised).padding(4.dp)) {
-            AuthTab("Log in", !signup, Modifier.weight(1f)) { model.setSignup(false) }
-            AuthTab("Create account", signup, Modifier.weight(1f)) { model.setSignup(true) }
-        }
-        Spacer(Modifier.height(24.dp))
-        FormLabel("Username")
-        DarkField(username, { username = it }, "Choose a username", leading = "@")
-        Spacer(Modifier.height(16.dp))
-        FormLabel("Account password")
-        DarkField(password, { password = it }, "At least 12 characters", password = true)
-        if (signup) {
-            Spacer(Modifier.height(18.dp))
-            FormLabel("Your generated encryption phrase")
-            Text(
-                "This phrase is created on this device. It protects your private identity key and cannot be recovered by CrazeChat.",
-                color = Muted, fontSize = 12.sp, lineHeight = 18.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(PanelRaised).border(1.dp, Line, RoundedCornerShape(16.dp)).padding(15.dp)
-            ) {
-                Text(passphrase, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("CrazeChat encryption phrase", passphrase))
-                    phraseSaved = false
-                }) {
-                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Copy phrase")
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = {
-                    passphrase = CryptoService.generateEncryptionPhrase()
-                    phraseSaved = false
-                }) {
-                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Regenerate")
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = phraseSaved, onCheckedChange = { phraseSaved = it })
-                Text("I've saved this phrase somewhere safe", color = TextMain, fontSize = 12.sp)
-            }
-            Text(
-                "If you lose this phrase and remove this device's saved key, you may permanently lose access to your encrypted identity.",
-                color = MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 16.sp
-            )
-        } else {
-            Spacer(Modifier.height(18.dp))
-            FormLabel("Encryption phrase")
-            DarkField(passphrase, { passphrase = it }, "Enter your saved phrase", password = true)
-            Text(
-                "Leave this empty only if this device already has your unlocked identity key.",
-                color = Muted, fontSize = 11.sp, lineHeight = 16.sp
-            )
-        }
-        Spacer(Modifier.height(22.dp))
-        GradientButton(
-            if (signup) "Create secure account" else "Log in",
-            enabled = !signup || phraseSaved
-        ) { model.authenticate(username, password, passphrase, signup) }
-        Spacer(Modifier.height(22.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            HorizontalDivider(Modifier.weight(1f), color = Line)
-            Text("  END-TO-END ENCRYPTED  ", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            HorizontalDivider(Modifier.weight(1f), color = Line)
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.Top) {
-            Icon(Icons.Default.Shield, contentDescription = null, tint = PurpleLight, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.width(9.dp))
-            Text(
-                "Messages are encrypted on your device before they leave it. Keep your encryption phrase private.",
-                color = Muted, fontSize = 11.sp, lineHeight = 16.sp
-            )
-        }
         Spacer(Modifier.height(12.dp))
-        Text("By continuing, you agree to the CrazeChat Terms and Privacy Policy.", color = Muted, fontSize = 10.sp)
+        BrandTitle(26)
+        Spacer(Modifier.height(30.dp))
+        Text(if (signup) "Create your account" else "Welcome back",
+            color = TextMain, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(6.dp))
+        Text(if (signup) "A quieter, safer place for your conversations."
+            else "Sign in to pick up where you left off.", color = Muted, fontSize = 14.sp)
+        Spacer(Modifier.height(23.dp))
+        Surface(color = Panel, shape = RoundedCornerShape(26.dp), tonalElevation = 2.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Line.copy(alpha = .8f))) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(PanelRaised).padding(4.dp)) {
+                    AuthTab("Log in", !signup, Modifier.weight(1f)) { model.setSignup(false) }
+                    AuthTab("Sign up", signup, Modifier.weight(1f)) { model.setSignup(true) }
+                }
+                Spacer(Modifier.height(21.dp))
+                FormLabel("USERNAME")
+                DarkField(username, { username = it }, "Your username", leading = "@")
+                Spacer(Modifier.height(15.dp))
+                FormLabel("ACCOUNT PASSWORD")
+                DarkField(password, { password = it }, "At least 12 characters", password = true)
+                if (signup) {
+                    Spacer(Modifier.height(15.dp))
+                    FormLabel("CONFIRM PASSWORD")
+                    DarkField(confirmation, { confirmation = it }, "Enter the password again", password = true)
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF16345D).copy(alpha = .55f)).padding(13.dp),
+                        verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Default.Shield, null, tint = Color(0xFF70A8FF), modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Your private identity key is generated and protected automatically. There is no phrase to copy, write down or manage.",
+                            color = TextMain, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                    if (confirmation.isNotEmpty() && confirmation != password) {
+                        Spacer(Modifier.height(7.dp))
+                        Text("Passwords do not match.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                GradientButton(if (signup) "Create account" else "Log in",
+                    enabled = formValid && !state.loading) {
+                    model.authenticate(cleanUsername, password, "", signup)
+                }
+                Spacer(Modifier.height(13.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, null, tint = Green, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("End-to-end encrypted direct messages", color = Muted, fontSize = 10.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(17.dp))
+        Text("Usernames are public. Passwords and message contents are not shown to other people.",
+            color = Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }
 
@@ -343,55 +294,55 @@ private fun DarkField(
     singleLine: Boolean = true
 ) {
     OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
+        value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(),
         singleLine = singleLine,
         placeholder = { Text(hint, color = Muted.copy(alpha = .78f), fontSize = 14.sp) },
-        leadingIcon = if (leading != null) ({ Text(leading, color = Muted, fontSize = 18.sp) }) else null,
+        leadingIcon = if (leading != null) ({ Text(leading, color = Muted, fontSize = 18.sp, fontWeight = FontWeight.Medium) }) else null,
         visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = if (password) KeyboardOptions(keyboardType = KeyboardType.Password) else KeyboardOptions.Default,
         shape = RoundedCornerShape(17.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Panel,
-            unfocusedContainerColor = Panel,
-            focusedBorderColor = Purple,
-            unfocusedBorderColor = Line,
-            focusedTextColor = TextMain,
-            unfocusedTextColor = TextMain,
-            cursorColor = PurpleLight
+            focusedContainerColor = PanelRaised, unfocusedContainerColor = PanelRaised,
+            disabledContainerColor = PanelRaised.copy(alpha = .65f),
+            focusedBorderColor = Purple, unfocusedBorderColor = Line,
+            focusedTextColor = TextMain, unfocusedTextColor = TextMain, disabledTextColor = Muted,
+            cursorColor = Purple, focusedPlaceholderColor = Muted, unfocusedPlaceholderColor = Muted
         )
     )
 }
 
 @Composable
 private fun GradientButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(17.dp))
-            .background(Brush.horizontalGradient(listOf(Purple, PurpleLight)))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier.background(Line)),
-        contentAlignment = Alignment.Center
-    ) { Text(label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+    Button(
+        onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(54.dp),
+        shape = RoundedCornerShape(17.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Purple, contentColor = Color.White,
+            disabledContainerColor = PanelRaised, disabledContentColor = Muted
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 1.dp)
+    ) { Text(label, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
 }
 
 @Composable
 private fun UnlockPage(model: MainViewModel, state: CrazeUiState) {
-    var passphrase by remember { mutableStateOf("") }
-    Column(
-        Modifier.fillMaxSize().imePadding().padding(28.dp),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Center
-    ) {
-        BrandMark(64)
+    var password by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxSize()
+        .background(Brush.verticalGradient(listOf(Ink, Panel.copy(alpha = .72f))))
+        .imePadding().padding(horizontal = 25.dp), verticalArrangement = Arrangement.Center) {
+        BrandMark(62)
+        Spacer(Modifier.height(25.dp))
+        Text("Welcome back", color = TextMain, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(5.dp))
+        Text("@${state.username}", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(11.dp))
+        Text("Enter your CrazeChat account password to unlock your conversations.",
+            color = Muted, fontSize = 13.sp, lineHeight = 19.sp)
         Spacer(Modifier.height(24.dp))
-        Text("Welcome back, @${state.username}", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(8.dp))
-        Text("Unlock your private identity key to open your conversations.", color = Muted, fontSize = 14.sp)
-        Spacer(Modifier.height(24.dp))
-        FormLabel("Encryption passphrase")
-        DarkField(passphrase, { passphrase = it }, "Your private-key passphrase", password = true)
-        Spacer(Modifier.height(18.dp))
-        GradientButton("Unlock CrazeChat") { model.unlock(passphrase) }
+        FormLabel("ACCOUNT PASSWORD")
+        DarkField(password, { password = it }, "Your account password", password = true)
+        Spacer(Modifier.height(17.dp))
+        GradientButton("Unlock CrazeChat", enabled = password.length >= 12 && !state.loading) { model.unlock(password) }
         TextButton(onClick = { model.signOut() }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Sign in to another account", color = Muted)
         }
@@ -404,65 +355,71 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
     Scaffold(
         containerColor = Ink,
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showNewChat = true },
-                containerColor = Purple,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(18.dp),
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New chat", fontWeight = FontWeight.SemiBold) }
-            )
+            FloatingActionButton(onClick = { showNewChat = true }, containerColor = Purple,
+                contentColor = Color.White, shape = RoundedCornerShape(19.dp)) {
+                Icon(Icons.Default.Edit, contentDescription = "New conversation")
+            }
         },
         bottomBar = { BottomTabs(AppPage.INBOX, model) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth().padding(start = 21.dp, end = 16.dp, top = 15.dp, bottom = 17.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(42)
+                Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Messages", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (state.chats.isEmpty()) "Your private conversations" else "${state.chats.size} conversations",
-                        color = Muted, fontSize = 12.sp
-                    )
+                    Text("CrazeChat", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Private conversations", color = Muted, fontSize = 11.sp)
                 }
                 if (state.refreshingChats) {
                     CircularProgressIndicator(Modifier.size(19.dp), color = PurpleLight, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(7.dp))
                 }
                 IconButton(onClick = { model.refreshChats(silent = false) }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh messages", tint = TextMain)
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Muted)
                 }
-                IconButton(onClick = model::openSettings) {
+                Box(Modifier.clip(CircleShape).clickable { model.openProfile() }) {
                     Avatar(state.username, state.photoUrl, 38)
                 }
             }
-            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Text("Messages", color = TextMain, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.height(4.dp))
+                Text(if (state.chats.isEmpty()) "Your private space starts here."
+                    else "${state.chats.size} direct conversations", color = Muted, fontSize = 12.sp)
+                Spacer(Modifier.height(17.dp))
                 DarkField(state.search, model::setSearch, "Search conversations", leading = "⌕")
+                Spacer(Modifier.height(15.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = Purple.copy(alpha = .17f), shape = RoundedCornerShape(20.dp)) {
+                        Text("Chats", color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 8.dp))
+                    }
+                    Spacer(Modifier.width(9.dp))
+                    TextButton(onClick = { showNewChat = true }) {
+                        Icon(Icons.Default.Search, null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Find people", color = Muted, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("RECENT", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                }
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(7.dp))
             when {
-                state.loading && state.chats.isEmpty() -> Box(
-                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
-                ) { CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp) }
-                state.chats.isEmpty() -> EmptyState(
-                    title = "No conversations yet",
-                    subtitle = "Start a private, end-to-end encrypted conversation with someone on CrazeChat.",
-                    action = "Find someone",
-                    onAction = { showNewChat = true }
-                )
-                state.filteredChats.isEmpty() -> EmptyState(
-                    "No matches", "Try another username or clear your search.", null, null
-                )
-                else -> LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 92.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                state.loading && state.chats.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp)
+                }
+                state.chats.isEmpty() -> EmptyState("No conversations yet",
+                    "Find someone by username to start a private, encrypted conversation.",
+                    "Find people") { showNewChat = true }
+                state.filteredChats.isEmpty() -> EmptyState("No matches",
+                    "Try a different username or clear your search.", null, null)
+                else -> LazyColumn(Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 94.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.filteredChats, key = { it.id }) { chat ->
-                        val peer = chat.peer(state.userId.orEmpty())
-                        if (peer != null) ChatRow(chat, peer) { model.openChat(chat) }
+                        chat.peer(state.userId.orEmpty())?.let { peer -> ChatRow(chat, peer) { model.openChat(chat) } }
                     }
                 }
             }
