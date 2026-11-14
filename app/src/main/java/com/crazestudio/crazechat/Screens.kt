@@ -195,65 +195,108 @@ private fun BrandTitle(size: Int = 24) {
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var passphrase by remember { mutableStateOf("") }
+    var passphrase by remember { mutableStateOf(CryptoService.generateEncryptionPhrase()) }
+    var phraseSaved by remember { mutableStateOf(false) }
     val signup = state.signup
+    val context = LocalContext.current
 
     Column(
-        Modifier.fillMaxSize().imePadding().background(Ink).padding(horizontal = 28.dp, vertical = 24.dp),
+        Modifier.fillMaxSize().imePadding().background(Ink)
+            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        Spacer(Modifier.height(28.dp))
-        BrandMark(68)
-        Spacer(Modifier.height(27.dp))
-        Text(if (signup) "Join CrazeChat" else "CrazeChat", color = TextMain, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(6.dp))
+        BrandTitle(25)
+        Spacer(Modifier.height(34.dp))
+        Text(if (signup) "Create your account" else "Welcome back", color = TextMain, fontSize = 29.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(7.dp))
         Text(
-            if (signup) "Create your private account." else "Conversations with energy. Welcome back.",
-            color = Muted, fontSize = 15.sp
+            if (signup) "A private space for your conversations." else "Sign in to continue to your conversations.",
+            color = Muted, fontSize = 14.sp
         )
-        Spacer(Modifier.height(28.dp))
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(4.dp)) {
+        Spacer(Modifier.height(25.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(PanelRaised).padding(4.dp)) {
             AuthTab("Log in", !signup, Modifier.weight(1f)) { model.setSignup(false) }
-            AuthTab("Sign up", signup, Modifier.weight(1f)) { model.setSignup(true) }
+            AuthTab("Create account", signup, Modifier.weight(1f)) { model.setSignup(true) }
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(24.dp))
         FormLabel("Username")
-        DarkField(username, { username = it }, "your_username", leading = "@" )
-        Spacer(Modifier.height(15.dp))
-        FormLabel("Password")
-        DarkField(password, { password = it }, if (signup) "At least 12 characters" else "Your account password", password = true)
-        Spacer(Modifier.height(15.dp))
-        FormLabel(if (signup) "Encryption passphrase" else "Encryption passphrase (new device)")
-        DarkField(
-            passphrase, { passphrase = it },
-            if (signup) "Different from your account password" else "Enter if this device has no saved key",
-            password = true
-        )
+        DarkField(username, { username = it }, "Choose a username", leading = "@")
+        Spacer(Modifier.height(16.dp))
+        FormLabel("Account password")
+        DarkField(password, { password = it }, "At least 12 characters", password = true)
         if (signup) {
-            Spacer(Modifier.height(8.dp))
-            Text("This separate passphrase protects your private identity key. It is never sent to the server. Keep it safe.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            Spacer(Modifier.height(18.dp))
+            FormLabel("Your generated encryption phrase")
+            Text(
+                "This phrase is created on this device. It protects your private identity key and cannot be recovered by CrazeChat.",
+                color = Muted, fontSize = 12.sp, lineHeight = 18.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(PanelRaised).border(1.dp, Line, RoundedCornerShape(16.dp)).padding(15.dp)
+            ) {
+                Text(passphrase, color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("CrazeChat encryption phrase", passphrase))
+                    phraseSaved = false
+                }) {
+                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy phrase")
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = {
+                    passphrase = CryptoService.generateEncryptionPhrase()
+                    phraseSaved = false
+                }) {
+                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Regenerate")
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = phraseSaved, onCheckedChange = { phraseSaved = it })
+                Text("I've saved this phrase somewhere safe", color = TextMain, fontSize = 12.sp)
+            }
+            Text(
+                "If you lose this phrase and remove this device's saved key, you may permanently lose access to your encrypted identity.",
+                color = MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 16.sp
+            )
         } else {
-            Spacer(Modifier.height(6.dp))
-            Text("Leave this blank on a device that already has your saved identity key. Legacy accounts may use the account password.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            Spacer(Modifier.height(18.dp))
+            FormLabel("Encryption phrase")
+            DarkField(passphrase, { passphrase = it }, "Enter your saved phrase", password = true)
+            Text(
+                "Leave this empty only if this device already has your unlocked identity key.",
+                color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+            )
         }
         Spacer(Modifier.height(22.dp))
-        GradientButton(if (signup) "Create account" else "Log in") {
-            model.authenticate(username, password, passphrase, signup)
-        }
+        GradientButton(
+            if (signup) "Create secure account" else "Log in",
+            enabled = !signup || phraseSaved
+        ) { model.authenticate(username, password, passphrase, signup) }
         Spacer(Modifier.height(22.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             HorizontalDivider(Modifier.weight(1f), color = Line)
-            Text("  PRIVATE BY DESIGN  ", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("  END-TO-END ENCRYPTED  ", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             HorizontalDivider(Modifier.weight(1f), color = Line)
         }
-        Spacer(Modifier.height(17.dp))
+        Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Top) {
             Icon(Icons.Default.Shield, contentDescription = null, tint = PurpleLight, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(9.dp))
-            Text("Your messages are encrypted on your device before they are sent. The server stores encrypted message envelopes, not readable message text.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            Text(
+                "Messages are encrypted on your device before they leave it. Keep your encryption phrase private.",
+                color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+            )
         }
-        Spacer(Modifier.weight(1f))
-        Text("By continuing, you agree to the CrazeChat Terms and Privacy Policy.", color = Muted, fontSize = 10.sp, lineHeight = 15.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("By continuing, you agree to the CrazeChat Terms and Privacy Policy.", color = Muted, fontSize = 10.sp)
     }
 }
 
@@ -529,44 +572,67 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
     var results by remember { mutableStateOf<List<ChatUser>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(query) {
+        val term = query.trim().removePrefix("@")
+        results = emptyList()
+        if (term.length < 2) {
+            searching = false
+        } else if (Regex("^[a-zA-Z0-9_]{2,20}$").matches(term)) {
+            searching = true
+            kotlinx.coroutines.delay(350)
+            model.searchUsers(term) { users ->
+                if (query.trim().removePrefix("@").equals(term, ignoreCase = true)) {
+                    results = users
+                    searching = false
+                }
+            }
+        } else {
+            searching = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Panel,
-        title = { Text("Find people", color = TextMain, fontWeight = FontWeight.Bold) },
+        shape = RoundedCornerShape(24.dp),
+        title = {
+            Column {
+                Text("New conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 21.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("Find someone by their CrazeChat username.", color = Muted, fontSize = 12.sp)
+            }
+        },
         text = {
             Column {
-                DarkField(query, {
-                    query = it
-                    if (it.trim().length >= 2) {
-                        searching = true
-                        scope.launch {
-                            kotlinx.coroutines.delay(250)
-                            model.searchUsers(it) { users ->
-                                results = users
-                                searching = false
+                DarkField(query, { query = it }, "Search username", leading = "@")
+                Spacer(Modifier.height(12.dp))
+                when {
+                    searching -> Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = PurpleLight, modifier = Modifier.size(25.dp), strokeWidth = 2.dp)
+                    }
+                    query.trim().length < 2 -> Text("Enter at least 2 characters to search.", color = Muted, fontSize = 12.sp)
+                    !Regex("^[a-zA-Z0-9_]{2,20}$").matches(query.trim().removePrefix("@")) ->
+                        Text("Use 2–20 letters, numbers or underscores.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    results.isEmpty() -> Text("No matching usernames found.", color = Muted, fontSize = 12.sp)
+                    else -> {
+                        results.forEach { user ->
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .clickable { model.startChat(user.username); onDismiss() }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Avatar(user.username, user.photoUrl, 44)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("@${user.username}", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Start an encrypted chat", color = Muted, fontSize = 11.sp)
+                                }
+                                Icon(Icons.Default.ChevronRight, null, tint = Muted)
                             }
                         }
-                    } else results = emptyList()
-                }, "Search by username")
-                Spacer(Modifier.height(10.dp))
-                if (searching) CircularProgressIndicator(color = PurpleLight, modifier = Modifier.align(Alignment.CenterHorizontally))
-                results.forEach { user ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { model.startChat(user.username); onDismiss() }.padding(vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Avatar(user.username, user.photoUrl, 42)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("@${user.username}", color = TextMain, fontWeight = FontWeight.SemiBold)
-                            Text("Start a private chat", color = Muted, fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Icon(Icons.Default.ChevronRight, null, tint = Muted)
                     }
-                }
-                if (!searching && query.length >= 2 && results.isEmpty()) {
-                    Text("No matching users found.", color = Muted, fontSize = 12.sp)
                 }
             }
         },
