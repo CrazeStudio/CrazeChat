@@ -260,6 +260,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
         modifier = Modifier.fillMaxSize().background(Color.White)
     ) {
         val heroHeight = (maxHeight * 0.43f).coerceIn(190.dp, 360.dp)
+        val titleFontSize = if (maxWidth < 360.dp) 35.sp else 42.sp
 
         Box(
             modifier = Modifier
@@ -313,7 +314,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     Text(
                         text = if (signup) "Create Account" else "Welcome Back",
                         color = blue,
-                        fontSize = if (maxWidth < 360.dp) 35.sp else 42.sp,
+                        fontSize = titleFontSize,
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Black,
                         letterSpacing = (-1.1).sp,
