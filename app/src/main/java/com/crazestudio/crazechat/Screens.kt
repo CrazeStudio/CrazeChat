@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.graphics.toArgb
 import coil.compose.AsyncImage
 import com.crazestudio.crazechat.data.ChatSummary
 import com.crazestudio.crazechat.data.ChatUser
@@ -104,6 +106,22 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
             onSurfaceVariant = Color(0xFF9EADC4), outline = Color(0xFF2B3C56),
             outlineVariant = Color(0xFF1E2C41), tertiary = Color(0xFF4BD3B1), error = Color(0xFFFF758B)
         )
+    }
+
+    SideEffect {
+        activity?.window?.let { window ->
+            val barColor = scheme.background.toArgb()
+            window.statusBarColor = barColor
+            window.navigationBarColor = barColor
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+                window.isStatusBarContrastEnforced = false
+            }
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = effectiveTheme == "light"
+                isAppearanceLightNavigationBars = effectiveTheme == "light"
+            }
+        }
     }
 
     MaterialTheme(colorScheme = scheme) {
