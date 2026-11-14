@@ -273,7 +273,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.value = mutableState.value.copy(savedAccounts = savedAccountList())
     }
 
-    fun authenticate(usernameInput: String, password: String, passphrase: String, signup: Boolean) {
+    fun authenticate(usernameInput: String, password: String, signup: Boolean) {
         viewModelScope.launch {
             if (mutableState.value.loading) return@launch
             val username = usernameInput.trim()
