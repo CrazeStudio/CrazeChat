@@ -21,7 +21,7 @@ gradle :app:assembleRelease
 ## Security boundaries
 - No reusable API key, master secret, or backend private key belongs in the APK or native library.
 - The native library is a reverse-engineering speed bump, not a secrecy boundary.
-- AES-GCM and HMAC keys are generated per installation and held by Android Keystore.
+- The AES-GCM data key and ECDSA P-256 private key are generated per installation and held by Android Keystore.
 - ECDSA request signing is only useful when the backend registers each device public key through an authenticated enrollment flow, verifies signatures, timestamps, nonce uniqueness, body hashes, and user authorization. The backend must also rate-limit and support device-key revocation.
 - A device private key can still be abused through runtime instrumentation on a compromised device even when it cannot be exported. Do not use device signatures as the only user-authentication factor.
 - Device backup is disabled. Encrypted records should still be treated as sensitive.
