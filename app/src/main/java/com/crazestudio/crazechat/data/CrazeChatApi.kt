@@ -108,6 +108,19 @@ class CrazeChatApi {
         request("POST", "auth/login", JSONObject().put("username", username).put("password", password))
 
     suspend fun restoreSession() = request("GET", "auth/session")
+
+    suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        identityEnvelope: JSONObject
+    ) = request("POST", "auth/change-password", JSONObject()
+        .put("currentPassword", currentPassword)
+        .put("newPassword", newPassword)
+        .put("identityEnvelope", identityEnvelope))
+
+    suspend fun updateIdentityEnvelope(identityEnvelope: JSONObject) =
+        request("POST", "auth/update-identity", JSONObject()
+            .put("identityEnvelope", identityEnvelope))
     suspend fun listChats() = request("GET", "chats")
     suspend fun createChat(username: String) = request("POST", "chats", JSONObject().put("username", username))
     suspend fun searchUsers(query: String) = request("GET", "users/search", query = mapOf("query" to query))
