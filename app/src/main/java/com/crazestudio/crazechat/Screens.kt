@@ -238,6 +238,40 @@ private val AuthHeroShape = GenericShape { size, _ ->
     close()
 }
 
+private val AuthWaveBackShape = GenericShape { size, _ ->
+    moveTo(0f, size.height * 0.80f)
+    cubicTo(
+        size.width * 0.16f, size.height * 0.70f,
+        size.width * 0.27f, size.height * 0.74f,
+        size.width * 0.43f, size.height * 0.84f
+    )
+    cubicTo(
+        size.width * 0.61f, size.height * 0.94f,
+        size.width * 0.78f, size.height * 0.77f,
+        size.width, size.height * 0.72f
+    )
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
+private val AuthWaveFrontShape = GenericShape { size, _ ->
+    moveTo(0f, size.height * 0.88f)
+    cubicTo(
+        size.width * 0.17f, size.height * 0.77f,
+        size.width * 0.31f, size.height * 0.79f,
+        size.width * 0.49f, size.height * 0.89f
+    )
+    cubicTo(
+        size.width * 0.69f, size.height * 0.99f,
+        size.width * 0.85f, size.height * 0.83f,
+        size.width, size.height * 0.79f
+    )
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
 @Composable
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
@@ -245,6 +279,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var confirmation by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmationVisible by remember { mutableStateOf(false) }
+    var showPasswordHelp by remember { mutableStateOf(false) }
 
     val signup = state.signup
     val cleanUsername = username.trim()
@@ -265,7 +300,9 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     val sideAccent = if (darkMode) Color(0xFFB94C1B).copy(alpha = 0.42f)
         else Color(0xFFFF8C48).copy(alpha = 0.82f)
     val disabledButton = if (darkMode) Color(0xFF49362D) else Color(0xFFE6DAD1)
-    val disabledButtonText = if (darkMode) Color(0xFFC8B7AE) else Color(0xFF83766F)
+    val disabledButtonText = if (darkMode) Color(0xFFC8D8F2) else Color(0xFF7C91AC)
+    val actionBlue = if (darkMode) Color(0xFF2868B5) else Color(0xFF0753B8)
+    val actionDisabled = if (darkMode) Color(0xFF253B56) else Color(0xFFB9CBE0)
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(pageBackground)
@@ -282,6 +319,13 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 .background(orange),
             contentAlignment = Alignment.Center
         ) {
+            Box(Modifier.fillMaxSize().clip(AuthWaveBackShape).background(sideAccent))
+            Box(
+                Modifier.fillMaxSize()
+                    .clip(AuthWaveFrontShape)
+                    .background(if (darkMode) Color(0xFF7D3B25).copy(alpha = 0.48f)
+                        else Color(0xFFFFB07C).copy(alpha = 0.58f))
+            )
             Text(
                 text = "CrazeChat",
                 color = Color.White,
@@ -291,22 +335,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 letterSpacing = (-1.4).sp
             )
         }
-
-        // Soft orange shapes overlap the curved edge, matching the supplied reference.
-        Box(
-            Modifier.align(Alignment.TopStart)
-                .offset(x = (-38).dp, y = heroHeight * 0.80f)
-                .size(width = 154.dp, height = 86.dp)
-                .clip(RoundedCornerShape(50))
-                .background(sideAccent)
-        )
-        Box(
-            Modifier.align(Alignment.TopEnd)
-                .offset(x = 38.dp, y = heroHeight * 0.75f)
-                .size(width = 154.dp, height = 92.dp)
-                .clip(RoundedCornerShape(50))
-                .background(sideAccent)
-        )
 
         Column(
             modifier = Modifier.fillMaxSize()
@@ -410,15 +438,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             )
                         },
                         trailingIcon = {
-                            TextButton(
-                                onClick = { passwordVisible = !passwordVisible },
-                                contentPadding = PaddingValues(horizontal = 10.dp)
-                            ) {
-                                Text(
-                                    if (passwordVisible) "Hide" else "Show",
-                                    color = blue,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = blue
                                 )
                             }
                         },
@@ -450,10 +474,27 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             focusedTextColor = fieldText,
                             unfocusedTextColor = fieldText,
                             cursorColor = blue,
-                            focusedPlaceholderColor = fieldText,
-                            unfocusedPlaceholderColor = fieldText
+                            focusedPlaceholderColor = placeholderText,
+                            unfocusedPlaceholderColor = placeholderText
                         )
                     )
+
+                    if (!signup) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text(
+                                text = "Forgot Password?",
+                                color = blue,
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { showPasswordHelp = true }
+                                    .padding(vertical = 8.dp)
+                            )
+                        }
+                    }
 
                     if (signup) {
                         Spacer(Modifier.height(17.dp))
@@ -473,7 +514,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             placeholder = {
                                 Text(
                                     "Re-enter your password",
-                                    color = fieldText.copy(alpha = 0.82f),
+                                    color = placeholderText,
                                     fontFamily = FontFamily.Serif,
                                     fontSize = 15.sp
                                 )
@@ -545,10 +586,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         onClick = { model.authenticate(cleanUsername, password, signup) },
                         enabled = canSubmit,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = orange,
-                            disabledContainerColor = disabledButton,
+                            containerColor = actionBlue,
+                            contentColor = Color.White,
+                            disabledContainerColor = actionDisabled,
                             disabledContentColor = disabledButtonText
                         ),
                         elevation = ButtonDefaults.buttonElevation(
@@ -603,6 +645,27 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 )
             }
         }
+    }
+
+    if (showPasswordHelp) {
+        AlertDialog(
+            onDismissRequest = { showPasswordHelp = false },
+            title = { Text("Forgot your password?") },
+            text = {
+                Text(
+                    "Password reset is not available yet. Your password protects your encrypted identity. " +
+                        "If you are still signed in on another device, open Settings → Security → Change Password before signing out."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showPasswordHelp = false }) {
+                    Text("Got it")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
