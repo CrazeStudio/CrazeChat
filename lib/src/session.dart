@@ -13,7 +13,13 @@ import 'api.dart';
 import 'crypto_service.dart';
 
 class ChatSession extends ChangeNotifier {
-  ChatSession() : api = CrazeChatApi();
+  ChatSession() : api = CrazeChatApi() {
+    current = this;
+  }
+
+  /// The session the running app uses. The in-app message banner reads it to
+  /// know whether someone is signed in and unlocked.
+  static ChatSession? current;
   static const _storage = FlutterSecureStorage();
   static const _manualLockKey = 'pref_manual_lock';
   final CrazeChatApi api;
@@ -50,6 +56,7 @@ class ChatSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (identical(current, this)) current = null;
     super.dispose();
   }
 

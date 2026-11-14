@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'active_chat.dart';
 import 'native_config.dart';
 
 class ApiException implements Exception {
@@ -122,10 +123,19 @@ class CrazeChatApi {
       query: null,
       fragment: null,
     );
-    return WebSocket.connect(uri.toString(), headers: {
+    final socket = await WebSocket.connect(uri.toString(), headers: {
       'X-Access-Key': sharedKey,
       'Authorization': 'Bearer $currentToken',
     }).timeout(const Duration(seconds: 15));
+    // While this socket is open the chat is on screen, so the in-app message
+    // banner stays quiet for it.
+    ActiveChat.opened(chatId);
+    unawaited(
+      socket.done
+          .then<void>((_) {}, onError: (Object _) {})
+          .whenComplete(() => ActiveChat.closed(chatId)),
+    );
+    return socket;
   }
 
   Future<Map<String, dynamic>> acknowledgeMessages(
