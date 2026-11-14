@@ -413,11 +413,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.height(7.dp))
+                    Spacer(Modifier.height(5.dp))
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -470,7 +470,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     )
 
                     if (signup) {
-                        Spacer(Modifier.height(17.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text(
                             "Confirm Password",
                             color = blue,
@@ -482,7 +482,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         OutlinedTextField(
                             value = confirmation,
                             onValueChange = { confirmation = it },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
                             singleLine = true,
                             placeholder = {
                                 Text(
@@ -529,8 +529,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 focusedTextColor = fieldText,
                                 unfocusedTextColor = fieldText,
                                 cursorColor = blue,
-                                focusedPlaceholderColor = fieldText,
-                                unfocusedPlaceholderColor = fieldText
+                                focusedPlaceholderColor = placeholderText,
+                                unfocusedPlaceholderColor = placeholderText
                             )
                         )
                         Spacer(Modifier.height(10.dp))
