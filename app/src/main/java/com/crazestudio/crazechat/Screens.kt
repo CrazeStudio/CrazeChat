@@ -304,7 +304,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 .offset(x = 38.dp, y = heroHeight * 0.75f)
                 .size(width = 154.dp, height = 92.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(0xFFFF8C48).copy(alpha = 0.82f))
+                .background(sideAccent)
         )
 
         Column(
