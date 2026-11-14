@@ -18,6 +18,7 @@ import com.crazestudio.crazechat.data.ChatSummary
 import com.crazestudio.crazechat.data.CrazeChatApi
 import com.crazestudio.crazechat.data.ChatUser
 import com.crazestudio.crazechat.security.CryptoService
+import com.crazestudio.crazechat.security.IdentityMaterial
 import com.crazestudio.crazechat.security.SecureVault
 import com.google.firebase.installations.FirebaseInstallations
 import com.google.android.gms.tasks.Tasks
