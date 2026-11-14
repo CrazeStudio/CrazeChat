@@ -445,7 +445,7 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                 )
                 else -> LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, top = 2.dp, bottom = 92.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 92.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(state.filteredChats, key = { it.id }) { chat ->
