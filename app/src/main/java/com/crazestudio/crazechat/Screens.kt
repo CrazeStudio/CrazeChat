@@ -88,24 +88,24 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
     } else state.themeMode
     val scheme = when (effectiveTheme) {
         "light" -> lightColorScheme(
-            primary = Color(0xFF2868F2), onPrimary = Color.White,
-            primaryContainer = Color(0xFFDCE8FF), onPrimaryContainer = Color(0xFF102E69),
-            secondary = Color(0xFF68A0FF), onSecondary = Color(0xFF071A3A),
-            secondaryContainer = Color(0xFFEAF1FF), onSecondaryContainer = Color(0xFF173B7A),
-            background = Color(0xFFF4F7FC), surface = Color(0xFFFFFFFF),
-            surfaceVariant = Color(0xFFEDF2FA), onSurface = Color(0xFF121C30),
-            onSurfaceVariant = Color(0xFF6C7890), outline = Color(0xFFD8E1EF),
-            outlineVariant = Color(0xFFE7EDF6), tertiary = Color(0xFF1AA58A), error = Color(0xFFD64A62)
+            primary = Color(0xFFE87532), onPrimary = Color.White,
+            primaryContainer = Color(0xFFFFE6D5), onPrimaryContainer = Color(0xFF55240C),
+            secondary = Color(0xFFB85A26), onSecondary = Color.White,
+            secondaryContainer = Color(0xFFFFF0E6), onSecondaryContainer = Color(0xFF6A3216),
+            background = Color(0xFFF6F5F2), surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFEFEDE8), onSurface = Color(0xFF191A1B),
+            onSurfaceVariant = Color(0xFF74716B), outline = Color(0xFFDCD9D2),
+            outlineVariant = Color(0xFFE9E6DF), tertiary = Color(0xFF168C71), error = Color(0xFFD64A62)
         )
         else -> darkColorScheme(
-            primary = Color(0xFF3478FF), onPrimary = Color.White,
-            primaryContainer = Color(0xFF163C83), onPrimaryContainer = Color(0xFFE6EEFF),
-            secondary = Color(0xFF79ACFF), onSecondary = Color(0xFF0B1B36),
-            secondaryContainer = Color(0xFF1B3154), onSecondaryContainer = Color(0xFFDCE8FF),
-            background = Color(0xFF070D18), surface = Color(0xFF101A2A),
-            surfaceVariant = Color(0xFF19263A), onSurface = Color(0xFFF5F7FC),
-            onSurfaceVariant = Color(0xFF9EADC4), outline = Color(0xFF2B3C56),
-            outlineVariant = Color(0xFF1E2C41), tertiary = Color(0xFF4BD3B1), error = Color(0xFFFF758B)
+            primary = Color(0xFFFF914D), onPrimary = Color(0xFF24140B),
+            primaryContainer = Color(0xFF552A17), onPrimaryContainer = Color(0xFFFFE3D1),
+            secondary = Color(0xFFFFB783), onSecondary = Color(0xFF2A180D),
+            secondaryContainer = Color(0xFF3B261B), onSecondaryContainer = Color(0xFFFFE5D5),
+            background = Color(0xFF0D0F10), surface = Color(0xFF151719),
+            surfaceVariant = Color(0xFF222629), onSurface = Color(0xFFF4F1EC),
+            onSurfaceVariant = Color(0xFFAAA49B), outline = Color(0xFF3B4043),
+            outlineVariant = Color(0xFF292D30), tertiary = Color(0xFF4BD3B1), error = Color(0xFFFF758B)
         )
     }
 
@@ -275,7 +275,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     Button(onClick = { model.authenticate(cleanUsername, password, signup) },
                         enabled = validName && validPassword && (!signup || confirmation == password) && !state.loading,
                         modifier = Modifier.fillMaxWidth().height(55.dp), shape = RoundedCornerShape(17.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF286CF5), disabledContainerColor = Color(0xFF26364F)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE87532), disabledContainerColor = Line),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 5.dp, pressedElevation = 1.dp)) {
                         Text(if (signup) "Create account" else "Log in", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null, tint = Color.White, modifier = Modifier.size(18.dp))
@@ -385,7 +385,7 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
     var showNewChat by remember { mutableStateOf(false) }
     Scaffold(containerColor = Ink,
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewChat = true }, containerColor = Color(0xFF3478FF),
+            FloatingActionButton(onClick = { showNewChat = true }, containerColor = Color(0xFFE87532),
                 contentColor = Color.White, shape = RoundedCornerShape(20.dp), elevation = FloatingActionButtonDefaults.elevation(8.dp)) {
                 Icon(Icons.Default.Edit, "New conversation")
             }
@@ -437,9 +437,9 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
 
 @Composable
 private fun BottomTabs(selected: AppPage, model: MainViewModel) {
-    NavigationBar(containerColor = Color(0xFF0D1728), contentColor = Muted, tonalElevation = 0.dp,
+    NavigationBar(containerColor = Panel, contentColor = Muted, tonalElevation = 0.dp,
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(23.dp))
-            .border(1.dp, Color(0xFF2B3D58), RoundedCornerShape(23.dp))) {
+            .border(1.dp, Line, RoundedCornerShape(23.dp))) {
         NavigationBarItem(selected == AppPage.INBOX, { model.backToInbox() },
             icon = { Icon(Icons.Default.ChatBubbleOutline, null) }, label = { Text("Chats") }, colors = navColors())
         NavigationBarItem(selected == AppPage.PROFILE, { model.openProfile() },
@@ -475,7 +475,7 @@ private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
                 }
             }
         }
-        HorizontalDivider(color = Color(0xFF24334A).copy(alpha = .75f), modifier = Modifier.padding(start = 77.dp))
+        HorizontalDivider(color = Line.copy(alpha = .75f), modifier = Modifier.padding(start = 77.dp))
     }
 }
 
@@ -597,12 +597,21 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
         val q = state.chatSearch.trim().lowercase()
         if (q.isEmpty()) state.messages else state.messages.filter { it.text.lowercase().contains(q) }
     }
-    LaunchedEffect(state.messages.size, state.chatSearch) {
-        if (visibleMessages.isNotEmpty() && state.chatSearch.isBlank()) listState.animateScrollToItem(visibleMessages.lastIndex)
+    var initialScrollDone by remember(chat.id) { mutableStateOf(false) }
+    LaunchedEffect(visibleMessages.lastOrNull()?.id, state.chatSearch) {
+        if (visibleMessages.isNotEmpty() && state.chatSearch.isBlank()) {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val wasNearBottom = layout.totalItemsCount == 0 || lastVisible >= layout.totalItemsCount - 2
+            if (!initialScrollDone || wasNearBottom) {
+                listState.scrollToItem(visibleMessages.lastIndex)
+            }
+            initialScrollDone = true
+        }
     }
 
-    Column(Modifier.fillMaxSize().background(Ink)) {
-        Surface(color = Color(0xFF0D1728), shadowElevation = 3.dp) {
+    Column(Modifier.fillMaxSize().background(Ink).imePadding()) {
+        Surface(color = Panel, shadowElevation = 3.dp) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = model::backFromChat) { Icon(Icons.Default.ArrowBack, null, tint = TextMain) }
@@ -678,7 +687,7 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 IconButton(onClick = model::clearReplyTarget) { Icon(Icons.Default.Close, "Cancel reply", tint = Muted) }
             }
         }
-        Row(Modifier.fillMaxWidth().background(Color(0xFF0D1728)).padding(horizontal = 12.dp, vertical = 10.dp),
+        Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Bottom) {
             OutlinedTextField(
                 value = input, onValueChange = { if (it.length <= 1500) input = it },
@@ -687,19 +696,19 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 placeholder = { Text(if (state.keyVerified) "Message" else "Verify contact to message", color = Muted, fontSize = 14.sp) },
                 shape = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF17263B), unfocusedContainerColor = Color(0xFF17263B),
-                    disabledContainerColor = Color(0xFF17263B), focusedBorderColor = Color(0xFF4388FF),
-                    unfocusedBorderColor = Color(0xFF30435F), focusedTextColor = Color.White,
+                    focusedContainerColor = PanelRaised, unfocusedContainerColor = PanelRaised,
+                    disabledContainerColor = PanelRaised, focusedBorderColor = Color(0xFFFF914D),
+                    unfocusedBorderColor = Line, focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White, disabledTextColor = Muted, cursorColor = PurpleLight
                 ),
                 maxLines = 5
             )
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { model.sendMessage(input.trim()); input = "" },
+            IconButton(onClick = { if (model.sendMessage(input)) input = "" },
                 enabled = state.keyVerified && !state.composing && input.isNotBlank(),
                 modifier = Modifier.size(51.dp).clip(CircleShape).background(
-                    if (state.keyVerified && input.isNotBlank()) Brush.linearGradient(listOf(Color(0xFF286CF5), Color(0xFF4B9BFF)))
-                    else Brush.linearGradient(listOf(Color(0xFF26364F), Color(0xFF26364F)))
+                    if (state.keyVerified && input.isNotBlank()) Brush.linearGradient(listOf(Color(0xFFE87532), Color(0xFFFFA66B)))
+                    else Brush.linearGradient(listOf(Line, Line))
                 )) {
                 if (state.composing) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                 else Icon(Icons.Default.Send, "Send message", tint = Color.White)
@@ -825,7 +834,7 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
                     Spacer(Modifier.height(20.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = { editPhoto = true }, modifier = Modifier.weight(1f).height(47.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF286CF5)), shape = RoundedCornerShape(15.dp)) {
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE87532)), shape = RoundedCornerShape(15.dp)) {
                             Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Edit photo")
                         }
                         OutlinedButton(onClick = {
