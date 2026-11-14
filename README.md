@@ -4,7 +4,7 @@ CrazeChat is the native Android implementation of the preserved Flutter applicat
 
 ## UI
 
-The native UI follows the supplied charcoal/purple CrazeChat design and includes authentication, inbox, direct conversation, profile, settings, privacy/security, storage and encrypted folder-sync views.
+The native UI uses a warm neutral palette with graphite surfaces and orange Craze accents across authentication, inbox, conversations, profile, settings, privacy/security, storage and encrypted folder-sync views.
 
 ## Features ported from the Flutter app
 
@@ -34,7 +34,7 @@ https://crazestudio-web.mehetabhoque566.workers.dev
 
 CrazeChat uses the existing `/db/*` REST routes and `/api/realtime/{chatId}` WebSocket route. Authenticated requests include `Authorization: Bearer <user JWT>`. Registration and login are rate-limited public entry points; all protected operations are authorized by per-user JWT and server-side chat-membership checks. No shared gateway credential is shipped in the APK.
 
-The API uses usernames, not email addresses. Account passwords must be at least 12 characters. A new account also needs a separate encryption passphrase. The backend's Firebase service account, `ADMIN_KEY`, `ACCESS_KEY` (if retained for diagnostics), and `SESSION_SECRET` remain server-side and must never be placed in the APK.
+The API uses usernames, not email addresses. Account passwords must be at least 12 characters. Newly created v3 identity envelopes are protected by the account password; older identity-envelope versions and passphrase-change flows remain supported for migration and account recovery. The backend's Firebase service account, `ADMIN_KEY`, optional diagnostic `ACCESS_KEY`, and `SESSION_SECRET` remain server-side and must never be placed in the APK.
 
 ## Build
 
