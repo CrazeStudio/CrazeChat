@@ -216,7 +216,6 @@ private fun BrandTitle(size: Int = 24) {
     }
 }
 
-@Composable
 private val AuthHeroShape = GenericShape { size, _ ->
     val corner = size.width * 0.035f
     val bottomEdge = size.height * 0.86f
