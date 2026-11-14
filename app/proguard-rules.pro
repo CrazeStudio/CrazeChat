@@ -1,2 +1,5 @@
 -keep class com.crazestudio.crazechat.security.NativeBridge { *; }
 -keep class com.crazestudio.crazechat.push.CrazeFirebaseMessagingService { *; }
+
+-renamesourcefileattribute SourceFile
+-keepattributes *Annotation*

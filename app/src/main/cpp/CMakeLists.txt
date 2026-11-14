@@ -10,4 +10,4 @@ target_compile_options(craze PRIVATE
     -fstack-protector-strong
     -D_FORTIFY_SOURCE=2
 )
-target_link_options(craze PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections)
+target_link_options(craze PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--strip-all)

@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CRAZECHAT_BURL: ${{ secrets.BURL || 'https://crazestudio-web.mehetabhoque566.workers.dev' }}
-      CRAZECHAT_KEY: ${{ secrets.KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,15 +89,7 @@ jobs:
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libcraze.so'
-          if [[ -n "$CRAZECHAT_KEY" ]]; then
-            mkdir -p "$RUNNER_TEMP/crazechat-apk-libs"
-            unzip -q "$APK" 'lib/*/libcraze.so' -d "$RUNNER_TEMP/crazechat-apk-libs"
-            if grep -rF -- "$CRAZECHAT_KEY" "$RUNNER_TEMP/crazechat-apk-libs"; then
-              echo "::error::The gateway key appears in plain text in a packaged native library."
-              exit 1
-            fi
-          fi
-          echo "libcraze.so is packaged; no plain-text gateway key was found."
+          echo "libcraze.so is packaged; the client requires no shared gateway secret."
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

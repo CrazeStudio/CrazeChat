@@ -80,7 +80,7 @@ data class CrazeUiState(
     val soundEffectsEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val screenSecureEnabled: Boolean = true,
-    val themeMode: String = "dark",
+    val themeMode: String = "system",
     val savedAccounts: List<SavedAccount> = emptyList(),
     val needsPassphraseMigration: Boolean = false,
     val identityUsesSeparatePassphrase: Boolean = true,
@@ -165,7 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         soundEffectsEnabled = vault.optBoolean("soundEffectsEnabled", true),
                         vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                         screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
-                        themeMode = vault.optString("themeMode", "dark"),
+                        themeMode = vault.optString("themeMode", "system"),
                         savedAccounts = savedAccountList(),
                         needsPassphraseMigration = envelope.optInt("version") != 3,
                         identityUsesSeparatePassphrase = envelope.optInt("version") == 2
@@ -180,7 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         soundEffectsEnabled = vault.optBoolean("soundEffectsEnabled", true),
                         vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                         screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
-                        themeMode = vault.optString("themeMode", "dark"),
+                        themeMode = vault.optString("themeMode", "system"),
                         savedAccounts = savedAccountList()
                     )
                 }
@@ -537,7 +537,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 soundEffectsEnabled = vault.optBoolean("soundEffectsEnabled", true),
                 vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                 screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
-                themeMode = vault.optString("themeMode", "dark"),
+                themeMode = vault.optString("themeMode", "system"),
                 needsPassphraseMigration = envelope?.optInt("version") != 3,
                 identityUsesSeparatePassphrase = envelope?.optInt("version") == 2
             )
@@ -964,19 +964,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearReplyTarget() { mutableState.value = mutableState.value.copy(replyTarget = null) }
     fun setChatSearch(value: String) { mutableState.value = mutableState.value.copy(chatSearch = value) }
 
-    fun sendMessage(textInput: String) {
+    fun sendMessage(textInput: String, onQueued: () -> Unit = {}): Boolean {
         val text = textInput.trim()
-        val chat = mutableState.value.currentChat ?: return
-        val sender = mutableState.value.userId ?: return
-        val key = currentChatKey ?: return
-        if (!mutableState.value.keyVerified) {
+        val current = mutableState.value
+        val chat = current.currentChat ?: return false
+        val sender = current.userId ?: return false
+        if (!current.keyVerified) {
             reportError("Verify the contact's fingerprint before sending messages.")
-            return
+            return false
         }
-        if (text.isEmpty() || text.length > 1500 || mutableState.value.composing) return
-        val reply = mutableState.value.replyTarget
+        if (text.isEmpty() || text.length > 1500 || current.composing) return false
+        val key = currentChatKey?.copyOf() ?: return false
+        val reply = current.replyTarget
+        // Lock only while encrypting and persisting locally. Network delivery
+        // continues in the background, so the composer is ready for the next message.
+        mutableState.value = current.copy(composing = true, error = null)
+
         viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(composing = true)
+            val id = CryptoService.createMessageId()
+            val now = System.currentTimeMillis()
+            var queued: JSONObject? = null
             try {
                 val payload = JSONObject()
                     .put("__cc_type", "message")
@@ -985,35 +992,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         JSONObject().put("id", it.id).put("senderId", it.senderId).put("text", it.text)
                     } ?: JSONObject.NULL)
                     .toString()
-                val encrypted = CryptoService.encryptMessage(payload, key, chat.id, sender)
-                val id = CryptoService.createMessageId()
-                val now = System.currentTimeMillis()
-                val queued = JSONObject(encrypted.toString())
-                    .put("id", id).put("senderId", sender).put("createdAt", now).put("deliveryState", "queued")
-                saveEnvelope(chat.id, queued)
-                val ui = UiMessage(id, sender, text, now, "queued", true, replyTo = reply)
-                mutableState.value = mutableState.value.copy(messages = mutableState.value.messages + ui, replyTarget = null)
-                if (mutableState.value.soundEffectsEnabled) CrazeSoundEffects.play(incoming = false)
-                if (mutableState.value.vibrationEnabled) vibrate()
-                try {
-                    val response = api.sendMessage(chat.id, JSONObject()
-                        .put("id", id).put("format", queued.getString("format"))
-                        .put("ciphertext", queued.getString("ciphertext"))
-                        .put("nonce", queued.getString("nonce")).put("mac", queued.getString("mac")))
-                    val serverMessage = response.getJSONObject("message").put("deliveryState", "sent")
-                    saveEnvelope(chat.id, serverMessage)
-                    mutableState.value = mutableState.value.copy(messages = mutableState.value.messages.map {
-                        if (it.id == id) it.copy(createdAt = serverMessage.optLong("createdAt", now), deliveryState = "sent") else it
-                    })
-                } catch (_: Exception) {
-                    reportError("Saved to your encrypted outbox. CrazeChat will retry when the connection returns.")
+
+                val encrypted = withContext(Dispatchers.Default) {
+                    CryptoService.encryptMessage(payload, key, chat.id, sender)
+                }
+                val envelope = JSONObject(encrypted.toString())
+                    .put("id", id)
+                    .put("senderId", sender)
+                    .put("createdAt", now)
+                    .put("deliveryState", "queued")
+                queued = envelope
+
+                // Persist the encrypted envelope before exposing it as queued.
+                saveEnvelope(chat.id, envelope)
+                if (mutableState.value.currentChat?.id == chat.id) {
+                    val item = UiMessage(id, sender, text, now, "queued", true, replyTo = reply)
+                    mutableState.value = mutableState.value.copy(
+                        messages = (mutableState.value.messages.filterNot { it.id == id } + item).sortedBy { it.createdAt },
+                        replyTarget = null,
+                        composing = false
+                    )
+                    if (mutableState.value.soundEffectsEnabled) CrazeSoundEffects.play(incoming = false)
+                    if (mutableState.value.vibrationEnabled) vibrate()
+                    onQueued()
+                } else {
+                    mutableState.value = mutableState.value.copy(composing = false)
                 }
             } catch (error: Exception) {
-                reportError(error.message ?: "Could not encrypt the message.")
-            } finally {
                 mutableState.value = mutableState.value.copy(composing = false)
+                reportError(error.message ?: "Could not encrypt or save the message.")
+                return@launch
+            } finally {
+                key.fill(0)
+            }
+
+            val saved = queued ?: return@launch
+            try {
+                val response = api.sendMessage(chat.id, JSONObject()
+                    .put("id", id)
+                    .put("format", saved.getString("format"))
+                    .put("ciphertext", saved.getString("ciphertext"))
+                    .put("nonce", saved.getString("nonce"))
+                    .put("mac", saved.getString("mac")))
+                val serverMessage = response.getJSONObject("message").put("deliveryState", "sent")
+                saveEnvelope(chat.id, serverMessage)
+                if (mutableState.value.currentChat?.id == chat.id) {
+                    mutableState.value = mutableState.value.copy(messages = mutableState.value.messages.map {
+                        if (it.id == id) it.copy(
+                            createdAt = serverMessage.optLong("createdAt", now),
+                            deliveryState = "sent"
+                        ) else it
+                    })
+                }
+            } catch (_: Exception) {
+                // The durable encrypted outbox is the source of truth until retry succeeds.
+                if (mutableState.value.currentChat?.id == chat.id) {
+                    mutableState.value = mutableState.value.copy(
+                        info = "Message saved securely. It will send automatically when the connection returns."
+                    )
+                }
             }
         }
+        return true
     }
 
     fun reactToMessage(message: UiMessage, emoji: String) {

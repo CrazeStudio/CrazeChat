@@ -23,7 +23,6 @@ class ApiException(
 
 class CrazeChatApi {
     private val origin = NativeBridge.nativeApiOrigin().trim()
-    private val gatewayKey = NativeBridge.nativeGatewayKey().trim()
     @Volatile var token: String? = null
 
     private val client = OkHttpClient.Builder()
@@ -46,9 +45,6 @@ class CrazeChatApi {
             base.encodedPath !in setOf("", "/") || base.query != null || base.fragment != null) {
             throw ApiException("BURL must be an origin without a path, credentials, query or fragment.")
         }
-        if (gatewayKey.isBlank()) {
-            throw ApiException("CrazeChat is not configured. Add the KEY build secret to the Gradle build.")
-        }
         return base
     }
 
@@ -63,7 +59,6 @@ class CrazeChatApi {
         val builder = Request.Builder()
             .url(urlBuilder.build())
             .header("Accept", "application/json")
-            .header("X-Access-Key", gatewayKey)
         token?.takeIf { it.isNotBlank() }?.let { builder.header("Authorization", "Bearer $it") }
         if (body != null) builder.header("Content-Type", "application/json")
         val requestBody = body?.toString()?.toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -163,7 +158,6 @@ class CrazeChatApi {
             (base.scheme == "http" && base.port != 80)) ":${base.port}" else ""
         val url = scheme + base.host + portSuffix + "/api/realtime/$chatId"
         val request = Request.Builder().url(url)
-            .header("X-Access-Key", gatewayKey)
             .header("Authorization", "Bearer ${token.orEmpty()}")
             .build()
         return client.newWebSocket(request, listener)

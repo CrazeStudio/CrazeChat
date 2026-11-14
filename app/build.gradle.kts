@@ -1,4 +1,3 @@
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 plugins {
@@ -11,19 +10,12 @@ plugins {
 val generatedNativeConfig = file("src/main/cpp/generated/craze_config.h")
 val apiOrigin = providers.environmentVariable("CRAZECHAT_BURL")
     .orElse("https://crazestudio-web.mehetabhoque566.workers.dev")
-val gatewayKey = providers.environmentVariable("CRAZECHAT_KEY").orElse("")
-val gatewayKeyFingerprint = gatewayKey.map { value ->
-    MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
-}
 
 val generateCrazeNativeConfig = tasks.register("generateCrazeNativeConfig") {
     inputs.property("apiOrigin", apiOrigin)
-    inputs.property("gatewayKeyFingerprint", gatewayKeyFingerprint)
     outputs.file(generatedNativeConfig)
     doLast {
         val origin = apiOrigin.get().trim()
-        val key = gatewayKey.get().trim()
         require(origin.startsWith("https://") ||
             origin.startsWith("http://10.0.2.2") ||
             origin.startsWith("http://127.0.0.1") ||
@@ -31,29 +23,23 @@ val generateCrazeNativeConfig = tasks.register("generateCrazeNativeConfig") {
             "CRAZECHAT_BURL must be an HTTPS origin (or an explicit local development origin)."
         }
         val mask = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        fun maskValue(value: String, offset: Int): ByteArray {
-            val raw = value.toByteArray(Charsets.UTF_8)
-            return ByteArray(raw.size + 1).also { result ->
-                raw.forEachIndexed { index, byte ->
-                    result[index] = (byte.toInt() xor (mask[(index + offset) % mask.size].toInt() and 0xff)).toByte()
-                }
-                result[raw.size] = 0
+        val rawUrl = origin.toByteArray(Charsets.UTF_8)
+        val urlBytes = ByteArray(rawUrl.size + 1).also { result ->
+            rawUrl.forEachIndexed { index, byte ->
+                result[index] = (byte.toInt() xor (mask[index % mask.size].toInt() and 0xff)).toByte()
             }
+            result[rawUrl.size] = 0
         }
         fun bytes(value: ByteArray) = value.joinToString(", ") { (it.toInt() and 0xff).toString() }
-        val urlBytes = maskValue(origin, 0)
-        val keyBytes = maskValue(key, 7)
         generatedNativeConfig.parentFile.mkdirs()
         generatedNativeConfig.writeText(
             "/* Generated from build environment. Do not commit. */\n" +
                 "#define CC_MASK_LEN 16\n" +
                 "#define CC_URL_LEN ${urlBytes.size - 1}\n" +
-                "#define CC_KEY_LEN ${keyBytes.size - 1}\n" +
                 "static const unsigned char cc_mask[CC_MASK_LEN] = {${bytes(mask)}};\n" +
-                "static const unsigned char cc_url_enc[CC_URL_LEN + 1] = {${bytes(urlBytes)}};\n" +
-                "static const unsigned char cc_key_enc[CC_KEY_LEN + 1] = {${bytes(keyBytes)}};\n"
+                "static const unsigned char cc_url_enc[CC_URL_LEN + 1] = {${bytes(urlBytes)}};\n"
         )
-        println("CrazeChat native configuration generated; sensitive values were not logged.")
+        println("CrazeChat API origin generated; no shared client secret is embedded.")
     }
 }
 
