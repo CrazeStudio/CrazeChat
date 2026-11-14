@@ -1228,7 +1228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .put("photoUrl", mutableState.value.photoUrl))
                 saveVault()
                 mutableState.value = mutableState.value.copy(
-                    needsPassphraseMigration = true,
+                    needsPassphraseMigration = false,
                     identityUsesSeparatePassphrase = false,
                     info = "Password updated. The new account password now unlocks the identity key."
                 )
