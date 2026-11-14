@@ -1,24 +1,30 @@
-# CrazeChat — Native Android / Gradle
+# CrazeChat — Native Android (Gradle)
 
-CrazeChat is being rebuilt as a native Android application using Kotlin, Jetpack Compose, the Android NDK and a C++ shared library. The original Flutter project remains preserved on `backup/flutter-app`.
+CrazeChat is the native Android implementation of the preserved Flutter application. It uses Kotlin, Jetpack Compose, Android Keystore, the Android NDK and a C++ JNI library. The original Flutter source remains on `backup/flutter-app`.
 
-## App structure
+## UI
 
-- `app/`: Kotlin Android application and Jetpack Compose UI
-- `app/src/main/cpp/`: C++ JNI library built as `libcraze.so`
-- `app/src/main/java/.../security/CryptoService.kt`: identity and message cryptography
-- `SecureVault.kt`: encrypted local data vault protected by Android Keystore
-- `CrazeChatApi.kt`: HTTPS REST and authenticated WebSocket client
+The native UI follows the supplied charcoal/purple CrazeChat design and includes authentication, inbox, direct conversation, profile, settings, privacy/security, storage and encrypted folder-sync views.
 
-## Design implementation
+## Features ported from the Flutter app
 
-The native app follows the supplied six-page CrazeChat design: dark charcoal surfaces, purple gradient actions, branded authentication, conversation list, message view, profile, and settings.
+- Username/password registration and login, local identity unlock, sign-out, add-account and switching between up to two saved accounts.
+- X25519 identity keys protected by Argon2id and AES-256-GCM, with passphrase re-wrapping and compatibility with the existing identity envelope.
+- Direct one-to-one chat, authenticated WebSocket delivery with REST polling/reconnect fallback, encrypted local outbox and retry.
+- Text messages, quoted replies, emoji reactions, in-chat search, copy, sender-side deletion and read receipts.
+- Independent public-key fingerprint verification. Remote history sync and sending remain blocked until the contact key is verified.
+- Encrypted local message cache. The app saves received encrypted envelopes before sending the read acknowledgement that causes the server to purge its copy.
+- Firebase push registration and four sound/vibration notification-channel combinations. Foreground notifications use a dismissible generic banner; background notifications contain no plaintext.
+- Configurable notification, sound-effect and vibration preferences.
+- System, light and dark appearance.
+- Screenshot blocking, manual app lock, profile-photo URL update, account-password change and separate identity-passphrase change.
+- Opt-in Android Storage Access Framework folder sync. Backups use the legacy `cc-local-backup-v1` format and account-bound identity-key encryption. Import merges encrypted messages and deletion tombstones; archive reads/writes are limited to 64 MB.
 
-A few elements in the mockup are visual concepts that the current server cannot support yet. The current CrazeStudio-Web deployment provides username/password authentication, direct one-to-one conversations, encrypted text messages, profile-photo URLs, message delivery/read events, and generic push notifications. It does not currently expose Google/Apple OAuth, email/password recovery, phone/video calling, group chats, voice messages, or media upload. These are not represented as working features in the Gradle app.
+## Features deliberately not shown as working controls
 
-The existing API uses usernames rather than email addresses. Account creation requires an account password and a separate encryption passphrase. The separate passphrase protects the X25519 private identity key.
+The old Flutter app and current server do not provide Google/Apple OAuth, email recovery, group rooms, voice/video calls, audio messages or image/file message upload. These are not exposed as functional features in this app.
 
-## Backend
+## Existing backend
 
 Default API origin:
 
@@ -26,50 +32,48 @@ Default API origin:
 https://crazestudio-web.mehetabhoque566.workers.dev
 ```
 
-CrazeChat calls the existing `/db/*` API using:
+CrazeChat uses the existing `/db/*` REST routes and `/api/realtime/{chatId}` WebSocket route. Requests include:
 
-- `X-Access-Key`: build-time shared gateway value
-- `Authorization: Bearer <user JWT>`: per-user session token
+- `X-Access-Key`: the existing shared gateway value supplied at build time.
+- `Authorization: Bearer <user JWT>`: the authenticated per-user session token.
 
-The backend keeps its Firebase service account, `ADMIN_KEY`, and `SESSION_SECRET` on the server. Never add those values to the Android project.
+The API uses usernames, not email addresses. Account passwords must be at least 12 characters. A new account also needs a separate encryption passphrase. The backend's Firebase service account, `ADMIN_KEY`, and `SESSION_SECRET` remain server-side and must never be placed in the APK.
 
-## Build requirements
+## Build
+
+Requirements:
 
 - JDK 17
 - Gradle 8.9
-- Android SDK Platform 35 / Build Tools 35.0.0
+- Android SDK Platform 35 and Build Tools 35.0.0
 - Android NDK 27.0.12077973
 - CMake 3.22.1
 
-Set the API key and build:
+Build with the same shared key configured as the backend's `ACCESS_KEY`:
 
 ```bash
 export CRAZECHAT_BURL="https://crazestudio-web.mehetabhoque566.workers.dev"
-export CRAZECHAT_KEY="the-same-value-as-backend-ACCESS_KEY"
+export CRAZECHAT_KEY="the-backend-ACCESS_KEY"
 gradle --no-daemon :app:assembleDebug
 gradle --no-daemon :app:assembleRelease
 ```
 
-The CI workflow reads `BURL` and `KEY` repository secrets; `BURL` has the public Worker origin as a fallback. If `KEY` is absent, the APK still builds but API calls will display a clear configuration error.
+GitHub Actions reads the `BURL` and `KEY` repository secrets; `BURL` falls back to the default Worker origin. If `KEY` is absent, the project can compile but API calls will show a configuration error.
 
-The build generates `app/src/main/cpp/generated/craze_config.h` locally from the environment. It is ignored by Git. The API origin and gateway key are XOR-masked per build before they are compiled into `libcraze.so`.
+The build generates `app/src/main/cpp/generated/craze_config.h` from the build environment. This generated file is ignored by Git. The API origin and gateway value are XOR-masked per build before being compiled into `libcraze.so`.
 
-## Security model
+## Security model and limits
 
-- Messages use the existing wire format: X25519 agreement, HKDF-SHA256, and AES-256-GCM.
-- Identity private keys are wrapped with Argon2id and AES-256-GCM using a separate passphrase. The envelope remains compatible with the current Worker API.
-- Local session data and encrypted message envelopes are stored in an AES-256-GCM vault. The AES key is generated and retained by Android Keystore.
-- A new contact's SHA-256 public-key fingerprint must be compared using an independent trusted channel and verified before remote message sync or sending is enabled.
-- Incoming encrypted message envelopes are saved to the local vault before the client sends a read acknowledgement. The Worker deletes its remote message copy after a successful read acknowledgement.
-- Cleartext networking and HTTP redirects are disabled for API requests.
-- Release builds enable R8 shrinking and C++ symbol visibility restrictions.
+- Message envelopes preserve the existing wire format: X25519 key agreement, HKDF-SHA256 and AES-256-GCM.
+- Identity envelopes preserve Argon2id (32 MiB, two iterations), AES-256-GCM and the existing API fields.
+- The local vault uses AES-256-GCM with a key generated and retained by Android Keystore.
+- Folder backups use the same legacy identity-private-key-derived HKDF parameters and account binding.
+- Contact public-key fingerprints must be compared over an independent trusted channel before the client enables remote sync or sending.
+- HTTPS is enforced for non-local API origins and OkHttp redirects are disabled. Android cleartext traffic is disabled.
+- Release builds use R8 shrinking and restricted native symbol visibility.
 
-### Important limitations
+**The embedded shared gateway value is not a true secret.** XOR masking and a native library add reverse-engineering friction, but a determined attacker can recover a value used by a running client. The shared gateway key must not replace per-user JWT authentication, server-side authorization, rate limits or server-side secret management.
 
-The native library and XOR-masked configuration raise the effort needed to inspect the APK, but they cannot make a client-side gateway key secret. A determined attacker can recover it from a running application. Treat `ACCESS_KEY` as a shared application gateway gate only; per-user JWT authentication and server-side authorization remain essential.
+Android Keystore protects local key material at rest. A rooted or instrumented device can still use secrets while the app is running. Local folder sync is opt-in; uninstalling or clearing app data removes the local vault. Keep the encrypted backup folder if you need to restore the message archive.
 
-Android Keystore protects local keys at rest, but a rooted or instrumented device can still misuse them while the app is running. No client can guarantee protection after full device compromise.
-
-The encrypted message cache is currently held in a Keystore-encrypted local vault and bounded to the most recent 10,000 envelopes per conversation. The Gradle rebuild does not yet include the Flutter app's folder-backup/export workflow. Uninstalling or clearing app data removes the local vault.
-
-This is a first native Gradle implementation, not a completed independent cryptographic audit. Verify backend configuration and run the Android CI build before distributing a release.
+The native implementation is a code port, not an independent cryptographic audit. Before public release, complete device-level account, push, reply/reaction, migration and backup-restore tests against the production Worker and test at least one Android 13+ and one older supported device.
