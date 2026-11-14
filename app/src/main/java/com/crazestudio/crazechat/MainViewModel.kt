@@ -80,7 +80,7 @@ data class CrazeUiState(
     val soundEffectsEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val screenSecureEnabled: Boolean = true,
-    val themeMode: String = "dark",
+    val themeMode: String = "light",
     val savedAccounts: List<SavedAccount> = emptyList(),
     val needsPassphraseMigration: Boolean = false,
     val identityUsesSeparatePassphrase: Boolean = true,
@@ -165,7 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         soundEffectsEnabled = vault.optBoolean("soundEffectsEnabled", true),
                         vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                         screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
-                        themeMode = vault.optString("themeMode", "dark"),
+                        themeMode = vault.optString("themeMode", "light"),
                         savedAccounts = savedAccountList(),
                         needsPassphraseMigration = envelope.optInt("version") != 2,
                         identityUsesSeparatePassphrase = envelope.optInt("version") == 2
