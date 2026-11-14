@@ -54,7 +54,7 @@ Java_com_crazestudio_crazechat_security_NativeBridge_nativeBuildCanonicalRequest
     })) return nullptr;
 
     const std::string canonical =
-        method + "\\n" + path + "\\n" + timestamp + "\\n" +
-        nonce + "\\n" + body_hash;
+        method + "\n" + path + "\n" + timestamp + "\n" +
+        nonce + "\n" + body_hash;
     return env->NewStringUTF(canonical.c_str());
 }
