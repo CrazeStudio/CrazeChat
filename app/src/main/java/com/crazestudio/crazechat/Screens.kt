@@ -203,19 +203,6 @@ private fun BrandMark(size: Int) {
     }
 }
 
-@Composable
-private fun BrandTitle(size: Int = 24) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        BrandMark(38)
-        Spacer(Modifier.width(11.dp))
-        Column {
-            Text("CrazeChat", color = TextMain, fontSize = size.sp, fontWeight = FontWeight.ExtraBold)
-            Text("PRIVATE. ENCRYPTED. YOURS.", color = Muted, fontSize = 9.sp,
-                letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
 private val AuthHeroShape = GenericShape { size, _ ->
     val corner = size.width * 0.035f
     val bottomEdge = size.height * 0.86f
@@ -502,15 +489,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 )
                             },
                             trailingIcon = {
-                                TextButton(
-                                    onClick = { confirmationVisible = !confirmationVisible },
-                                    contentPadding = PaddingValues(horizontal = 10.dp)
-                                ) {
-                                    Text(
-                                        if (confirmationVisible) "Hide" else "Show",
-                                        color = blue,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
+                                IconButton(onClick = { confirmationVisible = !confirmationVisible }) {
+                                    Icon(
+                                        imageVector = if (confirmationVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (confirmationVisible) "Hide confirmation password" else "Show confirmation password",
+                                        tint = blue
                                     )
                                 }
                             },
@@ -593,10 +576,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        if (!state.loading) {
-                            Spacer(Modifier.width(8.dp))
-                            Icon(Icons.Default.ArrowForward, null, modifier = Modifier.size(18.dp))
-                        }
                     }
                     Spacer(Modifier.height(22.dp))
                 }
