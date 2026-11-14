@@ -587,139 +587,118 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
     var showFingerprint by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var selectedMessage by remember { mutableStateOf<UiMessage?>(null) }
+    val peer = chat.peer(state.userId.orEmpty())
     val visibleMessages = remember(state.messages, state.chatSearch) {
-        val query = state.chatSearch.trim().lowercase()
-        if (query.isEmpty()) state.messages else state.messages.filter { it.text.lowercase().contains(query) }
+        val q = state.chatSearch.trim().lowercase()
+        if (q.isEmpty()) state.messages else state.messages.filter { it.text.lowercase().contains(q) }
     }
     LaunchedEffect(state.messages.size, state.chatSearch) {
-        if (visibleMessages.isNotEmpty() && state.chatSearch.isBlank()) {
-            listState.animateScrollToItem(visibleMessages.lastIndex)
-        }
+        if (visibleMessages.isNotEmpty() && state.chatSearch.isBlank()) listState.animateScrollToItem(visibleMessages.lastIndex)
     }
 
     Column(Modifier.fillMaxSize().background(Ink)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::backFromChat) { Icon(Icons.Default.ArrowBack, null, tint = TextMain) }
-            val peer = chat.peer(state.userId.orEmpty())
-            Avatar(peer?.username ?: "?", peer?.photoUrl, 42)
+            Avatar(peer?.username ?: "?", peer?.photoUrl, 43)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(peer?.username ?: "Conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text(
-                    when {
-                        state.keyVerified -> "Contact key verified"
-                        state.peerKeyChanged -> "Key changed · verify again"
-                        else -> "Verify encryption key"
-                    },
-                    color = if (state.keyVerified) Green else Color(0xFFE0A84F),
-                    fontSize = 11.sp
-                )
+                Text(if (state.keyVerified) "Verified contact key" else "Security check required",
+                    color = if (state.keyVerified) Green else Color(0xFFFFBF69), fontSize = 11.sp)
             }
-            IconButton(onClick = { showSearch = !showSearch }) {
-                Icon(Icons.Default.Search, "Search messages", tint = TextMain)
-            }
+            IconButton(onClick = { showSearch = !showSearch }) { Icon(Icons.Default.Search, "Search messages", tint = Muted) }
             IconButton(onClick = { showFingerprint = true }) {
-                Icon(
-                    if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint,
-                    "Contact fingerprint",
-                    tint = if (state.keyVerified) Green else PurpleLight
-                )
+                Icon(if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint,
+                    "Contact fingerprint", tint = if (state.keyVerified) Green else PurpleLight)
             }
         }
         if (showSearch) {
-            Box(Modifier.padding(horizontal = 14.dp)) {
-                DarkField(state.chatSearch, model::setChatSearch, "Search in this conversation")
-            }
+            Box(Modifier.padding(horizontal = 14.dp)) { DarkField(state.chatSearch, model::setChatSearch, "Search in this conversation") }
             Spacer(Modifier.height(7.dp))
         }
-        HorizontalDivider(color = Line)
+        HorizontalDivider(color = Line.copy(alpha = .7f))
         if (!state.keyVerified) {
-            Column(Modifier.fillMaxWidth().padding(18.dp).clip(RoundedCornerShape(16.dp)).background(Panel).padding(15.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)
+                .clip(RoundedCornerShape(18.dp)).background(PanelRaised).padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Shield, null, tint = Color(0xFFFFC06B))
+                    Icon(Icons.Default.Shield, null, tint = Color(0xFFFFBF69))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (state.peerKeyChanged) "Contact key changed" else "Verify this contact", color = TextMain, fontWeight = FontWeight.Bold)
+                    Text(if (state.peerKeyChanged) "Contact key changed" else "Verify this contact",
+                        color = TextMain, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(7.dp))
-                Text(
-                    "Compare the SHA-256 fingerprint with your contact over a separate trusted channel. Messages will not sync or send until you verify it.",
-                    color = Muted, fontSize = 12.sp, lineHeight = 17.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = { showFingerprint = true }, border = androidx.compose.foundation.BorderStroke(1.dp, Purple)) {
-                    Text("View fingerprint", color = PurpleLight)
-                }
+                Text("Compare the SHA-256 fingerprint with your contact through a separate trusted channel. CrazeChat will not sync or send messages until you verify it.",
+                    color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
+                Spacer(Modifier.height(9.dp))
+                OutlinedButton(onClick = { showFingerprint = true }) { Text("View fingerprint", color = PurpleLight) }
             }
         }
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 15.dp, vertical = 15.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            items(visibleMessages, key = { it.id }) { message ->
-                MessageBubble(message) { selectedMessage = message }
+        if (visibleMessages.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(28.dp)) {
+                    Icon(Icons.Default.Lock, null, tint = PurpleLight, modifier = Modifier.size(34.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(if (state.keyVerified) "No messages yet" else "Conversation protected",
+                        color = TextMain, fontWeight = FontWeight.Bold)
+                    Text(if (state.keyVerified) "Send a message to start this conversation."
+                        else "Verify the contact fingerprint to load messages.", color = Muted, fontSize = 12.sp)
+                }
+            }
+        } else {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+                contentPadding = PaddingValues(horizontal = 15.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                items(visibleMessages, key = { it.id }) { message -> MessageBubble(message) { selectedMessage = message } }
             }
         }
         state.replyTarget?.let { reply ->
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 4.dp)
-                    .clip(RoundedCornerShape(13.dp)).background(Panel).padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.width(3.dp).height(34.dp).background(PurpleLight, RoundedCornerShape(4.dp)))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(13.dp)).background(PanelRaised).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(3.dp).height(34.dp).background(Purple, RoundedCornerShape(4.dp)))
                 Spacer(Modifier.width(9.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(if (reply.senderId == state.userId) "Replying to you" else "Replying to @${state.peerName}", color = PurpleLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(if (reply.senderId == state.userId) "Replying to you" else "Replying to @${state.peerName}",
+                        color = PurpleLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text(reply.text, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
                 }
                 IconButton(onClick = model::clearReplyTarget) { Icon(Icons.Default.Close, "Cancel reply", tint = Muted) }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Bottom) {
             OutlinedTextField(
                 value = input,
                 onValueChange = { if (it.length <= 1500) input = it },
                 enabled = state.keyVerified && !state.composing,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Message", color = Muted) },
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(23.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Panel,
-                    unfocusedContainerColor = Panel,
-                    disabledContainerColor = Panel,
-                    focusedBorderColor = Purple,
-                    unfocusedBorderColor = Line,
-                    focusedTextColor = TextMain,
-                    unfocusedTextColor = TextMain,
-                    disabledTextColor = Muted
+                    focusedContainerColor = Panel, unfocusedContainerColor = Panel,
+                    disabledContainerColor = Panel, focusedBorderColor = Purple,
+                    unfocusedBorderColor = Line, focusedTextColor = TextMain,
+                    unfocusedTextColor = TextMain, disabledTextColor = Muted, cursorColor = Purple
                 ),
                 maxLines = 5
             )
             Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier.size(48.dp).clip(CircleShape)
-                    .background(if (state.keyVerified) Brush.linearGradient(listOf(Purple, PurpleLight)) else Brush.linearGradient(listOf(Line, Line)))
-                    .clickable(enabled = state.keyVerified && !state.composing) {
-                        model.sendMessage(input)
-                        input = ""
-                    },
-                contentAlignment = Alignment.Center
-            ) { Icon(Icons.Default.Send, null, tint = Color.White) }
+            IconButton(
+                onClick = { model.sendMessage(input.trim()); input = "" },
+                enabled = state.keyVerified && !state.composing && input.isNotBlank(),
+                modifier = Modifier.size(50.dp).clip(CircleShape).background(Purple)
+            ) {
+                if (state.composing) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                else Icon(Icons.Default.Send, "Send message", tint = Color.White)
+            }
         }
-        Text("Messages are end-to-end encrypted on your device.", color = Muted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
+        Text("End-to-end encrypted on this device", color = Muted, fontSize = 10.sp,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
     }
 
     if (showFingerprint) {
         AlertDialog(
-            onDismissRequest = { showFingerprint = false },
-            containerColor = Panel,
+            onDismissRequest = { showFingerprint = false }, containerColor = Panel,
             title = { Text("Encryption fingerprint", color = TextMain) },
             text = {
                 Column {
@@ -727,10 +706,8 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                     Spacer(Modifier.height(8.dp))
                     Text(state.peerFingerprint ?: "Fingerprint unavailable", color = TextMain, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        "Compare every group with your contact in person or through a separate trusted channel. A fingerprint sent only through this chat is not independent verification.",
-                        color = Muted, fontSize = 11.sp, lineHeight = 16.sp
-                    )
+                    Text("Compare every group with your contact in person or through a separate trusted channel. A fingerprint sent only through this chat is not independent verification.",
+                        color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 }
             },
             confirmButton = {
@@ -741,38 +718,25 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
             dismissButton = { TextButton(onClick = { showFingerprint = false }) { Text("Close", color = Muted) } }
         )
     }
-
     selectedMessage?.let { message ->
         ModalBottomSheet(onDismissRequest = { selectedMessage = null }, containerColor = Panel) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
                 Text("Message actions", color = TextMain, fontWeight = FontWeight.Bold, modifier = Modifier.padding(14.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     listOf("❤️", "😂", "😮", "😢", "🙏", "👍").forEach { emoji ->
-                        Text(
-                            emoji,
-                            modifier = Modifier.clip(CircleShape).clickable {
-                                model.reactToMessage(message, emoji)
-                                selectedMessage = null
-                            }.padding(9.dp),
-                            fontSize = 24.sp
-                        )
+                        Text(emoji, modifier = Modifier.clip(CircleShape).clickable {
+                            model.reactToMessage(message, emoji); selectedMessage = null
+                        }.padding(9.dp), fontSize = 24.sp)
                     }
                 }
-                SheetAction(Icons.Default.Reply, "Reply") {
-                    model.setReplyTarget(message)
-                    selectedMessage = null
-                }
+                SheetAction(Icons.Default.Reply, "Reply") { model.setReplyTarget(message); selectedMessage = null }
                 SheetAction(Icons.Default.ContentCopy, "Copy message") {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("CrazeChat message", message.text))
-                    model.showInfoMessage("Message copied.")
-                    selectedMessage = null
+                    model.showInfoMessage("Message copied."); selectedMessage = null
                 }
-                if (message.mine) {
-                    SheetAction(Icons.Default.DeleteOutline, "Delete message", color = MaterialTheme.colorScheme.error) {
-                        model.deleteMessage(message)
-                        selectedMessage = null
-                    }
+                if (message.mine) SheetAction(Icons.Default.DeleteOutline, "Delete message", color = MaterialTheme.colorScheme.error) {
+                    model.deleteMessage(message); selectedMessage = null
                 }
             }
         }
@@ -797,39 +761,42 @@ private fun MessageBubble(message: UiMessage, onLongClick: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
         Column(
             Modifier.widthIn(max = 320.dp).clip(
-                if (message.mine) RoundedCornerShape(19.dp, 19.dp, 5.dp, 19.dp)
-                else RoundedCornerShape(19.dp, 19.dp, 19.dp, 5.dp)
-            )
-                .background(if (message.mine) Brush.horizontalGradient(listOf(Purple, PurpleLight)) else Brush.linearGradient(listOf(PanelRaised, PanelRaised)))
-                .combinedClickable(onClick = {}, onLongClick = onLongClick)
+                if (message.mine) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)
+                else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
+            ).background(
+                if (message.mine) Brush.horizontalGradient(listOf(Color(0xFF2367F4), Color(0xFF3987FF)))
+                else Brush.linearGradient(listOf(PanelRaised, PanelRaised))
+            ).combinedClickable(onClick = {}, onLongClick = onLongClick)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             message.replyTo?.let { reply ->
                 Row(Modifier.fillMaxWidth().padding(bottom = 7.dp), verticalAlignment = Alignment.Top) {
-                    Box(Modifier.width(3.dp).height(32.dp).background(Color.White.copy(alpha = .8f), RoundedCornerShape(4.dp)))
+                    Box(Modifier.width(3.dp).height(32.dp).background(Color.White.copy(alpha = .78f), RoundedCornerShape(4.dp)))
                     Spacer(Modifier.width(7.dp))
                     Column {
                         Text("Reply", color = Color.White.copy(alpha = .8f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                        Text(reply.text, color = Color.White.copy(alpha = .78f), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+                        Text(reply.text, color = Color.White.copy(alpha = .78f), maxLines = 2,
+                            overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
                     }
                 }
             }
-            Text(message.text, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                Text(formatClock(message.createdAt), color = Color.White.copy(alpha = .62f), fontSize = 9.sp)
+            Text(message.text, color = if (message.mine) Color.White else TextMain, fontSize = 14.sp, lineHeight = 20.sp)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End) {
+                Text(formatClock(message.createdAt), color = if (message.mine) Color.White.copy(alpha = .68f) else Muted, fontSize = 9.sp)
                 if (message.mine) {
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        when (message.deliveryState) { "queued" -> "◷"; "read" -> "✓✓"; "delivered" -> "✓✓"; else -> "✓" },
-                        color = Color.White.copy(alpha = .85f), fontSize = 10.sp
-                    )
+                    Text(when (message.deliveryState) { "queued" -> "◷"; "read" -> "✓✓"; "delivered" -> "✓✓"; else -> "✓" },
+                        color = Color.White.copy(alpha = .9f), fontSize = 10.sp)
                 }
             }
         }
         if (message.reactions.isNotEmpty()) {
-            Row(Modifier.padding(top = 3.dp).clip(RoundedCornerShape(12.dp)).background(Panel).padding(horizontal = 7.dp, vertical = 3.dp)) {
+            Row(Modifier.padding(top = 3.dp).clip(RoundedCornerShape(12.dp)).background(Panel)
+                .padding(horizontal = 7.dp, vertical = 3.dp)) {
                 message.reactions.values.groupingBy { it }.eachCount().forEach { (emoji, count) ->
-                    Text(if (count > 1) "$emoji $count" else emoji, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 2.dp))
+                    Text(if (count > 1) "$emoji $count" else emoji, color = TextMain, fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 2.dp))
                 }
             }
         }
