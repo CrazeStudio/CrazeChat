@@ -42,15 +42,15 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Ink = Color(0xFF0F0D16)
-private val Panel = Color(0xFF1B1927)
-private val PanelRaised = Color(0xFF242132)
-private val Purple = Color(0xFF7444FA)
-private val PurpleLight = Color(0xFFB23CEB)
-private val Muted = Color(0xFFA6A1B6)
-private val Green = Color(0xFF27D69B)
-private val Line = Color(0xFF302D40)
-private val TextMain = Color(0xFFF7F5FC)
+private val Ink: Color @Composable get() = MaterialTheme.colorScheme.background
+private val Panel: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val PanelRaised: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+private val Purple: Color @Composable get() = MaterialTheme.colorScheme.primary
+private val PurpleLight: Color @Composable get() = MaterialTheme.colorScheme.secondary
+private val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val Green: Color @Composable get() = MaterialTheme.colorScheme.tertiary
+private val Line: Color @Composable get() = MaterialTheme.colorScheme.outline
+private val TextMain: Color @Composable get() = MaterialTheme.colorScheme.onSurface
 
 @Composable
 fun CrazeChatRoot(model: MainViewModel = viewModel()) {
@@ -72,20 +72,36 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
         state.info?.let { snackbar.showSnackbar(it); model.consumeMessage() }
     }
 
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Purple,
+    val scheme = when (state.themeMode) {
+        "light" -> lightColorScheme(
+            primary = Color(0xFF7045E8),
             onPrimary = Color.White,
-            secondary = PurpleLight,
-            background = Ink,
-            surface = Panel,
-            surfaceVariant = PanelRaised,
-            onSurface = TextMain,
-            onSurfaceVariant = Muted,
-            outline = Line,
+            secondary = Color(0xFF9D48C9),
+            background = Color(0xFFF5F3FA),
+            surface = Color.White,
+            surfaceVariant = Color(0xFFEFECF6),
+            onSurface = Color(0xFF1C1925),
+            onSurfaceVariant = Color(0xFF706A7D),
+            outline = Color(0xFFDED9E8),
+            tertiary = Color(0xFF158C6B),
+            error = Color(0xFFC43D58)
+        )
+        else -> darkColorScheme(
+            primary = Color(0xFF7444FA),
+            onPrimary = Color.White,
+            secondary = Color(0xFFB23CEB),
+            background = Color(0xFF0F0D16),
+            surface = Color(0xFF1B1927),
+            surfaceVariant = Color(0xFF242132),
+            onSurface = Color(0xFFF7F5FC),
+            onSurfaceVariant = Color(0xFFA6A1B6),
+            outline = Color(0xFF383448),
+            tertiary = Color(0xFF27D69B),
             error = Color(0xFFFF6B81)
         )
-    ) {
+    }
+
+    MaterialTheme(colorScheme = scheme) {
         Box(Modifier.fillMaxSize().background(Ink)) {
             if (!state.ready) {
                 Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -93,17 +109,38 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
                     Spacer(Modifier.height(20.dp))
                     CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp)
                 }
-            } else when {
-                state.page == AppPage.AUTH && state.userId != null ->
-                    UnlockPage(model, state)
-                state.page == AppPage.AUTH -> AuthPage(model, state)
-                state.page == AppPage.INBOX -> InboxPage(model, state)
-                state.page == AppPage.CHAT -> ChatPage(model, state)
-                state.page == AppPage.PROFILE -> ProfilePage(model, state)
-                state.page == AppPage.SETTINGS -> SettingsPage(model, state)
-                state.page == AppPage.PRIVACY -> PrivacyPage(model, state)
-                state.page == AppPage.STORAGE -> StoragePage(model, state)
+            } else when (state.page) {
+                AppPage.AUTH -> if (state.userId != null) UnlockPage(model, state) else AuthPage(model, state)
+                AppPage.INBOX -> InboxPage(model, state)
+                AppPage.CHAT -> ChatPage(model, state)
+                AppPage.PROFILE -> ProfilePage(model, state)
+                AppPage.SETTINGS -> SettingsPage(model, state)
+                AppPage.PRIVACY -> PrivacyPage(model, state)
+                AppPage.STORAGE -> StoragePage(model, state)
             }
+
+            state.bannerChatId?.let {
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp)
+                        .clip(RoundedCornerShape(18.dp)).background(PanelRaised)
+                        .clickable { model.openBannerChat() }.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(Purple.copy(alpha = .2f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.ChatBubble, null, tint = PurpleLight)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(state.bannerName ?: "New message", color = TextMain, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (state.bannerCount > 1) "${state.bannerCount} new encrypted messages" else "New encrypted message",
+                            color = Muted, fontSize = 11.sp
+                        )
+                    }
+                    IconButton(onClick = model::dismissBanner) { Icon(Icons.Default.Close, "Dismiss", tint = Muted) }
+                }
+            }
+
             SnackbarHost(
                 hostState = snackbar,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
