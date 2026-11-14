@@ -313,7 +313,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     Text(
                         text = if (signup) "Create Account" else "Welcome Back",
                         color = blue,
-                        fontSize = 42.sp,
+                        fontSize = if (maxWidth < 360.dp) 35.sp else 42.sp,
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Black,
                         letterSpacing = (-1.1).sp,
