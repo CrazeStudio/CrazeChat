@@ -279,7 +279,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var confirmation by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmationVisible by remember { mutableStateOf(false) }
-    var showPasswordHelp by remember { mutableStateOf(false) }
 
     val signup = state.signup
     val cleanUsername = username.trim()
@@ -479,23 +478,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         )
                     )
 
-                    if (!signup) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                text = "Forgot Password?",
-                                color = blue,
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { showPasswordHelp = true }
-                                    .padding(vertical = 8.dp)
-                            )
-                        }
-                    }
-
                     if (signup) {
                         Spacer(Modifier.height(17.dp))
                         Text(
@@ -647,26 +629,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
         }
     }
 
-    if (showPasswordHelp) {
-        AlertDialog(
-            onDismissRequest = { showPasswordHelp = false },
-            title = { Text("Forgot your password?") },
-            text = {
-                Text(
-                    "Password reset is not available yet. Your password protects your encrypted identity. " +
-                        "If you are still signed in on another device, open Settings → Security → Change Password before signing out."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showPasswordHelp = false }) {
-                    Text("Got it")
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
 }
 
 @Composable
