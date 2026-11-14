@@ -140,11 +140,14 @@ Changing the selected folder does not erase the previous folder's backup. Copyin
 
 ## Identity-key protection
 
-New accounts create an X25519 identity key pair on the device. The private key is wrapped locally with an Argon2id-derived key and AES-256-GCM; the resulting encrypted identity envelope uses version 3 (`keyProtection: account-password-v3`). The account password is used both to authenticate with CrazeStudio-Web and to unlock the local identity envelope.
+New accounts use two independent secrets:
 
-The backend stores the encrypted envelope, not the plaintext private key. When an account password is changed on an unlocked device, the app re-wraps the same identity key with the new password and submits the updated encrypted envelope with the authenticated password-change request. Keep the account password strong and do not lose it: it is also the key-unlock secret for this version of the app.
+- **Account password** authenticates with CrazeStudio-Web and is verified by the backend.
+- **Encryption passphrase** derives the Argon2id wrapping key for the X25519 identity private key. It stays on the device and is never sent to the API.
 
-Legacy envelope versions are accepted for migration when the required local private-key material is available. In particular, migrating a version-2 envelope requires the device on which the identity was previously unlocked and its local private-key copy; a new device cannot recover that key from the server alone.
+The encrypted identity envelope uses version 2 (`keyProtection: separate-passphrase-v2`) for accounts using separate key protection. Changing the account password does not re-encrypt the identity envelope. The encryption passphrase can be changed while the identity is unlocked; only the new encrypted envelope is uploaded through the authenticated `/db/auth/update-identity` route. The backend must preserve the existing public key when accepting an envelope update.
+
+Existing version-1 and version-3 accounts remain readable using their previous account password. After signing in, use Settings → Set separate encryption passphrase to migrate the identity key to version 2. Keep the new passphrase safe: the server cannot recover it. A new device will need the encryption passphrase to unlock a version-2 envelope.
 
 The native configuration library only obfuscates the shared API key in the Android binary. It does not make a client-embedded key secret. Actual access control depends on authenticated user sessions, server-side authorization, and rate limits.
 
