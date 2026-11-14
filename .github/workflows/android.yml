@@ -2,9 +2,9 @@ name: CrazeChat Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [backup/flutter-app]
   pull_request:
-    branches: [main]
+    branches: [backup/flutter-app]
   workflow_dispatch:
 
 permissions:
