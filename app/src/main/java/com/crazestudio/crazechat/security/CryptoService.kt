@@ -25,6 +25,7 @@ data class IdentityMaterial(
 object CryptoService {
     private const val IDENTITY_AAD = "CrazeChat/identity-key/v1"
     private const val MESSAGE_FORMAT = "cc-e2ee-v1"
+    private const val LOCAL_BACKUP_FORMAT = "cc-local-backup-v1"
     private const val ARGON_MEMORY_KIB = 32 * 1024
     private const val ARGON_ITERATIONS = 2
     private val random = SecureRandom()
@@ -37,20 +38,27 @@ object CryptoService {
         withContext(Dispatchers.Default) {
             require(password.isNotEmpty()) { "Enter the encryption passphrase." }
             val output = ByteArray(32)
-            val parameters = Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
-                .withVersion(Argon2Parameters.ARGON2_VERSION_13)
-                .withIterations(ARGON_ITERATIONS)
-                .withMemoryAsKB(ARGON_MEMORY_KIB)
-                .withParallelism(1)
-                .withSalt(salt)
-                .build()
-            Argon2BytesGenerator().apply { init(parameters) }
-                .generateBytes(password.toCharArray(), output)
+            val passwordChars = password.toCharArray()
+            try {
+                val parameters = Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+                    .withVersion(Argon2Parameters.ARGON2_VERSION_13)
+                    .withIterations(ARGON_ITERATIONS)
+                    .withMemoryAsKB(ARGON_MEMORY_KIB)
+                    .withParallelism(1)
+                    .withSalt(salt)
+                    .build()
+                Argon2BytesGenerator().apply { init(parameters) }
+                    .generateBytes(passwordChars, output)
+            } finally {
+                passwordChars.fill('\u0000')
+            }
             output
         }
 
     suspend fun createIdentity(encryptionPassphrase: String): IdentityMaterial {
-        require(encryptionPassphrase.length >= 12) { "Use an encryption passphrase with at least 12 characters." }
+        require(encryptionPassphrase.length >= 12) {
+            "Use an encryption passphrase with at least 12 characters."
+        }
         val privateKey = randomBytes(32)
         val publicKey = ByteArray(32)
         X25519.generatePublicKey(privateKey, 0, publicKey, 0)
@@ -58,54 +66,109 @@ object CryptoService {
         val salt = randomBytes(16)
         val wrappingKey = derivePasswordKey(encryptionPassphrase, salt)
         val nonce = randomBytes(12)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(wrappingKey, "AES"), GCMParameterSpec(128, nonce))
-        cipher.updateAAD("$IDENTITY_AAD:$publicKeyEncoded".toByteArray(Charsets.UTF_8))
-        val packed = cipher.doFinal(privateKey)
-        val ciphertext = packed.copyOfRange(0, packed.size - 16)
-        val mac = packed.copyOfRange(packed.size - 16, packed.size)
-        val envelope = JSONObject()
-            .put("version", 2)
-            .put("keyProtection", "separate-passphrase-v2")
-            .put("kdf", "Argon2id")
-            .put("kdfMemoryKiB", ARGON_MEMORY_KIB)
-            .put("kdfIterations", ARGON_ITERATIONS)
-            .put("salt", b64(salt))
-            .put("nonce", b64(nonce))
-            .put("ciphertext", b64(ciphertext))
-            .put("mac", b64(mac))
-            .put("publicKey", publicKeyEncoded)
-        return IdentityMaterial(privateKey, publicKey, envelope)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(wrappingKey, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD("$IDENTITY_AAD:$publicKeyEncoded".toByteArray(Charsets.UTF_8))
+            val packed = cipher.doFinal(privateKey)
+            val envelope = JSONObject()
+                .put("version", 2)
+                .put("keyProtection", "separate-passphrase-v2")
+                .put("kdf", "Argon2id")
+                .put("kdfMemoryKiB", ARGON_MEMORY_KIB)
+                .put("kdfIterations", ARGON_ITERATIONS)
+                .put("salt", b64(salt))
+                .put("nonce", b64(nonce))
+                .put("ciphertext", b64(packed.copyOfRange(0, packed.size - 16)))
+                .put("mac", b64(packed.copyOfRange(packed.size - 16, packed.size)))
+                .put("publicKey", publicKeyEncoded)
+            return IdentityMaterial(privateKey, publicKey, envelope)
+        } finally {
+            wrappingKey.fill(0)
+        }
     }
 
     suspend fun unlockIdentity(envelope: JSONObject, passphrase: String): IdentityMaterial {
         validateIdentityEnvelope(envelope)
-        val publicKey = decode(envelope.getString("publicKey"))
+        val publicKeyEncoded = envelope.getString("publicKey")
+        val publicKey = decode(publicKeyEncoded)
         val salt = decode(envelope.getString("salt"))
         val nonce = decode(envelope.getString("nonce"))
         val ciphertext = decode(envelope.getString("ciphertext"))
         val mac = decode(envelope.getString("mac"))
         val wrappingKey = derivePasswordKey(passphrase, salt)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(wrappingKey, "AES"), GCMParameterSpec(128, nonce))
-        cipher.updateAAD("$IDENTITY_AAD:${envelope.getString("publicKey")}".toByteArray(Charsets.UTF_8))
-        val privateKey = cipher.doFinal(ciphertext + mac)
-        require(privateKey.size == 32) { "The identity private key has an invalid length." }
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(wrappingKey, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD("$IDENTITY_AAD:$publicKeyEncoded".toByteArray(Charsets.UTF_8))
+            val privateKey = cipher.doFinal(ciphertext + mac)
+            require(privateKey.size == 32) { "The identity private key has an invalid length." }
+            val derivedPublic = ByteArray(32)
+            X25519.generatePublicKey(privateKey, 0, derivedPublic, 0)
+            require(MessageDigest.isEqual(derivedPublic, publicKey)) {
+                "The decrypted identity does not match its public key."
+            }
+            return IdentityMaterial(privateKey, publicKey, envelope)
+        } finally {
+            wrappingKey.fill(0)
+        }
+    }
+
+    suspend fun rewrapIdentity(
+        privateKey: ByteArray,
+        publicKey: ByteArray,
+        passphrase: String,
+        separatePassphrase: Boolean
+    ): IdentityMaterial {
+        require(privateKey.size == 32 && publicKey.size == 32) {
+            "The unlocked identity key is invalid."
+        }
+        require(passphrase.length >= 12) { "Use a passphrase with at least 12 characters." }
         val derivedPublic = ByteArray(32)
         X25519.generatePublicKey(privateKey, 0, derivedPublic, 0)
-        require(MessageDigest.isEqual(derivedPublic, publicKey)) { "The decrypted identity does not match its public key." }
-        return IdentityMaterial(privateKey, publicKey, envelope)
+        require(MessageDigest.isEqual(derivedPublic, publicKey)) {
+            "The unlocked private key does not match the account's public key."
+        }
+        val publicKeyEncoded = b64(publicKey)
+        val salt = randomBytes(16)
+        val nonce = randomBytes(12)
+        val wrappingKey = derivePasswordKey(passphrase, salt)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(wrappingKey, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD("$IDENTITY_AAD:$publicKeyEncoded".toByteArray(Charsets.UTF_8))
+            val packed = cipher.doFinal(privateKey)
+            val envelope = JSONObject()
+                .put("version", if (separatePassphrase) 2 else 3)
+                .put("keyProtection", if (separatePassphrase) "separate-passphrase-v2" else "account-password-v3")
+                .put("kdf", "Argon2id")
+                .put("kdfMemoryKiB", ARGON_MEMORY_KIB)
+                .put("kdfIterations", ARGON_ITERATIONS)
+                .put("salt", b64(salt))
+                .put("nonce", b64(nonce))
+                .put("ciphertext", b64(packed.copyOfRange(0, packed.size - 16)))
+                .put("mac", b64(packed.copyOfRange(packed.size - 16, packed.size)))
+                .put("publicKey", publicKeyEncoded)
+            return IdentityMaterial(privateKey.copyOf(), publicKey.copyOf(), envelope)
+        } finally {
+            wrappingKey.fill(0)
+        }
     }
 
     fun validateIdentityEnvelope(envelope: JSONObject) {
         require(envelope.optInt("version") in 1..3 && envelope.optString("kdf") == "Argon2id") {
             "Unsupported encrypted identity format."
         }
-        require(decode(envelope.getString("salt")).size == 16)
-        require(decode(envelope.getString("nonce")).size == 12)
-        require(decode(envelope.getString("mac")).size == 16)
-        require(decode(envelope.getString("publicKey")).size == 32)
-        require(decode(envelope.getString("ciphertext")).isNotEmpty())
+        require(decode(envelope.getString("salt")).size == 16) { "Invalid identity salt." }
+        require(decode(envelope.getString("nonce")).size == 12) { "Invalid identity nonce." }
+        require(decode(envelope.getString("mac")).size == 16) { "Invalid identity authentication tag." }
+        require(decode(envelope.getString("publicKey")).size == 32) { "Invalid identity public key." }
+        require(decode(envelope.getString("ciphertext")).isNotEmpty()) { "Identity ciphertext is empty." }
+    }
+
+    fun derivePublicKey(privateKey: ByteArray): ByteArray {
+        require(privateKey.size == 32) { "The identity private key is invalid." }
+        return ByteArray(32).also { X25519.generatePublicKey(privateKey, 0, it, 0) }
     }
 
     suspend fun deriveChatKey(identityPrivateKey: ByteArray, peerPublicKeyBase64: String, chatId: String): ByteArray =
@@ -118,20 +181,24 @@ object CryptoService {
             require(X25519.calculateAgreement(identityPrivateKey, 0, peerPublicKey, 0, shared, 0)) {
                 "Could not establish the encrypted conversation."
             }
-            val output = ByteArray(32)
-            val hkdf = HKDFBytesGenerator(SHA256Digest())
-            hkdf.init(HKDFParameters(
-                shared,
-                chatId.toByteArray(Charsets.UTF_8),
-                "CrazeChat/direct-message/v1".toByteArray(Charsets.UTF_8)
-            ))
-            hkdf.generateBytes(output, 0, output.size)
-            shared.fill(0)
-            output
+            try {
+                ByteArray(32).also { output ->
+                    val hkdf = HKDFBytesGenerator(SHA256Digest())
+                    hkdf.init(HKDFParameters(
+                        shared,
+                        chatId.toByteArray(Charsets.UTF_8),
+                        "CrazeChat/direct-message/v1".toByteArray(Charsets.UTF_8)
+                    ))
+                    hkdf.generateBytes(output, 0, output.size)
+                }
+            } finally {
+                shared.fill(0)
+            }
         }
 
     fun encryptMessage(text: String, chatKey: ByteArray, chatId: String, senderId: String): JSONObject {
         require(text.isNotEmpty() && text.toByteArray(Charsets.UTF_8).size <= 12000)
+        require(chatKey.size == 32)
         val nonce = randomBytes(12)
         val aad = "CrazeChat/message/v1:$chatId:$senderId".toByteArray(Charsets.UTF_8)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -147,6 +214,7 @@ object CryptoService {
 
     fun decryptMessage(message: JSONObject, chatKey: ByteArray, chatId: String): String {
         require(message.optString("format") == MESSAGE_FORMAT) { "Unsupported message encryption format." }
+        require(chatKey.size == 32)
         val senderId = message.getString("senderId")
         val nonce = decode(message.getString("nonce"))
         val ciphertext = decode(message.getString("ciphertext"))
@@ -164,10 +232,67 @@ object CryptoService {
         }
     }
 
+    suspend fun encryptLocalBackup(archive: ByteArray, identityPrivateKey: ByteArray, userId: String): JSONObject =
+        withContext(Dispatchers.Default) {
+            require(identityPrivateKey.size == 32 && userId.isNotBlank())
+            val keyBytes = ByteArray(32)
+            val hkdf = HKDFBytesGenerator(SHA256Digest())
+            hkdf.init(HKDFParameters(
+                identityPrivateKey,
+                "CrazeChat/local-backup-salt/v1:$userId".toByteArray(Charsets.UTF_8),
+                "CrazeChat/local-folder-backup/v1".toByteArray(Charsets.UTF_8)
+            ))
+            hkdf.generateBytes(keyBytes, 0, keyBytes.size)
+            try {
+                val nonce = randomBytes(12)
+                val aad = "$LOCAL_BACKUP_FORMAT:$userId".toByteArray(Charsets.UTF_8)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, nonce))
+                cipher.updateAAD(aad)
+                val packed = cipher.doFinal(archive)
+                JSONObject()
+                    .put("format", LOCAL_BACKUP_FORMAT)
+                    .put("nonce", b64(nonce))
+                    .put("ciphertext", b64(packed.copyOfRange(0, packed.size - 16)))
+                    .put("mac", b64(packed.copyOfRange(packed.size - 16, packed.size)))
+            } finally {
+                keyBytes.fill(0)
+            }
+        }
+
+    suspend fun decryptLocalBackup(envelope: JSONObject, identityPrivateKey: ByteArray, userId: String): ByteArray =
+        withContext(Dispatchers.Default) {
+            require(identityPrivateKey.size == 32 && userId.isNotBlank())
+            require(envelope.optString("format") == LOCAL_BACKUP_FORMAT) {
+                "Unsupported local backup format."
+            }
+            val nonce = decode(envelope.getString("nonce"))
+            val ciphertext = decode(envelope.getString("ciphertext"))
+            val mac = decode(envelope.getString("mac"))
+            require(nonce.size == 12 && mac.size == 16 && ciphertext.isNotEmpty())
+            val keyBytes = ByteArray(32)
+            val hkdf = HKDFBytesGenerator(SHA256Digest())
+            hkdf.init(HKDFParameters(
+                identityPrivateKey,
+                "CrazeChat/local-backup-salt/v1:$userId".toByteArray(Charsets.UTF_8),
+                "CrazeChat/local-folder-backup/v1".toByteArray(Charsets.UTF_8)
+            ))
+            hkdf.generateBytes(keyBytes, 0, keyBytes.size)
+            try {
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, nonce))
+                cipher.updateAAD("$LOCAL_BACKUP_FORMAT:$userId".toByteArray(Charsets.UTF_8))
+                cipher.doFinal(ciphertext + mac)
+            } finally {
+                keyBytes.fill(0)
+            }
+        }
+
     fun fingerprint(publicKeyBase64: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(decode(publicKeyBase64))
-        val hex = digest.joinToString("") { "%02X".format(it) }
-        return hex.chunked(4).joinToString(" ")
+        val publicKey = decode(publicKeyBase64)
+        require(publicKey.size == 32) { "Contact public key must contain exactly 32 bytes." }
+        val digest = MessageDigest.getInstance("SHA-256").digest(publicKey)
+        return digest.joinToString("") { "%02X".format(it) }.chunked(4).joinToString(" ")
     }
 
     fun createMessageId(): String = randomBytes(16).joinToString("") { "%02x".format(it) }
