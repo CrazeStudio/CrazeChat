@@ -375,7 +375,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         color = blue,
                         fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                         fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.2.sp
                     )
                     Spacer(Modifier.height(5.dp))
                     OutlinedTextField(
@@ -391,7 +392,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 fontSize = 15.sp
                             )
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Next
@@ -405,7 +406,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             focusedContainerColor = fieldFill,
                             unfocusedContainerColor = fieldFill,
                             focusedBorderColor = blue,
-                            unfocusedBorderColor = blue,
+                            unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                             focusedTextColor = fieldText,
                             unfocusedTextColor = fieldText,
                             cursorColor = blue,
@@ -420,7 +421,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         color = blue,
                         fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                         fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.2.sp
                     )
                     Spacer(Modifier.height(5.dp))
                     OutlinedTextField(
@@ -459,7 +461,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 if (canSubmit) model.authenticate(cleanUsername, password, signup)
                             }
                         ),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(
                             color = fieldText,
                             fontFamily = FontFamily.Serif,
@@ -469,7 +471,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             focusedContainerColor = fieldFill,
                             unfocusedContainerColor = fieldFill,
                             focusedBorderColor = blue,
-                            unfocusedBorderColor = blue,
+                            unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                             focusedTextColor = fieldText,
                             unfocusedTextColor = fieldText,
                             cursorColor = blue,
@@ -485,7 +487,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             color = blue,
                             fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                             fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.2.sp
                         )
                         Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
@@ -524,7 +527,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                     if (canSubmit) model.authenticate(cleanUsername, password, signup)
                                 }
                             ),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             textStyle = androidx.compose.ui.text.TextStyle(
                                 color = fieldText,
                                 fontFamily = FontFamily.Serif,
@@ -534,7 +537,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 focusedContainerColor = fieldFill,
                                 unfocusedContainerColor = fieldFill,
                                 focusedBorderColor = blue,
-                                unfocusedBorderColor = blue,
+                                unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                                 focusedTextColor = fieldText,
                                 unfocusedTextColor = fieldText,
                                 cursorColor = blue,
@@ -597,7 +600,9 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 6.dp, vertical = if (signup) 3.dp else 6.dp),
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { model.setSignup(!signup) }
+                    .padding(horizontal = 12.dp, vertical = if (signup) 3.dp else 6.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -615,9 +620,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     fontSize = footerFontSize,
                     maxLines = 1,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        model.setSignup(!signup)
-                    }
                 )
             }
         }
