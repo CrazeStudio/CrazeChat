@@ -296,17 +296,29 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(
-                Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 17.dp, bottom = 18.dp),
+                Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 17.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BrandTitle(23)
                 Spacer(Modifier.weight(1f))
+                if (state.refreshingChats) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = PurpleLight, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                IconButton(onClick = { model.refreshChats(silent = true) }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh chats", tint = TextMain)
+                }
                 IconButton(onClick = { showSearch = !showSearch }) {
                     Icon(Icons.Default.Search, contentDescription = "Search", tint = TextMain)
                 }
+                IconButton(onClick = model::openSettings) {
+                    Avatar(state.username, state.photoUrl, 36)
+                }
             }
             if (showSearch) {
-                DarkField(state.search, model::setSearch, "Search conversations")
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    DarkField(state.search, model::setSearch, "Search conversations")
+                }
                 Spacer(Modifier.height(12.dp))
             }
             Text("YOUR CONVERSATIONS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, modifier = Modifier.padding(horizontal = 24.dp))
@@ -328,14 +340,6 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
             } else {
                 Spacer(Modifier.height(12.dp))
             }
-            Row(
-                Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                FilterChip(selected = !state.unreadOnly, onClick = { model.setUnreadOnly(false) }, label = { Text("All") })
-                FilterChip(selected = false, onClick = { model.showInfo("Unread status is not exposed by the current CrazeChat API yet.") }, label = { Text("Unread") })
-                FilterChip(selected = false, onClick = { model.showInfo("Group conversations are not available in the current CrazeChat backend.") }, label = { Text("Groups") })
-            }
             if (state.chats.isEmpty() && !state.loading) {
                 EmptyState(
                     title = "Your chats start here",
@@ -344,7 +348,7 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                     onAction = { showNewChat = true }
                 )
             } else if (state.filteredChats.isEmpty() && !state.loading) {
-                EmptyState("No conversations found", "Try a different search or switch to All.", null, null)
+                EmptyState("No conversations found", "Try a different search or start a new chat.", null, null)
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
