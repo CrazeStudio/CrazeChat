@@ -46,7 +46,7 @@ Requirements:
 - Android NDK 27.0.12077973
 - CMake 3.22.1
 
-Build with the same shared key configured as the backend's `ACCESS_KEY`:
+Build with the API origin. No client-side shared key is required:
 
 ```bash
 export CRAZECHAT_BURL="https://crazestudio-web.mehetabhoque566.workers.dev"
