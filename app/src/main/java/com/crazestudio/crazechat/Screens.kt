@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.crazestudio.crazechat.data.ChatSummary
 import com.crazestudio.crazechat.data.ChatUser
+import com.crazestudio.crazechat.security.CryptoService
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -195,10 +196,14 @@ private fun BrandTitle(size: Int = 24) {
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var passphrase by remember { mutableStateOf(CryptoService.generateEncryptionPhrase()) }
+    var passphrase by remember { mutableStateOf("") }
     var phraseSaved by remember { mutableStateOf(false) }
     val signup = state.signup
     val context = LocalContext.current
+    LaunchedEffect(signup) {
+        passphrase = if (signup) CryptoService.generateEncryptionPhrase() else ""
+        phraseSaved = false
+    }
 
     Column(
         Modifier.fillMaxSize().imePadding().background(Ink)
@@ -571,7 +576,6 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ChatUser>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(query) {
         val term = query.trim().removePrefix("@")
