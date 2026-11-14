@@ -66,7 +66,7 @@ object CryptoService {
             output
         }
 
-    suspend fun createIdentity(encryptionPassphrase: String): IdentityMaterial {
+    suspend fun createIdentity(encryptionPassphrase: String, separatePassphrase: Boolean = true): IdentityMaterial {
         require(encryptionPassphrase.length >= 12) {
             "Use an encryption passphrase with at least 12 characters."
         }
@@ -83,8 +83,8 @@ object CryptoService {
             cipher.updateAAD("$IDENTITY_AAD:$publicKeyEncoded".toByteArray(Charsets.UTF_8))
             val packed = cipher.doFinal(privateKey)
             val envelope = JSONObject()
-                .put("version", 2)
-                .put("keyProtection", "separate-passphrase-v2")
+                .put("version", if (separatePassphrase) 2 else 3)
+                .put("keyProtection", if (separatePassphrase) "separate-passphrase-v2" else "account-password-v3")
                 .put("kdf", "Argon2id")
                 .put("kdfMemoryKiB", ARGON_MEMORY_KIB)
                 .put("kdfIterations", ARGON_ITERATIONS)
