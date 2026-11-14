@@ -291,14 +291,25 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     val actionDisabled = if (darkMode) Color(0xFF253B56) else Color(0xFFB9CBE0)
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(pageBackground)
+        modifier = Modifier.fillMaxSize().imePadding().background(pageBackground)
     ) {
         val compactLayout = maxHeight < 700.dp || maxWidth < 360.dp
-        // Keep the decorative header compact so the complete login form fits on common phone screens.
-        val heroHeight = (maxHeight * 0.30f).coerceIn(132.dp, 238.dp)
-        val titleFontSize = if (compactLayout) 32.sp else 38.sp
-        val formWidth = if (maxWidth < 340.dp) 0.88f else 0.84f
-        val footerFontSize = if (maxWidth < 360.dp) 13.sp else 15.sp
+        // Registration has one extra field, so reserve more vertical space for its complete form.
+        val heroHeight = if (signup) {
+            (maxHeight * 0.18f).coerceIn(88.dp, 142.dp)
+        } else {
+            (maxHeight * 0.27f).coerceIn(112.dp, 205.dp)
+        }
+        val titleFontSize = when {
+            signup && compactLayout -> 27.sp
+            compactLayout -> 32.sp
+            signup -> 32.sp
+            else -> 38.sp
+        }
+        val formWidth = if (maxWidth < 340.dp) 0.90f else 0.84f
+        val footerFontSize = if (maxWidth < 360.dp) 11.sp else 14.sp
+        val fieldHeight = if (signup || compactLayout) 46.dp else 52.dp
+        val sectionGap = if (signup) 8.dp else if (compactLayout) 11.dp else 15.dp
 
         Box(
             modifier = Modifier
@@ -319,7 +330,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             Text(
                 text = "CrazeChat",
                 color = Color.White,
-                fontSize = if (compactLayout) 40.sp else 45.sp,
+                fontSize = if (signup || compactLayout) 34.sp else 42.sp,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Black,
                 letterSpacing = (-1.4).sp
@@ -328,13 +339,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
 
         Column(
             modifier = Modifier.fillMaxSize()
-                .padding(top = heroHeight + 12.dp)
-                .imePadding(),
+                .padding(top = heroHeight + if (signup) 6.dp else 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Column(
@@ -350,21 +359,21 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         maxLines = 1
                     )
                     if (signup) {
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(4.dp))
                         Text(
                             "Create your account to start chatting with your people.",
                             color = mutedText,
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
+                            fontSize = if (compactLayout) 11.sp else 12.sp,
+                            lineHeight = if (compactLayout) 14.sp else 16.sp,
                             fontFamily = FontFamily.Serif
                         )
                     }
-                    Spacer(Modifier.height(if (compactLayout) 15.dp else 19.dp))
+                    Spacer(Modifier.height(sectionGap))
 
                     Text(
                         "Username",
                         color = blue,
-                        fontSize = 14.sp,
+                        fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Bold
                     )
@@ -372,7 +381,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(fieldHeight),
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -405,11 +414,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         )
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(if (signup) 7.dp else 10.dp))
                     Text(
                         "Password",
                         color = blue,
-                        fontSize = 14.sp,
+                        fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Bold
                     )
@@ -417,7 +426,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(fieldHeight),
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -470,19 +479,19 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     )
 
                     if (signup) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(7.dp))
                         Text(
                             "Confirm Password",
                             color = blue,
-                            fontSize = 14.sp,
+                            fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                             fontFamily = FontFamily.Serif,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(Modifier.height(7.dp))
+                        Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
                             value = confirmation,
                             onValueChange = { confirmation = it },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            modifier = Modifier.fillMaxWidth().height(fieldHeight),
                             singleLine = true,
                             placeholder = {
                                 Text(
@@ -533,12 +542,12 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 unfocusedPlaceholderColor = placeholderText
                             )
                         )
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(5.dp))
                         Text(
-                            "Your encryption identity is set up automatically when you create your account. Keep your password safe.",
+                            "Your encryption identity is created automatically. Keep your password safe.",
                             color = mutedText,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp
                         )
                         if (confirmation.isNotEmpty() && confirmation != password) {
                             Spacer(Modifier.height(6.dp))
@@ -550,11 +559,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         }
                     }
 
-                    Spacer(Modifier.height(if (compactLayout) 17.dp else 20.dp))
+                    Spacer(Modifier.height(if (signup) 9.dp else if (compactLayout) 13.dp else 18.dp))
                     Button(
                         onClick = { model.authenticate(cleanUsername, password, signup) },
                         enabled = canSubmit,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(fieldHeight),
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = actionBlue,
@@ -581,14 +590,14 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(if (signup) 5.dp else 8.dp))
                 }
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 6.dp, vertical = if (signup) 3.dp else 6.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
