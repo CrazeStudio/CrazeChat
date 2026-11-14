@@ -79,6 +79,17 @@ void main() {
     expect(fingerprint.replaceAll(' ', ''), matches(RegExp(r'^[A-F0-9]{64}$')));
   });
 
+  test('separate encryption passphrase is independent from account password', () async {
+    final material = await CryptoService.createIdentity('private encryption passphrase 2026', separatePassphrase: true);
+    expect(material.envelope['version'], 2);
+    expect(material.envelope['keyProtection'], 'separate-passphrase-v2');
+    await expectLater(CryptoService.unlockIdentity(material.envelope, 'different account password'), throwsA(anything));
+    final unlocked = await CryptoService.unlockIdentity(material.envelope, 'private encryption passphrase 2026');
+    final original = await material.keyPair.extractPublicKey() as SimplePublicKey;
+    final restored = await unlocked.extractPublicKey() as SimplePublicKey;
+    expect(restored.bytes, original.bytes);
+  });
+
   test(
     'secure-storage restore reconstructs the same identity from private bytes',
     () async {
