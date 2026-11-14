@@ -1427,6 +1427,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         openChatById(chatId)
     }
 
+    fun onAppResumed() {
+        if (identityPrivate == null || api.token.isNullOrBlank()) return
+        refreshChats(silent = true)
+        syncIfEnabled()
+        configurePush()
+    }
+
     fun showInfoMessage(message: String) {
         mutableState.value = mutableState.value.copy(info = message)
     }
