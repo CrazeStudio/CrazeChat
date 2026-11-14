@@ -10,7 +10,6 @@ object NativeBridge {
 
     external fun nativeStatus(): String
     external fun nativeApiOrigin(): String
-    external fun nativeGatewayKey(): String
     external fun nativeBuildCanonicalRequest(
         method: String,
         path: String,
