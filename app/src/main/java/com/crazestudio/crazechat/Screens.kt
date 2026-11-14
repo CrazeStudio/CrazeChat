@@ -948,8 +948,12 @@ private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
             item { SectionLabel("ACCOUNT") }
             item { SettingsRow(Icons.Default.PhotoCamera, "Profile photo", "Change or remove your photo") { model.openProfile() } }
             item { SettingsRow(Icons.Default.Password, "Change password", "Update your account password") { showPassword = true } }
-            if (state.needsPassphraseMigration) {
-                item { SettingsRow(Icons.Default.Key, "Set separate encryption passphrase", "Protect your identity key with a separate passphrase") { showPassphrase = true } }
+            item {
+                SettingsRow(
+                    Icons.Default.Key,
+                    if (state.identityUsesSeparatePassphrase) "Change encryption passphrase" else "Set separate encryption passphrase",
+                    if (state.identityUsesSeparatePassphrase) "Update the passphrase protecting your private identity key" else "Migrate your identity key away from the account password"
+                ) { showPassphrase = true }
             }
             item { SectionLabel("SECURITY") }
             item {
@@ -973,7 +977,6 @@ private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
                     "Generic alerts when new encrypted messages arrive",
                     state.notificationsEnabled
                 ) { enabled ->
-                    if (enabled) activity?.requestNotificationPermission()
                     model.setNotificationsEnabled(enabled)
                 }
             }
