@@ -430,104 +430,86 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
 
 @Composable
 private fun BottomTabs(selected: AppPage, model: MainViewModel) {
-    NavigationBar(containerColor = Panel, contentColor = Muted) {
-        NavigationBarItem(
-            selected = selected == AppPage.INBOX,
-            onClick = { model.backToInbox() },
-            icon = { Icon(Icons.Default.ChatBubbleOutline, null) },
-            label = { Text("Chats") },
-            colors = navColors()
-        )
-        NavigationBarItem(
-            selected = selected == AppPage.PROFILE,
-            onClick = { model.openProfile() },
-            icon = { Icon(Icons.Default.PersonOutline, null) },
-            label = { Text("Profile") },
-            colors = navColors()
-        )
-        NavigationBarItem(
-            selected = selected == AppPage.SETTINGS,
-            onClick = { model.openSettings() },
-            icon = { Icon(Icons.Default.Tune, null) },
-            label = { Text("Settings") },
-            colors = navColors()
-        )
+    NavigationBar(containerColor = Panel, contentColor = Muted, tonalElevation = 0.dp) {
+        NavigationBarItem(selected == AppPage.INBOX, { model.backToInbox() },
+            icon = { Icon(Icons.Default.ChatBubbleOutline, null) }, label = { Text("Chats") }, colors = navColors())
+        NavigationBarItem(selected == AppPage.PROFILE, { model.openProfile() },
+            icon = { Icon(Icons.Default.PersonOutline, null) }, label = { Text("Me") }, colors = navColors())
+        NavigationBarItem(selected == AppPage.SETTINGS, { model.openSettings() },
+            icon = { Icon(Icons.Default.Tune, null) }, label = { Text("Settings") }, colors = navColors())
     }
 }
 
 @Composable
 private fun navColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Color.White,
-    selectedTextColor = Color.White,
-    indicatorColor = Purple.copy(alpha = .35f),
-    unselectedIconColor = Muted,
-    unselectedTextColor = Muted
+    selectedIconColor = Color.White, selectedTextColor = Color.White,
+    indicatorColor = Purple, unselectedIconColor = Muted, unselectedTextColor = Muted
 )
 
 @Composable
 private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel)
-            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        onClick = onClick, color = Panel, shape = RoundedCornerShape(20.dp), tonalElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Line.copy(alpha = .48f))
     ) {
-        Avatar(peer.username, peer.photoUrl, 52)
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Text("@${peer.username}", color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Lock, null, tint = Green, modifier = Modifier.size(12.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("End-to-end encrypted", color = Muted, fontSize = 11.sp, maxLines = 1)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Avatar(peer.username, peer.photoUrl, 54)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text("@${peer.username}", color = TextMain, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, null, tint = Green, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("End-to-end encrypted", color = Muted, fontSize = 11.sp, maxLines = 1)
+                }
             }
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(formatListTime(chat.updatedAt), color = Muted, fontSize = 10.sp)
-            Spacer(Modifier.height(7.dp))
-            Icon(Icons.Default.ChevronRight, null, tint = Muted, modifier = Modifier.size(17.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(formatListTime(chat.updatedAt), color = Muted, fontSize = 10.sp)
+                Spacer(Modifier.height(8.dp))
+                Icon(Icons.Default.ChevronRight, null, tint = Muted, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }
 
 @Composable
 private fun Avatar(username: String, photoUrl: String?, size: Int, online: Boolean = false) {
-    val colors = listOf(Color(0xFF5558C9), Color(0xFF16836B), Color(0xFF7771B8), Color(0xFF397AA8), Color(0xFFAD704B), Color(0xFF6979B8))
+    val colors = listOf(Color(0xFF2766E8), Color(0xFF178A8A), Color(0xFF6C63C7),
+        Color(0xFF3679A8), Color(0xFFAA714D), Color(0xFF5276B6))
     val color = colors[(username.hashCode().and(Int.MAX_VALUE)) % colors.size]
+    var imageFailed by remember(photoUrl) { mutableStateOf(false) }
     Box(Modifier.size(size.dp)) {
-        if (!photoUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = photoUrl, contentDescription = "$username profile photo",
-                modifier = Modifier.fillMaxSize().clip(CircleShape)
-            )
-        } else {
-            Box(Modifier.fillMaxSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-                Text(username.take(1).uppercase(), color = Color.White, fontSize = (size * .37f).sp, fontWeight = FontWeight.Bold)
-            }
+        Box(Modifier.fillMaxSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+            Text(username.take(1).uppercase(), color = Color.White,
+                fontSize = (size * .37f).sp, fontWeight = FontWeight.Bold)
         }
-        if (online) Box(
-            Modifier.align(Alignment.BottomEnd).size(13.dp).clip(CircleShape)
-                .background(Green).border(2.dp, Ink, CircleShape)
-        )
+        if (!photoUrl.isNullOrBlank() && !imageFailed) {
+            AsyncImage(model = photoUrl, contentDescription = "$username profile photo",
+                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape),
+                onError = { imageFailed = true })
+        }
+        if (online) Box(Modifier.align(Alignment.BottomEnd).size(13.dp).clip(CircleShape)
+            .background(Green).border(2.dp, Ink, CircleShape))
     }
 }
 
 @Composable
 private fun EmptyState(title: String, subtitle: String, action: String?, onAction: (() -> Unit)?) {
-    Column(
-        Modifier.fillMaxWidth().fillMaxHeight().padding(30.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(Modifier.size(68.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.ChatBubbleOutline, null, tint = PurpleLight, modifier = Modifier.size(30.dp))
+    Column(Modifier.fillMaxWidth().fillMaxHeight().padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Box(Modifier.size(76.dp).clip(RoundedCornerShape(25.dp)).background(PanelRaised),
+            contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.ChatBubbleOutline, null, tint = PurpleLight, modifier = Modifier.size(33.dp))
         }
-        Spacer(Modifier.height(17.dp))
-        Text(title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(18.dp))
+        Text(title, color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(7.dp))
-        Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 19.sp)
+        Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 19.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         if (action != null && onAction != null) {
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(19.dp))
             GradientButton(action, onClick = onAction)
         }
     }
@@ -538,13 +520,11 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ChatUser>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
-
     LaunchedEffect(query) {
         val term = query.trim().removePrefix("@")
         results = emptyList()
-        if (term.length < 2) {
-            searching = false
-        } else if (Regex("^[a-zA-Z0-9_]{2,20}$").matches(term)) {
+        if (term.length < 2 || !Regex("^[a-zA-Z0-9_]{2,20}$").matches(term)) searching = false
+        else {
             searching = true
             kotlinx.coroutines.delay(350)
             model.searchUsers(term) { users ->
@@ -553,50 +533,41 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
                     searching = false
                 }
             }
-        } else {
-            searching = false
         }
     }
-
     AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Panel,
-        shape = RoundedCornerShape(24.dp),
+        onDismissRequest = onDismiss, containerColor = Panel, shape = RoundedCornerShape(25.dp),
         title = {
             Column {
-                Text("New conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 21.sp)
-                Spacer(Modifier.height(4.dp))
-                Text("Find someone by their CrazeChat username.", color = Muted, fontSize = 12.sp)
+                Text("Find someone", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 21.sp)
+                Spacer(Modifier.height(5.dp))
+                Text("Search by their CrazeChat username.", color = Muted, fontSize = 12.sp)
             }
         },
         text = {
             Column {
-                DarkField(query, { query = it }, "Search username", leading = "@")
-                Spacer(Modifier.height(12.dp))
+                DarkField(query, { query = it }, "Enter username", leading = "@")
+                Spacer(Modifier.height(10.dp))
                 when {
-                    searching -> Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PurpleLight, modifier = Modifier.size(25.dp), strokeWidth = 2.dp)
-                    }
-                    query.trim().length < 2 -> Text("Enter at least 2 characters to search.", color = Muted, fontSize = 12.sp)
+                    query.trim().removePrefix("@").length < 2 ->
+                        Text("Enter at least 2 characters.", color = Muted, fontSize = 11.sp)
                     !Regex("^[a-zA-Z0-9_]{2,20}$").matches(query.trim().removePrefix("@")) ->
-                        Text("Use 2–20 letters, numbers or underscores.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                    results.isEmpty() -> Text("No matching usernames found.", color = Muted, fontSize = 12.sp)
-                    else -> {
-                        results.forEach { user ->
-                            Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                    .clickable { model.startChat(user.username); onDismiss() }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Avatar(user.username, user.photoUrl, 44)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text("@${user.username}", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Start an encrypted chat", color = Muted, fontSize = 11.sp)
-                                }
-                                Icon(Icons.Default.ChevronRight, null, tint = Muted)
+                        Text("Use 2–20 letters, numbers or underscores.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    searching -> Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = PurpleLight, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                    results.isEmpty() -> Text("No matching usernames found.", color = Muted, fontSize = 11.sp)
+                    else -> results.forEach { user ->
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                            .clickable { model.startChat(user.username); onDismiss() }
+                            .padding(vertical = 10.dp, horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Avatar(user.username, user.photoUrl, 44)
+                            Spacer(Modifier.width(11.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("@${user.username}", color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Start an encrypted chat", color = Muted, fontSize = 11.sp)
                             }
+                            Icon(Icons.Default.ChevronRight, null, tint = Muted)
                         }
                     }
                 }
