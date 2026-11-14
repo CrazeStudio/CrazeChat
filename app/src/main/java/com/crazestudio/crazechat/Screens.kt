@@ -244,6 +244,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var confirmationVisible by remember { mutableStateOf(false) }
 
     val signup = state.signup
     val cleanUsername = username.trim()
@@ -330,6 +331,16 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         letterSpacing = (-1.1).sp,
                         maxLines = 1
                     )
+                    if (signup) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Create your account to start chatting with your people.",
+                            color = mutedText,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontFamily = FontFamily.Serif
+                        )
+                    }
                     Spacer(Modifier.height(25.dp))
 
                     Text(
@@ -347,7 +358,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         singleLine = true,
                         placeholder = {
                             Text(
-                                "Enter your username",
+                                if (signup) "Choose a username" else "Enter your username",
                                 color = placeholderText,
                                 fontFamily = FontFamily.Serif,
                                 fontSize = 15.sp
@@ -392,8 +403,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         singleLine = true,
                         placeholder = {
                             Text(
-                                "Enter your password",
-                                color = fieldText.copy(alpha = 0.82f),
+                                if (signup) "Create a password" else "Enter your password",
+                                color = placeholderText,
                                 fontFamily = FontFamily.Serif,
                                 fontSize = 15.sp
                             )
@@ -461,16 +472,38 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             singleLine = true,
                             placeholder = {
                                 Text(
-                                    "Enter your password again",
+                                    "Re-enter your password",
                                     color = fieldText.copy(alpha = 0.82f),
                                     fontFamily = FontFamily.Serif,
                                     fontSize = 15.sp
                                 )
                             },
-                            visualTransformation = PasswordVisualTransformation(),
+                            trailingIcon = {
+                                TextButton(
+                                    onClick = { confirmationVisible = !confirmationVisible },
+                                    contentPadding = PaddingValues(horizontal = 10.dp)
+                                ) {
+                                    Text(
+                                        if (confirmationVisible) "Hide" else "Show",
+                                        color = blue,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            },
+                            visualTransformation = if (confirmationVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (canSubmit) model.authenticate(cleanUsername, password, signup)
+                                }
                             ),
                             shape = RoundedCornerShape(12.dp),
                             textStyle = androidx.compose.ui.text.TextStyle(
@@ -492,7 +525,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            "Your encryption identity is created automatically and protected by your account password.",
+                            "Your encryption identity is set up automatically when you create your account. Keep your password safe.",
                             color = mutedText,
                             fontSize = 11.sp,
                             lineHeight = 16.sp
@@ -553,7 +586,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (signup) "Already have an Account? " else "Don't have an Account? ",
+                    if (signup) "Already have an account? " else "Don't have an account? ",
                     color = footerText,
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp
