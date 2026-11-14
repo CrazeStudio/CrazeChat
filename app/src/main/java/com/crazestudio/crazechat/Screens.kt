@@ -84,30 +84,42 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
     } else state.themeMode
     val scheme = when (effectiveTheme) {
         "light" -> lightColorScheme(
-            primary = Color(0xFF7045E8),
+            primary = Color(0xFF5558C9),
             onPrimary = Color.White,
-            secondary = Color(0xFF9D48C9),
-            background = Color(0xFFF5F3FA),
-            surface = Color.White,
-            surfaceVariant = Color(0xFFEFECF6),
-            onSurface = Color(0xFF1C1925),
-            onSurfaceVariant = Color(0xFF706A7D),
-            outline = Color(0xFFDED9E8),
-            tertiary = Color(0xFF158C6B),
-            error = Color(0xFFC43D58)
+            primaryContainer = Color(0xFFE8E9FF),
+            onPrimaryContainer = Color(0xFF20235F),
+            secondary = Color(0xFF7479DE),
+            onSecondary = Color.White,
+            secondaryContainer = Color(0xFFEDEEFF),
+            onSecondaryContainer = Color(0xFF292D70),
+            background = Color(0xFFF6F7FB),
+            surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFEEF0F6),
+            onSurface = Color(0xFF191D2B),
+            onSurfaceVariant = Color(0xFF626A7D),
+            outline = Color(0xFFDCE1EB),
+            outlineVariant = Color(0xFFE8EBF2),
+            tertiary = Color(0xFF16836B),
+            error = Color(0xFFB9384D)
         )
         else -> darkColorScheme(
-            primary = Color(0xFF7444FA),
-            onPrimary = Color.White,
-            secondary = Color(0xFFB23CEB),
-            background = Color(0xFF0F0D16),
-            surface = Color(0xFF1B1927),
-            surfaceVariant = Color(0xFF242132),
-            onSurface = Color(0xFFF7F5FC),
-            onSurfaceVariant = Color(0xFFA6A1B6),
-            outline = Color(0xFF383448),
-            tertiary = Color(0xFF27D69B),
-            error = Color(0xFFFF6B81)
+            primary = Color(0xFF9295FF),
+            onPrimary = Color(0xFF171947),
+            primaryContainer = Color(0xFF34377F),
+            onPrimaryContainer = Color(0xFFE5E6FF),
+            secondary = Color(0xFFB1B4FF),
+            onSecondary = Color(0xFF20235D),
+            secondaryContainer = Color(0xFF303466),
+            onSecondaryContainer = Color(0xFFE4E5FF),
+            background = Color(0xFF10131D),
+            surface = Color(0xFF191E2B),
+            surfaceVariant = Color(0xFF222A3A),
+            onSurface = Color(0xFFF1F3FA),
+            onSurfaceVariant = Color(0xFFAAB3C5),
+            outline = Color(0xFF3A4559),
+            outlineVariant = Color(0xFF2C3547),
+            tertiary = Color(0xFF55C9A8),
+            error = Color(0xFFFF7888)
         )
     }
 
@@ -523,7 +535,7 @@ private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
 
 @Composable
 private fun Avatar(username: String, photoUrl: String?, size: Int, online: Boolean = false) {
-    val colors = listOf(Color(0xFFB30F64), Color(0xFF087B70), Color(0xFF7526BE), Color(0xFF087AA8), Color(0xFFB9572A), Color(0xFF6552C9))
+    val colors = listOf(Color(0xFF5558C9), Color(0xFF16836B), Color(0xFF7771B8), Color(0xFF397AA8), Color(0xFFAD704B), Color(0xFF6979B8))
     val color = colors[(username.hashCode().and(Int.MAX_VALUE)) % colors.size]
     Box(Modifier.size(size.dp)) {
         if (!photoUrl.isNullOrBlank()) {
@@ -674,7 +686,7 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                         state.peerKeyChanged -> "Key changed · verify again"
                         else -> "Verify encryption key"
                     },
-                    color = if (state.keyVerified) Green else Color(0xFFFFC06B),
+                    color = if (state.keyVerified) Green else Color(0xFFE0A84F),
                     fontSize = 11.sp
                 )
             }
@@ -1097,7 +1109,7 @@ private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).clickable { showLogout = true }.padding(17.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Logout, null, tint = Color(0xFFFF8495))
+                    Icon(Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(13.dp))
                     Text("Sign out", color = Color(0xFFFF8495), fontWeight = FontWeight.Bold)
                 }
