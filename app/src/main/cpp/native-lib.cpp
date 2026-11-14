@@ -1,6 +1,4 @@
 #include <jni.h>
-#include <algorithm>
-#include <cctype>
 #include <string>
 
 #if __has_include("craze_config.h")
@@ -13,38 +11,13 @@ static const unsigned char cc_url_enc[1] = {0};
 #endif
 
 namespace {
-std::string decode_config(const unsigned char* value, std::size_t length, std::size_t offset) {
+std::string decode_config(const unsigned char* value, std::size_t length) {
     std::string decoded;
     decoded.reserve(length);
     for (std::size_t i = 0; i < length; ++i) {
-        const auto mask = cc_mask[(i + offset) % CC_MASK_LEN];
-        decoded.push_back(static_cast<char>(value[i] ^ mask));
+        decoded.push_back(static_cast<char>(value[i] ^ cc_mask[i % CC_MASK_LEN]));
     }
     return decoded;
-}
-
-bool safe_token(const std::string& value, std::size_t max_len) {
-    if (value.empty() || value.size() > max_len) return false;
-    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
-        return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~';
-    });
-}
-
-bool safe_path(const std::string& path) {
-    if (path.empty() || path.size() > 2048 || path.front() != '/') return false;
-    if (path.find("..") != std::string::npos) return false;
-    return std::none_of(path.begin(), path.end(), [](unsigned char c) {
-        return c < 0x21 || c == 0x7f || c == '\\' || c == '#' || c == '?';
-    });
-}
-
-std::string from_jstring(JNIEnv* env, jstring value) {
-    if (!value) return {};
-    const char* chars = env->GetStringUTFChars(value, nullptr);
-    if (!chars) return {};
-    std::string result(chars);
-    env->ReleaseStringUTFChars(value, chars);
-    return result;
 }
 }
 
@@ -55,7 +28,7 @@ Java_com_crazestudio_crazechat_security_NativeBridge_nativeStatus(JNIEnv* env, j
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_crazestudio_crazechat_security_NativeBridge_nativeApiOrigin(JNIEnv* env, jobject) {
-    const auto value = decode_config(cc_url_enc, CC_URL_LEN, 0);
+    const auto value = decode_config(cc_url_enc, CC_URL_LEN);
     return env->NewStringUTF(value.c_str());
 }
 
