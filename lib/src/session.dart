@@ -316,8 +316,36 @@ class ChatSession extends ChangeNotifier {
       identityEnvelope != null && identityEnvelope!['version'] != 2;
 
   Future<void> changePassword({required String currentPassword, required String newPassword}) async {
-    if (!signedIn) throw const FormatException('Sign in before changing your password.');
-    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword);
+    final currentIdentity = identity;
+    if (!signedIn || currentIdentity == null) {
+      throw const FormatException('Unlock your identity before changing your password.');
+    }
+    // Separate-passphrase envelopes are independent of the account password.
+    // Legacy v1/v3 envelopes must be re-wrapped or the next sign-in would fail.
+    if (identityEnvelope?['version'] == 2) {
+      await api.changePassword(currentPassword: currentPassword, newPassword: newPassword);
+      return;
+    }
+    final material = await CryptoService.rewrapUnlockedIdentity(
+      identity: currentIdentity,
+      password: newPassword,
+    );
+    await api.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+      identityEnvelope: material.envelope,
+    );
+    identityEnvelope = material.envelope;
+    final uid = userId;
+    if (uid != null) {
+      await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
+    }
+    await _persistActive();
+    for (final account in savedAccounts) {
+      if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
+    }
+    await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
+    notifyListeners();
   }
 
   Future<void> updateEncryptionPassphrase(String newPassphrase) async {
