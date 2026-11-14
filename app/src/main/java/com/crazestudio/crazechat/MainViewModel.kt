@@ -1432,7 +1432,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (identityPrivate == null || api.token.isNullOrBlank()) return
         refreshChats(silent = true)
         syncIfEnabled()
-        configurePush()
+        viewModelScope.launch { configurePush() }
     }
 
     fun showInfoMessage(message: String) {
