@@ -189,7 +189,7 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
 private fun BrandMark(size: Int) {
     Box(
         Modifier.size(size.dp).clip(RoundedCornerShape((size * .31f).dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF2367F4), Color(0xFF59A3FF))))
+            .background(Brush.linearGradient(listOf(Purple, PurpleLight)))
             .border(1.dp, Color.White.copy(alpha = .16f), RoundedCornerShape((size * .31f).dp)),
         contentAlignment = Alignment.Center
     ) {
@@ -227,7 +227,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             .padding(horizontal = 25.dp, vertical = 26.dp), verticalArrangement = Arrangement.Center) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(68.dp).clip(RoundedCornerShape(23.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF2670FF), Color(0xFF55A5FF))))
+                    .background(Brush.linearGradient(listOf(Purple, PurpleLight)))
                     .border(1.dp, Color.White.copy(alpha = .24f), RoundedCornerShape(23.dp)), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.ChatBubble, null, tint = Color.White, modifier = Modifier.size(34.dp))
                 }
@@ -259,12 +259,12 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         FormLabel("CONFIRM PASSWORD")
                         DarkField(confirmation, { confirmation = it }, "Enter password again", password = true)
                         Spacer(Modifier.height(14.dp))
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Color(0xFF122C50)).padding(13.dp),
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(PanelRaised).padding(13.dp),
                             verticalAlignment = Alignment.Top) {
-                            Icon(Icons.Default.Shield, null, tint = Color(0xFF76ACFF), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Shield, null, tint = PurpleLight, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Text("Your encryption identity is generated automatically and protected by your account password. No separate phrase to manage.",
-                                color = Color(0xFFD7E4F8), fontSize = 11.sp, lineHeight = 16.sp)
+                                color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                         }
                         if (confirmation.isNotEmpty() && confirmation != password) {
                             Spacer(Modifier.height(7.dp))
@@ -362,7 +362,7 @@ private fun UnlockPage(model: MainViewModel, state: CrazeUiState) {
             Spacer(Modifier.height(22.dp))
             Text("Welcome back", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(7.dp))
-            Text("@${state.username}", color = Color(0xFF82B3FF), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("@${state.username}", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             Text("Unlock your private conversations", color = Muted, fontSize = 13.sp)
             Spacer(Modifier.height(25.dp))
@@ -471,7 +471,7 @@ private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(formatListTime(chat.updatedAt), color = Muted, fontSize = 10.sp)
-                    Spacer(Modifier.height(8.dp)); Icon(Icons.Default.ChevronRight, null, tint = Color(0xFF667B9B), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.height(8.dp)); Icon(Icons.Default.ChevronRight, null, tint = Muted, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -481,8 +481,8 @@ private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
 
 @Composable
 private fun Avatar(username: String, photoUrl: String?, size: Int, online: Boolean = false) {
-    val colors = listOf(Color(0xFF2766E8), Color(0xFF178A8A), Color(0xFF6C63C7),
-        Color(0xFF3679A8), Color(0xFFAA714D), Color(0xFF5276B6))
+    val colors = listOf(Color(0xFFBA6A42), Color(0xFF327C73), Color(0xFF7B6C88),
+        Color(0xFF647E8B), Color(0xFFAA835B), Color(0xFF65758C))
     val color = colors[(username.hashCode().and(Int.MAX_VALUE)) % colors.size]
     var imageFailed by remember(photoUrl) { mutableStateOf(false) }
     Box(Modifier.size(size.dp)) {
@@ -704,7 +704,7 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 maxLines = 5
             )
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { if (model.sendMessage(input)) input = "" },
+            IconButton(onClick = { model.sendMessage(input) { input = "" } },
                 enabled = state.keyVerified && !state.composing && input.isNotBlank(),
                 modifier = Modifier.size(51.dp).clip(CircleShape).background(
                     if (state.keyVerified && input.isNotBlank()) Brush.linearGradient(listOf(Color(0xFFE87532), Color(0xFFFFA66B)))
@@ -866,7 +866,7 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
                             }
                             context.startActivity(Intent.createChooser(sendIntent, "Share CrazeChat profile"))
                         }, modifier = Modifier.weight(1f).height(47.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3A4F6E)), shape = RoundedCornerShape(15.dp)) {
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Line), shape = RoundedCornerShape(15.dp)) {
                             Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Share")
                         }
                     }
