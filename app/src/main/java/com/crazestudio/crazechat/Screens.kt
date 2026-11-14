@@ -884,6 +884,9 @@ private fun InboxEmptyState(
         Modifier.fillMaxSize().padding(horizontal = 22.dp),
         contentAlignment = Alignment.TopCenter
     ) {
+        val headingFontSize = (maxWidth.value * 0.085f).coerceIn(26f, 34f).sp
+        val headingLineHeight = (maxWidth.value * 0.105f).coerceIn(32f, 40f).sp
+
         Column(
             Modifier.fillMaxWidth().padding(top = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -891,8 +894,8 @@ private fun InboxEmptyState(
             Text(
                 title,
                 color = TextMain,
-                fontSize = (maxWidth.value * 0.085f).coerceIn(26f, 34f).sp,
-                lineHeight = (maxWidth.value * 0.105f).coerceIn(32f, 40f).sp,
+                fontSize = headingFontSize,
+                lineHeight = headingLineHeight,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Normal,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
