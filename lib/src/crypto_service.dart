@@ -86,7 +86,7 @@ class CryptoService {
     }
   }
 
-  static Future<IdentityMaterial> createIdentity(String password) async {
+  static Future<IdentityMaterial> createIdentity(String password, {bool separatePassphrase = false}) async {
     final keyPair = await X25519().newKeyPair();
     final privateBytes = await keyPair.extractPrivateKeyBytes();
     final publicKey = await keyPair.extractPublicKey();
@@ -102,8 +102,8 @@ class CryptoService {
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
     final envelope = <String, dynamic>{
-      'version': 3,
-      'keyProtection': 'account-password-v3',
+      'version': separatePassphrase ? 2 : 3,
+      'keyProtection': separatePassphrase ? 'separate-passphrase-v2' : 'account-password-v3',
       'kdf': 'Argon2id',
       'kdfMemoryKiB': 32768,
       'kdfIterations': 2,
@@ -185,6 +185,7 @@ class CryptoService {
   static Future<IdentityMaterial> rewrapUnlockedIdentity({
     required KeyPair identity,
     required String password,
+    bool separatePassphrase = false,
   }) async {
     final keyData = await identity.extract();
     if (keyData is! SimpleKeyPairData || keyData.type != KeyPairType.x25519) {
@@ -204,8 +205,8 @@ class CryptoService {
       aad: utf8.encode('$_identityAad:$publicKeyBase64'),
     );
     final nextEnvelope = <String, dynamic>{
-      'version': 3,
-      'keyProtection': 'account-password-v3',
+      'version': separatePassphrase ? 2 : 3,
+      'keyProtection': separatePassphrase ? 'separate-passphrase-v2' : 'account-password-v3',
       'kdf': 'Argon2id',
       'kdfMemoryKiB': 32768,
       'kdfIterations': 2,
