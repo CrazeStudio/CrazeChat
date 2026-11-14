@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -728,7 +729,7 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
             Column(
                 Modifier.fillMaxWidth()
                     .background(PanelRaised)
-                    .padding(start = 22.dp, end = 22.dp, top = 17.dp, bottom = 18.dp)
+                    .padding(start = 22.dp, end = 22.dp, top = 17.dp, bottom = 13.dp)
             ) {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -737,13 +738,13 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                     Text(
                         "CrazeChat",
                         color = TextMain,
-                        fontSize = 29.sp,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = (-0.8).sp,
                         modifier = Modifier.weight(1f)
                     )
                     Box(
-                        Modifier.size(42.dp)
+                        Modifier.size(30.dp)
                             .clip(CircleShape)
                             .border(1.5.dp, TextMain.copy(alpha = 0.9f), CircleShape)
                             .clickable { model.openProfile() },
@@ -753,77 +754,87 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                             Icons.Default.Person,
                             contentDescription = "Open profile",
                             tint = TextMain,
-                            modifier = Modifier.size(25.dp)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
 
-                Spacer(Modifier.height(17.dp))
+                Spacer(Modifier.height(13.dp))
 
                 Surface(
                     modifier = Modifier.fillMaxWidth()
+                        .height(44.dp)
                         .shadow(7.dp, CircleShape),
                     shape = CircleShape,
                     color = Panel
                 ) {
-                    TextField(
-                        value = state.search,
-                        onValueChange = model::setSearch,
-                        modifier = Modifier.fillMaxWidth().height(58.dp),
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                "Search Chats",
-                                color = Muted.copy(alpha = 0.88f),
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search chats",
+                            tint = Muted,
+                            modifier = Modifier.size(25.dp)
+                        )
+                        Spacer(Modifier.width(13.dp))
+                        BasicTextField(
+                            value = state.search,
+                            onValueChange = model::setSearch,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = TextMain,
                                 fontSize = 18.sp
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = "Search chats",
-                                tint = Muted,
-                                modifier = Modifier.size(29.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (state.search.isNotEmpty()) {
-                                    IconButton(onClick = { model.setSearch("") }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Muted)
+                            ),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (state.search.isEmpty()) {
+                                        Text("Search Chats", color = Muted.copy(alpha = 0.88f), fontSize = 18.sp)
                                     }
-                                }
-                                IconButton(
-                                    onClick = { model.refreshChats(silent = false) },
-                                    enabled = !state.refreshingChats
-                                ) {
-                                    if (state.refreshingChats) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(19.dp),
-                                            color = Purple,
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh conversations", tint = Muted)
-                                    }
+                                    innerTextField()
                                 }
                             }
-                        },
-                        shape = CircleShape,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Panel,
-                            unfocusedContainerColor = Panel,
-                            disabledContainerColor = Panel,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent,
-                            cursorColor = Purple,
-                            focusedTextColor = TextMain,
-                            unfocusedTextColor = TextMain,
-                            focusedPlaceholderColor = Muted,
-                            unfocusedPlaceholderColor = Muted
                         )
-                    )
+                        if (state.search.isNotEmpty()) {
+                            Box(
+                                Modifier.size(30.dp).clip(CircleShape)
+                                    .clickable { model.setSearch("") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = Muted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Box(
+                            Modifier.size(30.dp).clip(CircleShape)
+                                .clickable(enabled = !state.refreshingChats) {
+                                    model.refreshChats(silent = false)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state.refreshingChats) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(17.dp),
+                                    color = Purple,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh conversations",
+                                    tint = Muted,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -980,11 +991,11 @@ private fun RowScope.BottomTabItem(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            Modifier.size(42.dp).clip(CircleShape)
+            Modifier.size(30.dp).clip(CircleShape)
                 .background(if (selected) selectedCircle else normalCircle),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(23.dp))
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(19.dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(
