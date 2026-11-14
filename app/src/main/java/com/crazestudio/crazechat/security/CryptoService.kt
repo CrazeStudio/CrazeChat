@@ -31,6 +31,17 @@ object CryptoService {
     private val random = SecureRandom()
 
     private fun randomBytes(size: Int) = ByteArray(size).also(random::nextBytes)
+
+    /** Creates a 256-bit device-generated phrase; it is never derived from account details. */
+    fun generateEncryptionPhrase(): String {
+        val entropy = randomBytes(32)
+        return try {
+            Base64.encodeToString(entropy, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                .chunked(4).joinToString("-")
+        } finally {
+            entropy.fill(0)
+        }
+    }
     private fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
     private fun decode(value: String) = Base64.decode(value, Base64.DEFAULT)
 
