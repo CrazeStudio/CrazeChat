@@ -4,6 +4,7 @@ import com.crazestudio.crazechat.security.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
@@ -35,7 +36,7 @@ class CrazeChatApi {
 
     private fun baseUrl(): HttpUrl {
         if (origin.isBlank()) throw ApiException("CrazeChat API origin is not configured.")
-        val base = runCatching { HttpUrl.get(origin) }.getOrNull()
+        val base = origin.toHttpUrlOrNull()
             ?: throw ApiException("Invalid CrazeChat API origin.")
         val local = base.host in setOf("localhost", "127.0.0.1", "10.0.2.2")
         if (base.scheme != "https" && !(local && base.scheme == "http")) {
