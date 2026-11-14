@@ -849,9 +849,9 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
             }
             Spacer(Modifier.height(19.dp))
             SectionLabel("ACCOUNT")
-            SettingsRow(Icons.Default.AlternateEmail, "Username", "@${state.username}") {}
-            SettingsRow(Icons.Default.Security, "Encryption", "X25519 · end-to-end encrypted") {}
-            SettingsRow(Icons.Default.ChatBubbleOutline, "Direct conversations", state.chats.size.toString()) {}
+            ProfileInfoRow(Icons.Default.AlternateEmail, "Username", "@${state.username}")
+            ProfileInfoRow(Icons.Default.Security, "Encryption", "X25519 · end-to-end encrypted")
+            ProfileInfoRow(Icons.Default.ChatBubbleOutline, "Direct conversations", state.chats.size.toString())
             Spacer(Modifier.height(19.dp))
             Text("Your profile photo URL is shared with people you chat with.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
             Spacer(Modifier.height(20.dp))
@@ -885,6 +885,24 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileInfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Panel)
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingIcon(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Muted, fontSize = 10.sp)
+            Text(value, color = TextMain, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
     var showLogout by remember { mutableStateOf(false) }
