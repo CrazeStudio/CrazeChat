@@ -331,6 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     acceptSession(result, material)
                 }
             } catch (error: Exception) {
+                api.token = null
                 reportError((error as? ApiException)?.message ?: error.message ?: "Authentication failed.")
             } finally {
                 mutableState.value = mutableState.value.copy(loading = false)
@@ -352,6 +353,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .put("identityEnvelope", material.envelope)
             .put("manualLock", false)
         setPrivateKey(userId, material.privateKey)
+        material.privateKey.fill(0)
         saveAccountRecord(user)
         saveVault()
         mutableState.value = mutableState.value.copy(
@@ -1223,6 +1225,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val material = CryptoService.rewrapIdentity(privateKey, publicKey, newPassword, separatePassphrase = false)
                 api.changePassword(currentPassword, newPassword, material.envelope)
                 vault.put("identityEnvelope", material.envelope)
+                material.privateKey.fill(0)
                 saveAccountRecord(JSONObject().put("id", userId)
                     .put("username", mutableState.value.username)
                     .put("photoUrl", mutableState.value.photoUrl))
