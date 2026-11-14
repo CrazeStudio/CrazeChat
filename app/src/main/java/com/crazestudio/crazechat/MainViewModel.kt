@@ -109,13 +109,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     }
-                    if (api.token != null) {
-                        runCatching { api.restoreSession() }.onFailure { error ->
-                            if (error is ApiException && error.statusCode == 401) {
-                                signOut(localOnly = true)
-                            }
-                        }
-                    }
                 }
                 mutableState.value = mutableState.value.copy(
                     ready = true,
@@ -129,6 +122,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     language = vault.optString("language", "English")
                 )
                 updateStorageCount()
+                // Show the local, authenticated state immediately. Validate the JWT
+                // on the network without holding the first screen behind a cold request.
+                if (api.token != null) {
+                    viewModelScope.launch {
+                        runCatching { api.restoreSession() }.onFailure { error ->
+                            if (error is ApiException && error.statusCode == 401) {
+                                signOut(localOnly = true)
+                            }
+                        }
+                    }
+                }
             } catch (error: Exception) {
                 mutableState.value = mutableState.value.copy(
                     ready = true,
@@ -569,7 +573,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun connectRealtime(chatId: String) {
-        closeRealtime()
+        // Do not call closeRealtime() here: it also cancels the polling job,
+        // which is the recovery mechanism after a dropped socket.
+        realtime?.close(1000, "reconnecting")
         realtime = api.openRealtime(chatId, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 viewModelScope.launch {
