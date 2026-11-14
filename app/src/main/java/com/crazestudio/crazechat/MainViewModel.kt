@@ -964,7 +964,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearReplyTarget() { mutableState.value = mutableState.value.copy(replyTarget = null) }
     fun setChatSearch(value: String) { mutableState.value = mutableState.value.copy(chatSearch = value) }
 
-    fun sendMessage(textInput: String): Boolean {
+    fun sendMessage(textInput: String, onQueued: () -> Unit = {}): Boolean {
         val text = textInput.trim()
         val current = mutableState.value
         val chat = current.currentChat ?: return false
@@ -1014,6 +1014,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     if (mutableState.value.soundEffectsEnabled) CrazeSoundEffects.play(incoming = false)
                     if (mutableState.value.vibrationEnabled) vibrate()
+                    onQueued()
                 } else {
                     mutableState.value = mutableState.value.copy(composing = false)
                 }
