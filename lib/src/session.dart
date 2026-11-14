@@ -312,34 +312,55 @@ class ChatSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get needsEncryptionPassphraseMigration =>
+      identityEnvelope != null && identityEnvelope!['version'] != 2;
+
   Future<void> changePassword({required String currentPassword, required String newPassword}) async {
+    if (!signedIn) throw const FormatException('Sign in before changing your password.');
+    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword);
+  }
+
+  Future<void> updateEncryptionPassphrase(String newPassphrase) async {
     final currentIdentity = identity;
     final uid = userId;
-    if (!signedIn || identityEnvelope == null || currentIdentity == null || uid == null) {
-      throw const FormatException('Unlock your CrazeChat identity before changing your password.');
+    if (!signedIn || currentIdentity == null || uid == null) {
+      throw const FormatException('Unlock your identity before changing its encryption passphrase.');
     }
-    final material = await CryptoService.rewrapUnlockedIdentity(identity: currentIdentity, password: newPassword);
-    await api.changePassword(currentPassword: currentPassword, newPassword: newPassword, identityEnvelope: material.envelope);
+    final material = await CryptoService.rewrapUnlockedIdentity(
+      identity: currentIdentity,
+      password: newPassphrase,
+      separatePassphrase: true,
+    );
+    await api.updateIdentityEnvelope(material.envelope);
     identityEnvelope = material.envelope;
     await _storage.write(key: 'identityPrivateKey_$uid', value: base64Encode(material.privateKeyBytes));
     await _persistActive();
-    for (final account in savedAccounts) { if (account['userId'] == uid) account['identityEnvelope'] = material.envelope; }
+    for (final account in savedAccounts) {
+      if (account['userId'] == uid) account['identityEnvelope'] = material.envelope;
+    }
     await _storage.write(key: _accountsKey, value: jsonEncode(savedAccounts));
     notifyListeners();
   }
 
-  Future<IdentityMaterial> unlockForLogin({required Map<String, dynamic> envelope, required String password, required String accountId}) async {
+  Future<IdentityMaterial> unlockForLogin({
+    required Map<String, dynamic> envelope,
+    required String password,
+    required String accountId,
+    String? encryptionPassphrase,
+  }) async {
     if (envelope['version'] == 2) {
+      if (encryptionPassphrase != null && encryptionPassphrase.isNotEmpty) {
+        return CryptoService.unlockIdentityMaterial(envelope, encryptionPassphrase);
+      }
       final saved = await _storage.read(key: 'identityPrivateKey_$accountId');
-      if (saved == null) throw const FormatException('This account uses an older separate encryption passphrase. Open it on a device where it is already unlocked to migrate automatically.');
-      final keyPair = await CryptoService.restoreIdentityFromPrivateBytes(envelope, base64Decode(saved));
-      return CryptoService.rewrapUnlockedIdentity(identity: keyPair, password: password);
+      if (saved == null) {
+        throw const FormatException('Enter your encryption passphrase to unlock this account on this device.');
+      }
+      final privateBytes = base64Decode(saved);
+      final keyPair = await CryptoService.restoreIdentityFromPrivateBytes(envelope, privateBytes);
+      return IdentityMaterial(keyPair: keyPair, envelope: envelope, privateKeyBytes: privateBytes);
     }
-    final material = await CryptoService.unlockIdentityMaterial(envelope, password);
-    if (envelope['version'] != 3 || envelope['keyProtection'] != 'account-password-v3') {
-      return CryptoService.rewrapUnlockedIdentity(identity: material.keyPair, password: password);
-    }
-    return material;
+    return CryptoService.unlockIdentityMaterial(envelope, password);
   }
 
   Future<void> unlock(String password) async {
@@ -352,6 +373,7 @@ class ChatSession extends ChangeNotifier {
       envelope: envelope,
       password: password,
       accountId: uid,
+      encryptionPassphrase: password,
     );
     if (material.envelope['version'] != envelope['version'] ||
         material.envelope['keyProtection'] != envelope['keyProtection']) {
