@@ -1,10 +1,13 @@
 package com.crazestudio.crazechat
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -517,12 +520,22 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
 @Composable
 private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
     val chat = state.currentChat ?: return
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var showFingerprint by remember { mutableStateOf(false) }
-    LaunchedEffect(state.messages.size) {
-        if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.lastIndex)
+    var showSearch by remember { mutableStateOf(false) }
+    var selectedMessage by remember { mutableStateOf<UiMessage?>(null) }
+    val visibleMessages = remember(state.messages, state.chatSearch) {
+        val query = state.chatSearch.trim().lowercase()
+        if (query.isEmpty()) state.messages else state.messages.filter { it.text.lowercase().contains(query) }
     }
+    LaunchedEffect(state.messages.size, state.chatSearch) {
+        if (visibleMessages.isNotEmpty() && state.chatSearch.isBlank()) {
+            listState.animateScrollToItem(visibleMessages.lastIndex)
+        }
+    }
+
     Column(Modifier.fillMaxSize().background(Ink)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -534,11 +547,32 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(peer?.username ?: "Conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text(if (state.keyVerified) "Contact key verified" else "Verify encryption key", color = if (state.keyVerified) Green else Color(0xFFFFC06B), fontSize = 11.sp)
+                Text(
+                    when {
+                        state.keyVerified -> "Contact key verified"
+                        state.peerKeyChanged -> "Key changed · verify again"
+                        else -> "Verify encryption key"
+                    },
+                    color = if (state.keyVerified) Green else Color(0xFFFFC06B),
+                    fontSize = 11.sp
+                )
+            }
+            IconButton(onClick = { showSearch = !showSearch }) {
+                Icon(Icons.Default.Search, "Search messages", tint = TextMain)
             }
             IconButton(onClick = { showFingerprint = true }) {
-                Icon(if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint, null, tint = if (state.keyVerified) Green else PurpleLight)
+                Icon(
+                    if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint,
+                    "Contact fingerprint",
+                    tint = if (state.keyVerified) Green else PurpleLight
+                )
             }
+        }
+        if (showSearch) {
+            Box(Modifier.padding(horizontal = 14.dp)) {
+                DarkField(state.chatSearch, model::setChatSearch, "Search in this conversation")
+            }
+            Spacer(Modifier.height(7.dp))
         }
         HorizontalDivider(color = Line)
         if (!state.keyVerified) {
@@ -546,10 +580,13 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Shield, null, tint = Color(0xFFFFC06B))
                     Spacer(Modifier.width(8.dp))
-                    Text("Verify this contact", color = TextMain, fontWeight = FontWeight.Bold)
+                    Text(if (state.peerKeyChanged) "Contact key changed" else "Verify this contact", color = TextMain, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(7.dp))
-                Text("Compare the SHA-256 fingerprint with your contact over a separate trusted channel. New messages will not sync or send until you verify it.", color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
+                Text(
+                    "Compare the SHA-256 fingerprint with your contact over a separate trusted channel. Messages will not sync or send until you verify it.",
+                    color = Muted, fontSize = 12.sp, lineHeight = 17.sp
+                )
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(onClick = { showFingerprint = true }, border = androidx.compose.foundation.BorderStroke(1.dp, Purple)) {
                     Text("View fingerprint", color = PurpleLight)
@@ -562,18 +599,29 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
             contentPadding = PaddingValues(horizontal = 15.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            items(state.messages, key = { it.id }) { message ->
-                MessageBubble(message)
+            items(visibleMessages, key = { it.id }) { message ->
+                MessageBubble(message) { selectedMessage = message }
+            }
+        }
+        state.replyTarget?.let { reply ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(13.dp)).background(Panel).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.width(3.dp).height(34.dp).background(PurpleLight, RoundedCornerShape(4.dp)))
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (reply.senderId == state.userId) "Replying to you" else "Replying to @${state.peerName}", color = PurpleLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(reply.text, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+                }
+                IconButton(onClick = model::clearReplyTarget) { Icon(Icons.Default.Close, "Cancel reply", tint = Muted) }
             }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Bottom
         ) {
-            Box(Modifier.size(46.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Add, null, tint = Muted)
-            }
-            Spacer(Modifier.width(8.dp))
             OutlinedTextField(
                 value = input,
                 onValueChange = { if (it.length <= 1500) input = it },
@@ -606,6 +654,7 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
         }
         Text("Messages are end-to-end encrypted on your device.", color = Muted, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
     }
+
     if (showFingerprint) {
         AlertDialog(
             onDismissRequest = { showFingerprint = false },
@@ -624,37 +673,101 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = { model.verifyPeerKey(); showFingerprint = false },
-                    enabled = !state.keyVerified
-                ) { Text(if (state.keyVerified) "Verified" else "I compared and verified", color = PurpleLight) }
+                TextButton(onClick = { model.verifyPeerKey(); showFingerprint = false }, enabled = !state.keyVerified) {
+                    Text(if (state.keyVerified) "Verified" else "I compared and verified", color = PurpleLight)
+                }
             },
             dismissButton = { TextButton(onClick = { showFingerprint = false }) { Text("Close", color = Muted) } }
         )
     }
+
+    selectedMessage?.let { message ->
+        ModalBottomSheet(onDismissRequest = { selectedMessage = null }, containerColor = Panel) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
+                Text("Message actions", color = TextMain, fontWeight = FontWeight.Bold, modifier = Modifier.padding(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                    listOf("❤️", "😂", "😮", "😢", "🙏", "👍").forEach { emoji ->
+                        Text(
+                            emoji,
+                            modifier = Modifier.clip(CircleShape).clickable {
+                                model.reactToMessage(message, emoji)
+                                selectedMessage = null
+                            }.padding(9.dp),
+                            fontSize = 24.sp
+                        )
+                    }
+                }
+                SheetAction(Icons.Default.Reply, "Reply") {
+                    model.setReplyTarget(message)
+                    selectedMessage = null
+                }
+                SheetAction(Icons.Default.ContentCopy, "Copy message") {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("CrazeChat message", message.text))
+                    model.showInfoMessage("Message copied.")
+                    selectedMessage = null
+                }
+                if (message.mine) {
+                    SheetAction(Icons.Default.DeleteOutline, "Delete message", color = MaterialTheme.colorScheme.error) {
+                        model.deleteMessage(message)
+                        selectedMessage = null
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun MessageBubble(message: UiMessage) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
+private fun SheetAction(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, color: Color = TextMain, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = color)
+        Spacer(Modifier.width(13.dp))
+        Text(title, color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun MessageBubble(message: UiMessage, onLongClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
         Column(
-            Modifier.widthIn(max = 310.dp).clip(
+            Modifier.widthIn(max = 320.dp).clip(
                 if (message.mine) RoundedCornerShape(19.dp, 19.dp, 5.dp, 19.dp)
                 else RoundedCornerShape(19.dp, 19.dp, 19.dp, 5.dp)
             )
                 .background(if (message.mine) Brush.horizontalGradient(listOf(Purple, PurpleLight)) else Brush.linearGradient(listOf(PanelRaised, PanelRaised)))
+                .combinedClickable(onClick = {}, onLongClick = onLongClick)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
+            message.replyTo?.let { reply ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 7.dp), verticalAlignment = Alignment.Top) {
+                    Box(Modifier.width(3.dp).height(32.dp).background(Color.White.copy(alpha = .8f), RoundedCornerShape(4.dp)))
+                    Spacer(Modifier.width(7.dp))
+                    Column {
+                        Text("Reply", color = Color.White.copy(alpha = .8f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(reply.text, color = Color.White.copy(alpha = .78f), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
+                    }
+                }
+            }
             Text(message.text, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End, modifier = Modifier.align(Alignment.End)) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                 Text(formatClock(message.createdAt), color = Color.White.copy(alpha = .62f), fontSize = 9.sp)
                 if (message.mine) {
                     Spacer(Modifier.width(4.dp))
                     Text(
                         when (message.deliveryState) { "queued" -> "◷"; "read" -> "✓✓"; "delivered" -> "✓✓"; else -> "✓" },
-                        color = Color.White.copy(alpha = .8f), fontSize = 10.sp
+                        color = Color.White.copy(alpha = .85f), fontSize = 10.sp
                     )
+                }
+            }
+        }
+        if (message.reactions.isNotEmpty()) {
+            Row(Modifier.padding(top = 3.dp).clip(RoundedCornerShape(12.dp)).background(Panel).padding(horizontal = 7.dp, vertical = 3.dp)) {
+                message.reactions.values.groupingBy { it }.eachCount().forEach { (emoji, count) ->
+                    Text(if (count > 1) "$emoji $count" else emoji, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 2.dp))
                 }
             }
         }
