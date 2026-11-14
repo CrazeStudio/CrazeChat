@@ -293,8 +293,12 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(pageBackground)
     ) {
-        val heroHeight = (maxHeight * 0.43f).coerceIn(190.dp, 360.dp)
-        val titleFontSize = if (maxWidth < 360.dp) 35.sp else 42.sp
+        val compactLayout = maxHeight < 700.dp || maxWidth < 360.dp
+        // Keep the decorative header compact so the complete login form fits on common phone screens.
+        val heroHeight = (maxHeight * 0.30f).coerceIn(132.dp, 238.dp)
+        val titleFontSize = if (compactLayout) 32.sp else 38.sp
+        val formWidth = if (maxWidth < 340.dp) 0.88f else 0.84f
+        val footerFontSize = if (maxWidth < 360.dp) 13.sp else 15.sp
 
         Box(
             modifier = Modifier
@@ -315,7 +319,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             Text(
                 text = "CrazeChat",
                 color = Color.White,
-                fontSize = 49.sp,
+                fontSize = if (compactLayout) 40.sp else 45.sp,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Black,
                 letterSpacing = (-1.4).sp
@@ -324,7 +328,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
 
         Column(
             modifier = Modifier.fillMaxSize()
-                .padding(top = heroHeight + 24.dp)
+                .padding(top = heroHeight + 12.dp)
                 .imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -334,7 +338,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 560.dp)
+                    modifier = Modifier.fillMaxWidth(formWidth).widthIn(max = 520.dp)
                 ) {
                     Text(
                         text = if (signup) "Create Account" else "Welcome Back",
@@ -355,7 +359,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontFamily = FontFamily.Serif
                         )
                     }
-                    Spacer(Modifier.height(25.dp))
+                    Spacer(Modifier.height(if (compactLayout) 15.dp else 19.dp))
 
                     Text(
                         "Username",
@@ -364,11 +368,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.height(7.dp))
+                    Spacer(Modifier.height(5.dp))
                     OutlinedTextField(
                         value = username,
                         onValueChange = { username = it },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -401,7 +405,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         )
                     )
 
-                    Spacer(Modifier.height(17.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text(
                         "Password",
                         color = blue,
@@ -546,11 +550,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(if (compactLayout) 17.dp else 20.dp))
                     Button(
                         onClick = { model.authenticate(cleanUsername, password, signup) },
                         enabled = canSubmit,
-                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = actionBlue,
@@ -577,14 +581,14 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(12.dp))
                 }
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -592,13 +596,15 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                     if (signup) "Already have an account? " else "Don't have an account? ",
                     color = footerText,
                     fontFamily = FontFamily.Serif,
-                    fontSize = 16.sp
+                    fontSize = footerFontSize,
+                    maxLines = 1
                 )
                 Text(
                     if (signup) "Log In" else "Create One",
                     color = if (darkMode) Color.White else Color.Black,
                     fontFamily = FontFamily.Serif,
-                    fontSize = 16.sp,
+                    fontSize = footerFontSize,
+                    maxLines = 1,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable {
                         model.setSignup(!signup)
