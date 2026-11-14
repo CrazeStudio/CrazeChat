@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -809,79 +810,78 @@ private fun ProfilePage(model: MainViewModel, state: CrazeUiState) {
     var photoUrl by remember(state.photoUrl) { mutableStateOf(state.photoUrl.orEmpty()) }
     val context = LocalContext.current
     Scaffold(containerColor = Ink, bottomBar = { BottomTabs(AppPage.PROFILE, model) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            Box(
-                Modifier.fillMaxWidth().height(158.dp).background(Brush.horizontalGradient(listOf(Purple, PurpleLight))),
-                contentAlignment = Alignment.Center
-            ) { Avatar(state.username, state.photoUrl, 108) }
-            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(13.dp))
-                Text(state.username, color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-                Text("@${state.username.lowercase()}", color = Muted, fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("Private conversations. Encrypted on this device.", color = Muted, fontSize = 12.sp)
-                Spacer(Modifier.height(19.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { editPhoto = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Purple)
-                    ) {
-                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text("Change photo")
-                    }
-                    OutlinedButton(
-                        onClick = {
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)) {
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Your profile", color = TextMain, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = model::openSettings) { Icon(Icons.Default.Settings, "Settings", tint = Muted) }
+            }
+            Surface(color = Panel, shape = RoundedCornerShape(26.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line.copy(alpha = .6f))) {
+                Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(118.dp).clip(CircleShape).border(3.dp, Purple.copy(alpha = .5f), CircleShape),
+                        contentAlignment = Alignment.Center) { Avatar(state.username, state.photoUrl, 112) }
+                    Spacer(Modifier.height(14.dp))
+                    Text("@${state.username}", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("CrazeChat member", color = Muted, fontSize = 12.sp)
+                    Spacer(Modifier.height(18.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Button(onClick = { editPhoto = true }, modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Purple), shape = RoundedCornerShape(14.dp)) {
+                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Edit photo")
+                        }
+                        OutlinedButton(onClick = {
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, "Find me on CrazeChat: @${state.username}")
                             }
                             context.startActivity(Intent.createChooser(sendIntent, "Share CrazeChat profile"))
-                        },
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Line)
-                    ) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text("Share")
+                        }, modifier = Modifier.weight(1f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)) {
+                            Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Share")
+                        }
                     }
                 }
-                Spacer(Modifier.height(24.dp))
-                SectionLabel("ACCOUNT")
-                SettingsRow(Icons.Default.AlternateEmail, "Username", "@${state.username}") {}
-                SettingsRow(Icons.Default.Security, "Identity", "X25519 · end-to-end encrypted") {}
-                SettingsRow(Icons.Default.ChatBubbleOutline, "Direct conversations", state.chats.size.toString()) {}
-                Spacer(Modifier.height(18.dp))
             }
+            Spacer(Modifier.height(19.dp))
+            SectionLabel("ACCOUNT")
+            SettingsRow(Icons.Default.AlternateEmail, "Username", "@${state.username}") {}
+            SettingsRow(Icons.Default.Security, "Encryption", "X25519 · end-to-end encrypted") {}
+            SettingsRow(Icons.Default.ChatBubbleOutline, "Direct conversations", state.chats.size.toString()) {}
+            Spacer(Modifier.height(19.dp))
+            Text("Your profile photo URL is shared with people you chat with.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            Spacer(Modifier.height(20.dp))
         }
     }
     if (editPhoto) {
         AlertDialog(
-            onDismissRequest = { editPhoto = false },
-            containerColor = Panel,
+            onDismissRequest = { editPhoto = false }, containerColor = Panel, shape = RoundedCornerShape(23.dp),
             title = { Text("Profile photo", color = TextMain) },
             text = {
                 Column {
-                    Text("Add a direct HTTPS image URL. Leave it blank to remove your photo.", color = Muted, fontSize = 12.sp)
+                    Text("Paste a direct HTTPS image URL. This link is saved to your CrazeChat profile and shown to your chat partner.",
+                        color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
                     Spacer(Modifier.height(12.dp))
                     DarkField(photoUrl, { photoUrl = it }, "https://example.com/photo.jpg")
+                    Spacer(Modifier.height(7.dp))
+                    Text("Use a public image link that does not require sign-in.", color = Muted, fontSize = 10.sp)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    model.updateProfilePhoto(photoUrl.takeIf(String::isNotBlank))
-                    editPhoto = false
-                }) { Text("Save", color = PurpleLight) }
+                TextButton(onClick = { model.updateProfilePhoto(photoUrl.takeIf(String::isNotBlank)); editPhoto = false }) {
+                    Text("Save", color = PurpleLight)
+                }
             },
-            dismissButton = { TextButton(onClick = { editPhoto = false }) { Text("Cancel", color = Muted) } }
+            dismissButton = {
+                TextButton(onClick = { photoUrl = ""; model.updateProfilePhoto(null); editPhoto = false }) {
+                    Text("Remove photo", color = MaterialTheme.colorScheme.error)
+                }
+            }
         )
-    }
-}
-
-@Composable
-private fun Metric(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = TextMain, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
-        Text(label, color = Muted, fontSize = 11.sp)
     }
 }
 
@@ -889,142 +889,94 @@ private fun Metric(value: String, label: String) {
 private fun SettingsPage(model: MainViewModel, state: CrazeUiState) {
     var showLogout by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
-    var showPassphrase by remember { mutableStateOf(false) }
     var showAccounts by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val activity = context as? MainActivity
+    val activity = LocalContext.current as? MainActivity
     Scaffold(containerColor = Ink, bottomBar = { BottomTabs(AppPage.SETTINGS, model) }) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(horizontal = 19.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Text("Settings", color = TextMain, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(19.dp)).background(Panel).clickable { model.openProfile() }.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Avatar(state.username, state.photoUrl, 50)
-                    Spacer(Modifier.width(13.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(state.username, color = TextMain, fontWeight = FontWeight.Bold)
-                        Text("@${state.username.lowercase()}", color = Muted, fontSize = 12.sp)
+                Text("Settings", color = TextMain, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Make CrazeChat work the way you do.", color = Muted, fontSize = 12.sp)
+                Spacer(Modifier.height(10.dp))
+                Surface(onClick = { model.openProfile() }, color = Panel, shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Line.copy(alpha = .55f))) {
+                    Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(state.username, state.photoUrl, 50)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("@${state.username}", color = TextMain, fontWeight = FontWeight.Bold)
+                            Text("Manage your profile", color = Muted, fontSize = 11.sp)
+                        }
+                        Icon(Icons.Default.ChevronRight, null, tint = Muted)
                     }
-                    Icon(Icons.Default.ChevronRight, null, tint = Muted)
                 }
             }
             item { SectionLabel("ACCOUNT") }
-            item { SettingsRow(Icons.Default.PhotoCamera, "Profile photo", "Change or remove your photo") { model.openProfile() } }
-            item { SettingsRow(Icons.Default.Password, "Change password", "Update your account password") { showPassword = true } }
-            item {
-                SettingsRow(
-                    Icons.Default.Key,
-                    if (state.identityUsesSeparatePassphrase) "Change encryption passphrase" else "Set separate encryption passphrase",
-                    if (state.identityUsesSeparatePassphrase) "Update the passphrase protecting your private identity key" else "Migrate your identity key away from the account password"
-                ) { showPassphrase = true }
-            }
-            item { SectionLabel("SECURITY") }
-            item {
-                SettingSwitch(
-                    Icons.Default.VisibilityOff,
-                    "Block screenshots",
-                    "Hide chat content from screenshots and the recent-apps preview",
-                    state.screenSecureEnabled
-                ) { enabled ->
-                    model.setScreenSecure(enabled)
-                    activity?.setScreenSecure(enabled)
-                }
-            }
-            item { SettingsRow(Icons.Default.Lock, "Lock CrazeChat now", "Remove the unlocked identity key from memory") { model.lock() } }
-            item { SettingsRow(Icons.Default.Fingerprint, "Privacy and security", "Contact-key verification and encryption details") { model.openPrivacy() } }
+            item { SettingsRow(Icons.Default.Password, "Change password", "Update your CrazeChat account password") { showPassword = true } }
+            item { SettingsRow(Icons.Default.Lock, "Lock CrazeChat now", "Require your account password to unlock this device") { model.lock() } }
+            item { SettingsRow(Icons.Default.Fingerprint, "Privacy and security", "Encryption and contact-key verification") { model.openPrivacy() } }
             item { SectionLabel("NOTIFICATIONS") }
-            item {
-                SettingSwitch(
-                    Icons.Default.Notifications,
-                    "Push notifications",
-                    "Generic alerts when new encrypted messages arrive",
-                    state.notificationsEnabled
-                ) { enabled ->
-                    model.setNotificationsEnabled(enabled)
-                }
-            }
-            item {
-                SettingSwitch(
-                    Icons.Default.VolumeUp,
-                    "Sound effects",
-                    "Play short feedback sounds for message events",
-                    state.soundEffectsEnabled,
-                    model::setSoundEffectsEnabled
-                )
-            }
-            item {
-                SettingSwitch(
-                    Icons.Default.Vibration,
-                    "Vibration",
-                    "Use haptic feedback for incoming and outgoing messages",
-                    state.vibrationEnabled,
-                    model::setVibrationEnabled
-                )
-            }
+            item { SettingSwitch(Icons.Default.Notifications, "Push notifications",
+                "Generic alerts for new encrypted messages", state.notificationsEnabled) { model.setNotificationsEnabled(it) } }
+            item { SettingSwitch(Icons.Default.VolumeUp, "Sound effects",
+                "Play short feedback sounds for message events", state.soundEffectsEnabled, model::setSoundEffectsEnabled) }
+            item { SettingSwitch(Icons.Default.Vibration, "Vibration",
+                "Use haptic feedback for incoming and outgoing messages", state.vibrationEnabled, model::setVibrationEnabled) }
             item { SectionLabel("APPEARANCE") }
             item {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Panel).padding(15.dp)) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(15.dp)) {
                     Text("Theme", color = TextMain, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(11.dp))
+                    Spacer(Modifier.height(10.dp))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEachIndexed { index, choice ->
-                            SegmentedButton(
-                                selected = state.themeMode == choice.first,
+                            SegmentedButton(selected = state.themeMode == choice.first,
                                 onClick = { model.setThemeMode(choice.first) },
-                                shape = SegmentedButtonDefaults.itemShape(index, 3)
-                            ) { Text(choice.second) }
+                                shape = SegmentedButtonDefaults.itemShape(index, 3)) { Text(choice.second) }
                         }
                     }
                 }
             }
             item { SectionLabel("LOCAL DATA") }
+            item { SettingSwitch(Icons.Default.VisibilityOff, "Block screenshots",
+                "Hide app content from screenshots and recent-app previews", state.screenSecureEnabled) { enabled ->
+                    model.setScreenSecure(enabled); activity?.setScreenSecure(enabled)
+                }
+            }
             item {
-                LocalFolderSyncCard(
-                    state = state,
-                    onChoose = {
-                        activity?.chooseSyncFolder { uri -> if (uri != null) model.setLocalFolder(uri) }
-                    },
-                    onSync = model::syncNow
-                )
+                LocalFolderSyncCard(state = state,
+                    onChoose = { activity?.chooseSyncFolder { uri -> if (uri != null) model.setLocalFolder(uri) } },
+                    onSync = model::syncNow)
             }
             item { SettingsRow(Icons.Default.Storage, "Storage and data", formatBytes(state.storageBytes)) { model.openStorage() } }
             item { SectionLabel("ACCOUNTS") }
             item { SettingsRow(Icons.Default.SwitchAccount, "Switch account", "Manage saved accounts on this device") { showAccounts = true } }
             item { SettingsRow(Icons.Default.PersonAddAlt1, "Add account", "Sign in with another CrazeChat account") { model.addAccount() } }
             item {
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).clickable { showLogout = true }.padding(17.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Spacer(Modifier.height(5.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel)
+                    .clickable { showLogout = true }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(13.dp))
-                    Text("Sign out", color = Color(0xFFFF8495), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Sign out", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
             }
         }
     }
-
     if (showLogout) {
-        AlertDialog(
-            onDismissRequest = { showLogout = false },
-            containerColor = Panel,
+        AlertDialog(onDismissRequest = { showLogout = false }, containerColor = Panel,
             title = { Text("Sign out of CrazeChat?", color = TextMain) },
-            text = { Text("This removes the local session and identity key from this device. Any selected encrypted folder backup remains in its folder.", color = Muted) },
-            confirmButton = { TextButton(onClick = { showLogout = false; model.signOut() }) { Text("Sign out", color = Color(0xFFFF8495)) } },
+            text = { Text("This removes this account's local session and saved identity key from this device. Keep an encrypted folder backup if you need to restore your message archive.", color = Muted) },
+            confirmButton = {
+                TextButton(onClick = { showLogout = false; model.signOut() }) {
+                    Text("Sign out", color = MaterialTheme.colorScheme.error)
+                }
+            },
             dismissButton = { TextButton(onClick = { showLogout = false }) { Text("Cancel", color = Muted) } }
         )
     }
     if (showPassword) ChangePasswordDialog(model) { showPassword = false }
-    if (showPassphrase) PassphraseDialog(model) { showPassphrase = false }
     if (showAccounts) AccountsDialog(state.savedAccounts, state.userId, model) { showAccounts = false }
 }
 
@@ -1048,30 +1000,6 @@ private fun ChangePasswordDialog(model: MainViewModel, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = { model.changePassword(current, next, confirm); onDismiss() }) {
                 Text("Update", color = PurpleLight)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Muted) } }
-    )
-}
-
-@Composable
-private fun PassphraseDialog(model: MainViewModel, onDismiss: () -> Unit) {
-    var next by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Panel,
-        title = { Text("Separate encryption passphrase", color = TextMain) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("This passphrase protects your private identity key and is never sent to the server. It cannot be recovered if lost.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
-                DarkField(next, { next = it }, "New passphrase (12+ characters)", password = true)
-                DarkField(confirm, { confirm = it }, "Confirm passphrase", password = true)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { model.updateEncryptionPassphrase(next, confirm); onDismiss() }) {
-                Text("Update key protection", color = PurpleLight)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Muted) } }
@@ -1188,17 +1116,26 @@ private fun SettingIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
 
 @Composable
 private fun PrivacyPage(model: MainViewModel, state: CrazeUiState) {
-    Column(Modifier.fillMaxSize().padding(21.dp)) {
+    Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = model::openSettings) { Icon(Icons.Default.ArrowBack, null, tint = TextMain) }
-            Text("Privacy and security", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Column {
+                Text("Privacy & security", color = TextMain, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+                Text("How CrazeChat protects your conversations", color = Muted, fontSize = 11.sp)
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        SecurityCard(Icons.Default.Lock, "Encrypted local vault", "Session data and cached message envelopes are protected using AES-256-GCM with a key held by Android Keystore.")
-        SecurityCard(Icons.Default.Fingerprint, "Contact identity verification", "A contact's X25519 public-key fingerprint must be compared outside the chat and verified before remote messages can sync or send.")
-        SecurityCard(Icons.Default.Lock, "End-to-end message encryption", "X25519 key agreement, HKDF-SHA256 and AES-256-GCM encrypt message content on the device. The backend stores encrypted envelopes.")
-        SecurityCard(Icons.Default.Code, "Native security layer", "libcraze.so validates request fields and holds an XOR-obfuscated build configuration. It increases reverse-engineering effort; it cannot make an APK-embedded gateway key secret.")
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(14.dp))
+        SecurityCard(Icons.Default.Lock, "Encrypted local vault",
+            "Session data and cached message envelopes use AES-256-GCM with a key held by Android Keystore.")
+        SecurityCard(Icons.Default.Fingerprint, "Contact-key verification",
+            "A contact's X25519 fingerprint must be compared outside the chat. Remote sync and sending stay blocked until it is verified.")
+        SecurityCard(Icons.Default.Shield, "End-to-end message encryption",
+            "X25519 key agreement, HKDF-SHA256 and AES-256-GCM encrypt message content on this device. The server stores encrypted message envelopes.")
+        SecurityCard(Icons.Default.Security, "Network protection",
+            "CrazeChat requires HTTPS for non-local API origins, disables HTTP redirects and uses per-account authenticated sessions.")
+        SecurityCard(Icons.Default.Info, "Device security",
+            "Android Keystore protects stored keys at rest. A rooted or compromised device may still access secrets while the app is unlocked.")
+        Spacer(Modifier.height(10.dp))
         GradientButton("Lock CrazeChat") { model.lock() }
     }
 }
@@ -1238,7 +1175,7 @@ private fun StoragePage(model: MainViewModel, state: CrazeUiState) {
         }
         Spacer(Modifier.height(15.dp))
         SecurityCard(Icons.Default.Storage, "Encrypted cache", "Received message envelopes are saved locally before the server is asked to remove the read copy. The local vault is protected by Android Keystore.")
-        SecurityCard(Icons.Default.WarningAmber, "Device loss", "Uninstalling the app or clearing its data removes the local vault. A separate backup/export flow is not included in this Gradle build yet.")
+        SecurityCard(Icons.Default.WarningAmber, "Device loss", "Uninstalling the app or clearing its data removes the local vault. Use the optional encrypted folder sync in Settings to keep a separate archive.")
         Spacer(Modifier.weight(1f))
         OutlinedButton(onClick = model::updateStorageCount, modifier = Modifier.fillMaxWidth(), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
             Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Refresh storage")
