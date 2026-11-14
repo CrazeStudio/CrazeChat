@@ -80,7 +80,7 @@ data class CrazeUiState(
     val soundEffectsEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
     val screenSecureEnabled: Boolean = true,
-    val themeMode: String = "light",
+    val themeMode: String = "dark",
     val savedAccounts: List<SavedAccount> = emptyList(),
     val needsPassphraseMigration: Boolean = false,
     val identityUsesSeparatePassphrase: Boolean = true,
@@ -165,9 +165,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         soundEffectsEnabled = vault.optBoolean("soundEffectsEnabled", true),
                         vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                         screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
-                        themeMode = vault.optString("themeMode", "light"),
+                        themeMode = vault.optString("themeMode", "dark"),
                         savedAccounts = savedAccountList(),
-                        needsPassphraseMigration = envelope.optInt("version") != 2,
+                        needsPassphraseMigration = envelope.optInt("version") != 3,
                         identityUsesSeparatePassphrase = envelope.optInt("version") == 2
                     )
                     if (identityPrivate != null) {
@@ -285,14 +285,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 reportError("Use an account password with at least 12 characters.")
                 return@launch
             }
-            if (signup && (passphrase.length < 12 || passphrase == password)) {
-                reportError("Use a different encryption passphrase with at least 12 characters.")
-                return@launch
-            }
+
             mutableState.value = mutableState.value.copy(loading = true, error = null)
             try {
                 if (signup) {
-                    val material = CryptoService.createIdentity(passphrase)
+                    // Generate the X25519 identity locally and wrap it with the account password.
+                    // No separate phrase is displayed, copied or requested from the user.
+                    val material = CryptoService.createIdentity(password, separatePassphrase = false)
                     val result = api.register(username, password, material.envelope)
                     acceptSession(result, material)
                 } else {
@@ -302,15 +301,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     CryptoService.validateIdentityEnvelope(envelope)
                     val savedId = user.getString("id")
                     val savedKey = privateKeyFor(savedId)
+                    api.token = result.getString("token")
                     val material = if (savedKey != null) {
                         val privateBytes = Base64.decode(savedKey, Base64.DEFAULT)
                         val publicKey = CryptoService.derivePublicKey(privateBytes)
                         require(MessageDigest.isEqual(publicKey, Base64.decode(envelope.getString("publicKey"), Base64.DEFAULT))) {
-                            "The saved identity does not match this account. Enter the encryption passphrase."
+                            "The saved identity does not match this account. Sign in on the device where the account identity was created."
                         }
-                        IdentityMaterial(privateBytes, publicKey, envelope)
+                        if (envelope.optInt("version") == 3) {
+                            IdentityMaterial(privateBytes, publicKey, envelope)
+                        } else {
+                            // Upgrade older local identities to account-password key protection.
+                            val migrated = CryptoService.rewrapIdentity(privateBytes, publicKey, password, separatePassphrase = false)
+                            api.updateIdentityEnvelope(migrated.envelope)
+                            result.put("identityEnvelope", migrated.envelope)
+                            migrated
+                        }
                     } else {
-                        CryptoService.unlockIdentity(envelope, passphrase.ifBlank { password })
+                        // Legacy v2 identities can only migrate when the old key is already saved
+                        // locally. For v3, the account password unlocks the envelope directly.
+                        val unlocked = CryptoService.unlockIdentity(envelope, password)
+                        if (envelope.optInt("version") == 3) unlocked else {
+                            val migrated = CryptoService.rewrapIdentity(unlocked.privateKey, unlocked.publicKey, password, separatePassphrase = false)
+                            api.updateIdentityEnvelope(migrated.envelope)
+                            result.put("identityEnvelope", migrated.envelope)
+                            migrated
+                        }
                     }
                     acceptSession(result, material)
                 }
@@ -346,7 +362,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             messages = emptyList(),
             currentChat = null,
             savedAccounts = savedAccountList(),
-            needsPassphraseMigration = material.envelope.optInt("version") != 2,
+            needsPassphraseMigration = material.envelope.optInt("version") != 3,
             identityUsesSeparatePassphrase = material.envelope.optInt("version") == 2,
             bannerChatId = null
         )
@@ -355,32 +371,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         configurePush()
     }
 
-    fun unlock(passphrase: String) {
+    fun unlock(accountPassword: String) {
         viewModelScope.launch {
-            val envelope = vault.optJSONObject("identityEnvelope")
-            val uid = vault.optString("userId").takeIf(String::isNotBlank)
-            if (envelope == null || uid == null || passphrase.isEmpty()) {
-                reportError("Enter the passphrase for this account's identity key.")
+            val username = mutableState.value.username
+            val uid = mutableState.value.userId
+            if (username.isBlank() || uid.isNullOrBlank() || accountPassword.length < 12) {
+                reportError("Enter your CrazeChat account password.")
                 return@launch
             }
-            mutableState.value = mutableState.value.copy(loading = true)
+            if (mutableState.value.loading) return@launch
+            mutableState.value = mutableState.value.copy(loading = true, error = null)
             try {
-                val material = CryptoService.unlockIdentity(envelope, passphrase)
-                identityPrivate?.fill(0)
-                identityPrivate = material.privateKey.copyOf()
-                setPrivateKey(uid, material.privateKey)
-                vault.put("manualLock", false)
-                saveVault()
+                val result = api.login(username, accountPassword)
+                val user = result.getJSONObject("user")
+                require(user.getString("id") == uid) { "This saved account no longer matches the signed-in profile." }
+                val envelope = result.getJSONObject("identityEnvelope")
+                CryptoService.validateIdentityEnvelope(envelope)
+                api.token = result.getString("token")
+                val savedKey = privateKeyFor(uid)
+                val material = if (savedKey != null) {
+                    val privateBytes = Base64.decode(savedKey, Base64.DEFAULT)
+                    val publicKey = CryptoService.derivePublicKey(privateBytes)
+                    require(MessageDigest.isEqual(publicKey, Base64.decode(envelope.getString("publicKey"), Base64.DEFAULT))) {
+                        "The local identity key does not match this account."
+                    }
+                    if (envelope.optInt("version") == 3) IdentityMaterial(privateBytes, publicKey, envelope)
+                    else {
+                        val migrated = CryptoService.rewrapIdentity(privateBytes, publicKey, accountPassword, separatePassphrase = false)
+                        api.updateIdentityEnvelope(migrated.envelope)
+                        result.put("identityEnvelope", migrated.envelope)
+                        migrated
+                    }
+                } else {
+                    val unlocked = CryptoService.unlockIdentity(envelope, accountPassword)
+                    if (envelope.optInt("version") == 3) unlocked else {
+                        val migrated = CryptoService.rewrapIdentity(unlocked.privateKey, unlocked.publicKey, accountPassword, separatePassphrase = false)
+                        api.updateIdentityEnvelope(migrated.envelope)
+                        result.put("identityEnvelope", migrated.envelope)
+                        migrated
+                    }
+                }
+                acceptSession(result, material)
                 mutableState.value = mutableState.value.copy(
-                    page = AppPage.INBOX,
-                    needsPassphraseMigration = envelope.optInt("version") != 2,
-                    identityUsesSeparatePassphrase = envelope.optInt("version") == 2
+                    info = "Identity unlocked and protected with your account password."
                 )
-                refreshChats()
-                configurePush()
                 syncIfEnabled()
-            } catch (_: Exception) {
-                reportError("Incorrect passphrase or damaged encrypted identity backup.")
+            } catch (error: Exception) {
+                val raw = (error as? ApiException)?.message ?: error.message ?: "Could not unlock this account."
+                reportError(
+                    if (raw.contains("mac", true) || raw.contains("authentication", true) ||
+                        raw.contains("incorrect", true) || raw.contains("tag", true)) {
+                        "This account may still use an older encryption phrase that is not stored on this device. Sign in on the device where its identity was previously unlocked."
+                    } else raw
+                )
+                api.token = null
             } finally {
                 mutableState.value = mutableState.value.copy(loading = false)
             }
@@ -492,7 +536,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 vibrationEnabled = vault.optBoolean("vibrationEnabled", true),
                 screenSecureEnabled = vault.optBoolean("screenSecureEnabled", true),
                 themeMode = vault.optString("themeMode", "dark"),
-                needsPassphraseMigration = envelope?.optInt("version") != 2,
+                needsPassphraseMigration = envelope?.optInt("version") != 3,
                 identityUsesSeparatePassphrase = envelope?.optInt("version") == 2
             )
             if (validPrivate) {
@@ -1152,6 +1196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 vault.put("accounts", updated)
                 saveVault()
                 mutableState.value = mutableState.value.copy(photoUrl = photo, savedAccounts = savedAccountList())
+                refreshChats(silent = true)
             } catch (error: Exception) {
                 reportError((error as? ApiException)?.message ?: error.message ?: "Could not update profile photo.")
             }
