@@ -251,13 +251,23 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     val validPassword = password.length >= 12
     val canSubmit = validName && validPassword &&
         (!signup || confirmation == password) && !state.loading
-    val orange = Color(0xFFFF6B16)
-    val blue = Color(0xFF0753B8)
-    val fieldFill = Color(0xFFFFF8F2)
-    val fieldText = Color(0xFF38465B)
+    val darkMode = state.themeMode == "dark" ||
+        (state.themeMode == "system" && isSystemInDarkTheme())
+    val orange = if (darkMode) Color(0xFFFF7835) else Color(0xFFFF6B16)
+    val blue = if (darkMode) Color(0xFF91BFFF) else Color(0xFF0753B8)
+    val pageBackground = if (darkMode) Color(0xFF101318) else Color.White
+    val fieldFill = if (darkMode) Color(0xFF1C232D) else Color(0xFFFFF8F2)
+    val fieldText = if (darkMode) Color(0xFFF1F4F8) else Color(0xFF38465B)
+    val placeholderText = if (darkMode) Color(0xFFAEB9C8) else fieldText.copy(alpha = 0.82f)
+    val footerText = if (darkMode) Color(0xFFE7EAF0) else Color(0xFF171717)
+    val mutedText = if (darkMode) Color(0xFFB0BAC8) else Color(0xFF706A64)
+    val sideAccent = if (darkMode) Color(0xFFB94C1B).copy(alpha = 0.42f)
+        else Color(0xFFFF8C48).copy(alpha = 0.82f)
+    val disabledButton = if (darkMode) Color(0xFF49362D) else Color(0xFFE6DAD1)
+    val disabledButtonText = if (darkMode) Color(0xFFC8B7AE) else Color(0xFF83766F)
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(Color.White)
+        modifier = Modifier.fillMaxSize().background(pageBackground)
     ) {
         val heroHeight = (maxHeight * 0.43f).coerceIn(190.dp, 360.dp)
         val titleFontSize = if (maxWidth < 360.dp) 35.sp else 42.sp
@@ -287,7 +297,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 .offset(x = (-38).dp, y = heroHeight * 0.80f)
                 .size(width = 154.dp, height = 86.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(0xFFFF8C48).copy(alpha = 0.82f))
+                .background(sideAccent)
         )
         Box(
             Modifier.align(Alignment.TopEnd)
@@ -338,7 +348,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         placeholder = {
                             Text(
                                 "Enter your username",
-                                color = fieldText.copy(alpha = 0.82f),
+                                color = placeholderText,
                                 fontFamily = FontFamily.Serif,
                                 fontSize = 15.sp
                             )
@@ -361,8 +371,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             focusedTextColor = fieldText,
                             unfocusedTextColor = fieldText,
                             cursorColor = blue,
-                            focusedPlaceholderColor = fieldText,
-                            unfocusedPlaceholderColor = fieldText
+                            focusedPlaceholderColor = placeholderText,
+                            unfocusedPlaceholderColor = placeholderText
                         )
                     )
 
@@ -483,7 +493,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         Spacer(Modifier.height(10.dp))
                         Text(
                             "Your encryption identity is created automatically and protected by your account password.",
-                            color = Color(0xFF706A64),
+                            color = mutedText,
                             fontSize = 11.sp,
                             lineHeight = 16.sp
                         )
@@ -505,8 +515,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = orange,
-                            disabledContainerColor = Color(0xFFE6DAD1),
-                            disabledContentColor = Color(0xFF83766F)
+                            disabledContainerColor = disabledButton,
+                            disabledContentColor = disabledButtonText
                         ),
                         elevation = ButtonDefaults.buttonElevation(
                             defaultElevation = 2.dp,
@@ -544,13 +554,13 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             ) {
                 Text(
                     if (signup) "Already have an Account? " else "Don't have an Account? ",
-                    color = Color(0xFF171717),
+                    color = footerText,
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp
                 )
                 Text(
                     if (signup) "Log In" else "Create One",
-                    color = Color.Black,
+                    color = if (darkMode) Color.White else Color.Black,
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
