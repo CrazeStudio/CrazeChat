@@ -10,6 +10,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -35,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -119,10 +123,17 @@ fun CrazeChatRoot(model: MainViewModel = viewModel()) {
 
     SideEffect {
         activity?.window?.let { window ->
-            val barColor = scheme.background.toArgb()
+            // The inbox header and bottom navigation both use surfaceVariant.
+            // Match Android's system bars to those surfaces instead of leaving mismatched strips.
+            val barColor = if (state.page == AppPage.INBOX) {
+                scheme.surfaceVariant
+            } else {
+                scheme.background
+            }.toArgb()
             window.statusBarColor = barColor
             window.navigationBarColor = barColor
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.navigationBarDividerColor = barColor
                 window.isNavigationBarContrastEnforced = false
                 window.isStatusBarContrastEnforced = false
             }
@@ -263,6 +274,78 @@ private val AuthWaveFrontShape = GenericShape { size, _ ->
 }
 
 @Composable
+private fun AuthInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    height: androidx.compose.ui.unit.Dp,
+    containerColor: Color,
+    textColor: Color,
+    placeholderColor: Color,
+    accentColor: Color,
+    idleBorderColor: Color,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(14.dp)
+
+    Row(
+        Modifier.fillMaxWidth()
+            .height(height)
+            .clip(shape)
+            .background(containerColor)
+            .border(
+                width = if (focused) 1.6.dp else 1.dp,
+                color = if (focused) accentColor else idleBorderColor,
+                shape = shape
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = textColor,
+                fontFamily = FontFamily.Serif,
+                fontSize = 15.sp,
+                lineHeight = 20.sp
+            ),
+            cursorBrush = SolidColor(accentColor),
+            visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            interactionSource = interactionSource,
+            decorationBox = { innerTextField ->
+                Box(
+                    Modifier.fillMaxSize().padding(start = 14.dp, end = 7.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            placeholder,
+                            color = placeholderColor,
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        )
+        trailingContent?.invoke()
+        if (trailingContent != null) Spacer(Modifier.width(5.dp))
+    }
+}
+
+@Composable
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -311,7 +394,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
         }
         val formWidth = if (maxWidth < 340.dp) 0.90f else 0.84f
         val footerFontSize = if (maxWidth < 360.dp) 11.sp else 14.sp
-        val fieldHeight = if (signup || compactLayout) 46.dp else 52.dp
+        val fieldHeight = if (signup || compactLayout) 48.dp else 52.dp
         val sectionGap = if (signup) 8.dp else if (compactLayout) 11.dp else 15.dp
 
         Box(
@@ -368,7 +451,9 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             color = mutedText,
                             fontSize = if (compactLayout) 11.sp else 12.sp,
                             lineHeight = if (compactLayout) 14.sp else 16.sp,
-                            fontFamily = FontFamily.Serif
+                            fontFamily = FontFamily.Serif,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Spacer(Modifier.height(sectionGap))
@@ -382,39 +467,19 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         letterSpacing = 0.2.sp
                     )
                     Spacer(Modifier.height(5.dp))
-                    OutlinedTextField(
+                    AuthInputField(
                         value = username,
                         onValueChange = { username = it },
-                        modifier = Modifier.fillMaxWidth().height(fieldHeight),
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                if (signup) "Choose a username" else "Enter your username",
-                                color = placeholderText,
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 15.sp
-                            )
-                        },
-                        shape = RoundedCornerShape(14.dp),
+                        placeholder = if (signup) "Choose a username" else "Enter your username",
+                        height = fieldHeight,
+                        containerColor = fieldFill,
+                        textColor = fieldText,
+                        placeholderColor = placeholderText,
+                        accentColor = blue,
+                        idleBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Next
-                        ),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = fieldText,
-                            fontFamily = FontFamily.Serif,
-                            fontSize = 15.sp
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = fieldFill,
-                            unfocusedContainerColor = fieldFill,
-                            focusedBorderColor = blue,
-                            unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
-                            focusedTextColor = fieldText,
-                            unfocusedTextColor = fieldText,
-                            cursorColor = blue,
-                            focusedPlaceholderColor = placeholderText,
-                            unfocusedPlaceholderColor = placeholderText
                         )
                     )
 
@@ -428,28 +493,16 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         letterSpacing = 0.2.sp
                     )
                     Spacer(Modifier.height(5.dp))
-                    OutlinedTextField(
+                    AuthInputField(
                         value = password,
                         onValueChange = { password = it },
-                        modifier = Modifier.fillMaxWidth().height(fieldHeight),
-                        singleLine = true,
-                        placeholder = {
-                            Text(
-                                if (signup) "Create a password" else "Enter your password",
-                                color = placeholderText,
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 15.sp
-                            )
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                    tint = blue
-                                )
-                            }
-                        },
+                        placeholder = if (signup) "Create a password" else "Enter your password",
+                        height = fieldHeight,
+                        containerColor = fieldFill,
+                        textColor = fieldText,
+                        placeholderColor = placeholderText,
+                        accentColor = blue,
+                        idleBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                         visualTransformation = if (passwordVisible) {
                             VisualTransformation.None
                         } else {
@@ -464,23 +517,20 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                 if (canSubmit) model.authenticate(cleanUsername, password, signup)
                             }
                         ),
-                        shape = RoundedCornerShape(14.dp),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = fieldText,
-                            fontFamily = FontFamily.Serif,
-                            fontSize = 15.sp
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = fieldFill,
-                            unfocusedContainerColor = fieldFill,
-                            focusedBorderColor = blue,
-                            unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
-                            focusedTextColor = fieldText,
-                            unfocusedTextColor = fieldText,
-                            cursorColor = blue,
-                            focusedPlaceholderColor = placeholderText,
-                            unfocusedPlaceholderColor = placeholderText
-                        )
+                        trailingContent = {
+                            Box(
+                                Modifier.size(40.dp).clip(CircleShape)
+                                    .clickable { passwordVisible = !passwordVisible },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = blue,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
                     )
 
                     if (signup) {
@@ -494,28 +544,16 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             letterSpacing = 0.2.sp
                         )
                         Spacer(Modifier.height(4.dp))
-                        OutlinedTextField(
+                        AuthInputField(
                             value = confirmation,
                             onValueChange = { confirmation = it },
-                            modifier = Modifier.fillMaxWidth().height(fieldHeight),
-                            singleLine = true,
-                            placeholder = {
-                                Text(
-                                    "Re-enter your password",
-                                    color = placeholderText,
-                                    fontFamily = FontFamily.Serif,
-                                    fontSize = 15.sp
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = { confirmationVisible = !confirmationVisible }) {
-                                    Icon(
-                                        imageVector = if (confirmationVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = if (confirmationVisible) "Hide confirmation password" else "Show confirmation password",
-                                        tint = blue
-                                    )
-                                }
-                            },
+                            placeholder = "Re-enter your password",
+                            height = fieldHeight,
+                            containerColor = fieldFill,
+                            textColor = fieldText,
+                            placeholderColor = placeholderText,
+                            accentColor = blue,
+                            idleBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
                             visualTransformation = if (confirmationVisible) {
                                 VisualTransformation.None
                             } else {
@@ -530,30 +568,29 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                                     if (canSubmit) model.authenticate(cleanUsername, password, signup)
                                 }
                             ),
-                            shape = RoundedCornerShape(14.dp),
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                color = fieldText,
-                                fontFamily = FontFamily.Serif,
-                                fontSize = 15.sp
-                            ),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = fieldFill,
-                                unfocusedContainerColor = fieldFill,
-                                focusedBorderColor = blue,
-                                unfocusedBorderColor = blue.copy(alpha = if (darkMode) 0.72f else 0.58f),
-                                focusedTextColor = fieldText,
-                                unfocusedTextColor = fieldText,
-                                cursorColor = blue,
-                                focusedPlaceholderColor = placeholderText,
-                                unfocusedPlaceholderColor = placeholderText
-                            )
+                            trailingContent = {
+                                Box(
+                                    Modifier.size(40.dp).clip(CircleShape)
+                                        .clickable { confirmationVisible = !confirmationVisible },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (confirmationVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (confirmationVisible) "Hide confirmation password" else "Show confirmation password",
+                                        tint = blue,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
                         )
                         Spacer(Modifier.height(5.dp))
                         Text(
                             "Your encryption identity is created automatically. Keep your password safe.",
                             color = mutedText,
                             fontSize = 10.sp,
-                            lineHeight = 13.sp
+                            lineHeight = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (confirmation.isNotEmpty() && confirmation != password) {
                             Spacer(Modifier.height(6.dp))
