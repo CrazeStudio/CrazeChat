@@ -253,7 +253,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 Spacer(Modifier.height(20.dp))
                 GradientButton(if (signup) "Create account" else "Log in",
                     enabled = formValid && !state.loading) {
-                    model.authenticate(cleanUsername, password, "", signup)
+                    model.authenticate(cleanUsername, password, signup)
                 }
                 Spacer(Modifier.height(13.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -991,7 +991,7 @@ private fun ChangePasswordDialog(model: MainViewModel, onDismiss: () -> Unit) {
         title = { Text("Change password", color = TextMain) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("The server requires your new account password to protect the identity envelope. You can set a separate encryption passphrase afterwards.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                Text("Your identity key is automatically re-encrypted with the new account password. No separate encryption phrase is needed.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 DarkField(current, { current = it }, "Current password", password = true)
                 DarkField(next, { next = it }, "New password (12+ characters)", password = true)
                 DarkField(confirm, { confirm = it }, "Confirm new password", password = true)
