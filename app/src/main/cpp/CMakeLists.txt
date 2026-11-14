@@ -3,6 +3,7 @@ project(craze LANGUAGES CXX)
 
 add_library(craze SHARED native-lib.cpp)
 target_compile_features(craze PRIVATE cxx_std_20)
+target_include_directories(craze PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/generated")
 target_compile_options(craze PRIVATE
     -Wall -Wextra -Wpedantic
     -fvisibility=hidden
