@@ -32,12 +32,9 @@ Default API origin:
 https://crazestudio-web.mehetabhoque566.workers.dev
 ```
 
-CrazeChat uses the existing `/db/*` REST routes and `/api/realtime/{chatId}` WebSocket route. Requests include:
+CrazeChat uses the existing `/db/*` REST routes and `/api/realtime/{chatId}` WebSocket route. Authenticated requests include `Authorization: Bearer <user JWT>`. Registration and login are rate-limited public entry points; all protected operations are authorized by per-user JWT and server-side chat-membership checks. No shared gateway credential is shipped in the APK.
 
-- `X-Access-Key`: the existing shared gateway value supplied at build time.
-- `Authorization: Bearer <user JWT>`: the authenticated per-user session token.
-
-The API uses usernames, not email addresses. Account passwords must be at least 12 characters. A new account also needs a separate encryption passphrase. The backend's Firebase service account, `ADMIN_KEY`, and `SESSION_SECRET` remain server-side and must never be placed in the APK.
+The API uses usernames, not email addresses. Account passwords must be at least 12 characters. A new account also needs a separate encryption passphrase. The backend's Firebase service account, `ADMIN_KEY`, `ACCESS_KEY` (if retained for diagnostics), and `SESSION_SECRET` remain server-side and must never be placed in the APK.
 
 ## Build
 
@@ -53,14 +50,13 @@ Build with the same shared key configured as the backend's `ACCESS_KEY`:
 
 ```bash
 export CRAZECHAT_BURL="https://crazestudio-web.mehetabhoque566.workers.dev"
-export CRAZECHAT_KEY="the-backend-ACCESS_KEY"
 gradle --no-daemon :app:assembleDebug
 gradle --no-daemon :app:assembleRelease
 ```
 
-GitHub Actions reads the `BURL` and `KEY` repository secrets; `BURL` falls back to the default Worker origin. If `KEY` is absent, the project can compile but API calls will show a configuration error.
+GitHub Actions reads the optional `BURL` repository secret; it falls back to the default Worker origin. A `KEY` build secret is no longer needed.
 
-The build generates `app/src/main/cpp/generated/craze_config.h` from the build environment. This generated file is ignored by Git. The API origin and gateway value are XOR-masked per build before being compiled into `libcraze.so`.
+The build generates `app/src/main/cpp/generated/craze_config.h` from the build environment. This generated file is ignored by Git. Only the non-secret API origin is XOR-masked per build before being compiled into `libcraze.so`.
 
 ## Security model and limits
 
@@ -72,7 +68,7 @@ The build generates `app/src/main/cpp/generated/craze_config.h` from the build e
 - HTTPS is enforced for non-local API origins and OkHttp redirects are disabled. Android cleartext traffic is disabled.
 - Release builds use R8 shrinking and restricted native symbol visibility.
 
-**The embedded shared gateway value is not a true secret.** XOR masking and a native library add reverse-engineering friction, but a determined attacker can recover a value used by a running client. The shared gateway key must not replace per-user JWT authentication, server-side authorization, rate limits or server-side secret management.
+The Android client contains no shared gateway credential. Protected calls use per-user JWTs and server-side chat-membership authorization; login and registration are throttled server-side. R8 obfuscation and native symbol stripping add reverse-engineering friction, but no Android app can be made impossible to decompile or instrument.
 
 Android Keystore protects local key material at rest. A rooted or instrumented device can still use secrets while the app is running. Local folder sync is opt-in; uninstalling or clearing app data removes the local vault. Keep the encrypted backup folder if you need to restore the message archive.
 
