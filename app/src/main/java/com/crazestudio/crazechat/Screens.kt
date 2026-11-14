@@ -488,7 +488,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontSize = if (signup || compactLayout) 12.sp else 14.sp,
                             fontFamily = FontFamily.Serif,
                             fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.2.sp
+                            letterSpacing = 0.2.sp
                         )
                         Spacer(Modifier.height(4.dp))
                         OutlinedTextField(
