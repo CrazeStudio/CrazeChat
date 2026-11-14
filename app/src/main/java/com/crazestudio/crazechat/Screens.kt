@@ -836,8 +836,8 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
 
                 state.chats.isEmpty() -> {
                     InboxEmptyState(
-                        title = "Your chats will appear here",
-                        subtitle = "Find someone and start a private conversation. Your encrypted chats will stay together here.",
+                        title = "Your chats appear here",
+                        subtitle = "Find someone and start a private conversation. Tap here to begin.",
                         onClick = { showNewChat = true }
                     )
                 }
@@ -920,8 +920,8 @@ private fun InboxEmptyState(
 
 @Composable
 private fun BottomTabs(selected: AppPage, model: MainViewModel) {
-    val selectedCircle = MaterialTheme.colorScheme.primaryContainer
-    val normalCircle = PanelRaised
+    val darkMode = MaterialTheme.colorScheme.background == Color(0xFF0D0F10)
+    val tabCircle = if (darkMode) Color(0xFF2C3740) else Color(0xFFCBD5DE)
 
     Row(
         Modifier.fillMaxWidth()
@@ -933,26 +933,26 @@ private fun BottomTabs(selected: AppPage, model: MainViewModel) {
     ) {
         BottomTabItem(
             label = "Chats",
-            icon = Icons.Default.ChatBubble,
+            icon = Icons.Default.Forum,
             selected = selected == AppPage.INBOX,
-            selectedCircle = selectedCircle,
-            normalCircle = normalCircle,
+            selectedCircle = tabCircle,
+            normalCircle = tabCircle,
             onClick = model::backToInbox
         )
         BottomTabItem(
             label = "Profile",
             icon = Icons.Default.Person,
             selected = selected == AppPage.PROFILE,
-            selectedCircle = selectedCircle,
-            normalCircle = normalCircle,
+            selectedCircle = tabCircle,
+            normalCircle = tabCircle,
             onClick = model::openProfile
         )
         BottomTabItem(
             label = "Settings",
             icon = Icons.Default.Settings,
             selected = selected == AppPage.SETTINGS,
-            selectedCircle = selectedCircle,
-            normalCircle = normalCircle,
+            selectedCircle = tabCircle,
+            normalCircle = tabCircle,
             onClick = model::openSettings
         )
     }
