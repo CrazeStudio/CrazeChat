@@ -201,7 +201,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 mutableState.value = mutableState.value.copy(
                     ready = true,
                     page = AppPage.AUTH,
-                    error = "Could not open local secure storage: \${error.message ?: "unknown error"}"
+                    error = "Could not open local secure storage: " + (error.message ?: "unknown error")
                 )
             }
         }
