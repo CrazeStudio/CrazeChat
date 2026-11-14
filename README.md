@@ -32,7 +32,7 @@ Firebase Realtime Database
 
 **CrazeStudio-Web is the only API/backend for this app.** The app does not deploy or require a separate Express, Node, or Render service. The `backend/` and `render.yaml` files are legacy artifacts and are not part of the current deployment path.
 
-The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value. The separate server-only `ADMIN_KEY` protects generic Firebase paths and the legacy bare `POST /db` operation dispatcher; CrazeChat mobile builds must never contain it.
+The deployment uses `BURL` for the Flutter app's API origin, `KEY` as the Flutter build variable sent in the `X-Access-Key` request header, and `ACCESS_KEY` as the backend environment variable. Frontend `KEY` and backend `ACCESS_KEY` must contain the identical value. The separate server-only `ADMIN_KEY` protects generic Firebase paths and the legacy bare `POST /db` dispatcher; CrazeChat mobile builds must never contain it. The separate server-only `ADMIN_KEY` protects generic Firebase paths and the legacy bare `POST /db` operation dispatcher; CrazeChat mobile builds must never contain it.
 
 ## API contract
 
