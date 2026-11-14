@@ -8,10 +8,8 @@
 #else
 #define CC_MASK_LEN 1
 #define CC_URL_LEN 0
-#define CC_KEY_LEN 0
 static const unsigned char cc_mask[CC_MASK_LEN] = {0};
 static const unsigned char cc_url_enc[1] = {0};
-static const unsigned char cc_key_enc[1] = {0};
 #endif
 
 namespace {
@@ -58,12 +56,6 @@ Java_com_crazestudio_crazechat_security_NativeBridge_nativeStatus(JNIEnv* env, j
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_crazestudio_crazechat_security_NativeBridge_nativeApiOrigin(JNIEnv* env, jobject) {
     const auto value = decode_config(cc_url_enc, CC_URL_LEN, 0);
-    return env->NewStringUTF(value.c_str());
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_crazestudio_crazechat_security_NativeBridge_nativeGatewayKey(JNIEnv* env, jobject) {
-    const auto value = decode_config(cc_key_enc, CC_KEY_LEN, 7);
     return env->NewStringUTF(value.c_str());
 }
 
