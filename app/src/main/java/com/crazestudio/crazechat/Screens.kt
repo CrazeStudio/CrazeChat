@@ -203,19 +203,6 @@ private fun BrandMark(size: Int) {
     }
 }
 
-@Composable
-private fun BrandTitle(size: Int = 24) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        BrandMark(38)
-        Spacer(Modifier.width(11.dp))
-        Column {
-            Text("CrazeChat", color = TextMain, fontSize = size.sp, fontWeight = FontWeight.ExtraBold)
-            Text("PRIVATE. ENCRYPTED. YOURS.", color = Muted, fontSize = 9.sp,
-                letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
 private val AuthHeroShape = GenericShape { size, _ ->
     val corner = size.width * 0.035f
     val bottomEdge = size.height * 0.86f
@@ -238,12 +225,47 @@ private val AuthHeroShape = GenericShape { size, _ ->
     close()
 }
 
+private val AuthWaveBackShape = GenericShape { size, _ ->
+    moveTo(0f, size.height * 0.80f)
+    cubicTo(
+        size.width * 0.16f, size.height * 0.70f,
+        size.width * 0.27f, size.height * 0.74f,
+        size.width * 0.43f, size.height * 0.84f
+    )
+    cubicTo(
+        size.width * 0.61f, size.height * 0.94f,
+        size.width * 0.78f, size.height * 0.77f,
+        size.width, size.height * 0.72f
+    )
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
+private val AuthWaveFrontShape = GenericShape { size, _ ->
+    moveTo(0f, size.height * 0.88f)
+    cubicTo(
+        size.width * 0.17f, size.height * 0.77f,
+        size.width * 0.31f, size.height * 0.79f,
+        size.width * 0.49f, size.height * 0.89f
+    )
+    cubicTo(
+        size.width * 0.69f, size.height * 0.99f,
+        size.width * 0.85f, size.height * 0.83f,
+        size.width, size.height * 0.79f
+    )
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
 @Composable
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var confirmationVisible by remember { mutableStateOf(false) }
 
     val signup = state.signup
     val cleanUsername = username.trim()
@@ -264,7 +286,9 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     val sideAccent = if (darkMode) Color(0xFFB94C1B).copy(alpha = 0.42f)
         else Color(0xFFFF8C48).copy(alpha = 0.82f)
     val disabledButton = if (darkMode) Color(0xFF49362D) else Color(0xFFE6DAD1)
-    val disabledButtonText = if (darkMode) Color(0xFFC8B7AE) else Color(0xFF83766F)
+    val disabledButtonText = if (darkMode) Color(0xFFC8D8F2) else Color(0xFF7C91AC)
+    val actionBlue = if (darkMode) Color(0xFF2868B5) else Color(0xFF0753B8)
+    val actionDisabled = if (darkMode) Color(0xFF253B56) else Color(0xFFB9CBE0)
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(pageBackground)
@@ -281,6 +305,13 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 .background(orange),
             contentAlignment = Alignment.Center
         ) {
+            Box(Modifier.fillMaxSize().clip(AuthWaveBackShape).background(sideAccent))
+            Box(
+                Modifier.fillMaxSize()
+                    .clip(AuthWaveFrontShape)
+                    .background(if (darkMode) Color(0xFF7D3B25).copy(alpha = 0.48f)
+                        else Color(0xFFFFB07C).copy(alpha = 0.58f))
+            )
             Text(
                 text = "CrazeChat",
                 color = Color.White,
@@ -290,22 +321,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 letterSpacing = (-1.4).sp
             )
         }
-
-        // Soft orange shapes overlap the curved edge, matching the supplied reference.
-        Box(
-            Modifier.align(Alignment.TopStart)
-                .offset(x = (-38).dp, y = heroHeight * 0.80f)
-                .size(width = 154.dp, height = 86.dp)
-                .clip(RoundedCornerShape(50))
-                .background(sideAccent)
-        )
-        Box(
-            Modifier.align(Alignment.TopEnd)
-                .offset(x = 38.dp, y = heroHeight * 0.75f)
-                .size(width = 154.dp, height = 92.dp)
-                .clip(RoundedCornerShape(50))
-                .background(sideAccent)
-        )
 
         Column(
             modifier = Modifier.fillMaxSize()
@@ -330,6 +345,16 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         letterSpacing = (-1.1).sp,
                         maxLines = 1
                     )
+                    if (signup) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Create your account to start chatting with your people.",
+                            color = mutedText,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontFamily = FontFamily.Serif
+                        )
+                    }
                     Spacer(Modifier.height(25.dp))
 
                     Text(
@@ -347,7 +372,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         singleLine = true,
                         placeholder = {
                             Text(
-                                "Enter your username",
+                                if (signup) "Choose a username" else "Enter your username",
                                 color = placeholderText,
                                 fontFamily = FontFamily.Serif,
                                 fontSize = 15.sp
@@ -392,22 +417,18 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         singleLine = true,
                         placeholder = {
                             Text(
-                                "Enter your password",
-                                color = fieldText.copy(alpha = 0.82f),
+                                if (signup) "Create a password" else "Enter your password",
+                                color = placeholderText,
                                 fontFamily = FontFamily.Serif,
                                 fontSize = 15.sp
                             )
                         },
                         trailingIcon = {
-                            TextButton(
-                                onClick = { passwordVisible = !passwordVisible },
-                                contentPadding = PaddingValues(horizontal = 10.dp)
-                            ) {
-                                Text(
-                                    if (passwordVisible) "Hide" else "Show",
-                                    color = blue,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = blue
                                 )
                             }
                         },
@@ -439,8 +460,8 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             focusedTextColor = fieldText,
                             unfocusedTextColor = fieldText,
                             cursorColor = blue,
-                            focusedPlaceholderColor = fieldText,
-                            unfocusedPlaceholderColor = fieldText
+                            focusedPlaceholderColor = placeholderText,
+                            unfocusedPlaceholderColor = placeholderText
                         )
                     )
 
@@ -461,16 +482,34 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             singleLine = true,
                             placeholder = {
                                 Text(
-                                    "Enter your password again",
-                                    color = fieldText.copy(alpha = 0.82f),
+                                    "Re-enter your password",
+                                    color = placeholderText,
                                     fontFamily = FontFamily.Serif,
                                     fontSize = 15.sp
                                 )
                             },
-                            visualTransformation = PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { confirmationVisible = !confirmationVisible }) {
+                                    Icon(
+                                        imageVector = if (confirmationVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (confirmationVisible) "Hide confirmation password" else "Show confirmation password",
+                                        tint = blue
+                                    )
+                                }
+                            },
+                            visualTransformation = if (confirmationVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (canSubmit) model.authenticate(cleanUsername, password, signup)
+                                }
                             ),
                             shape = RoundedCornerShape(12.dp),
                             textStyle = androidx.compose.ui.text.TextStyle(
@@ -492,7 +531,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            "Your encryption identity is created automatically and protected by your account password.",
+                            "Your encryption identity is set up automatically when you create your account. Keep your password safe.",
                             color = mutedText,
                             fontSize = 11.sp,
                             lineHeight = 16.sp
@@ -512,10 +551,11 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                         onClick = { model.authenticate(cleanUsername, password, signup) },
                         enabled = canSubmit,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = orange,
-                            disabledContainerColor = disabledButton,
+                            containerColor = actionBlue,
+                            contentColor = Color.White,
+                            disabledContainerColor = actionDisabled,
                             disabledContentColor = disabledButtonText
                         ),
                         elevation = ButtonDefaults.buttonElevation(
@@ -536,10 +576,6 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        if (!state.loading) {
-                            Spacer(Modifier.width(8.dp))
-                            Icon(Icons.Default.ArrowForward, null, modifier = Modifier.size(18.dp))
-                        }
                     }
                     Spacer(Modifier.height(22.dp))
                 }
@@ -553,7 +589,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (signup) "Already have an Account? " else "Don't have an Account? ",
+                    if (signup) "Already have an account? " else "Don't have an account? ",
                     color = footerText,
                     fontFamily = FontFamily.Serif,
                     fontSize = 16.sp
@@ -571,6 +607,7 @@ private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
             }
         }
     }
+
 }
 
 @Composable
