@@ -1,9 +1,11 @@
 package com.crazestudio.crazechat
 
 import android.content.Intent
+import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -526,6 +528,7 @@ private fun NewChatDialog(model: MainViewModel, onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
     val chat = state.currentChat ?: return
