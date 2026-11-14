@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -704,77 +705,283 @@ private fun UnlockPage(model: MainViewModel, state: CrazeUiState) {
 @Composable
 private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
     var showNewChat by remember { mutableStateOf(false) }
-    Scaffold(containerColor = Ink,
+
+    Scaffold(
+        containerColor = Ink,
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewChat = true }, containerColor = Color(0xFFE87532),
-                contentColor = Color.White, shape = RoundedCornerShape(20.dp), elevation = FloatingActionButtonDefaults.elevation(8.dp)) {
-                Icon(Icons.Default.Edit, "New conversation")
+            if (state.chats.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = { showNewChat = true },
+                    containerColor = Purple,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(5.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "New conversation")
+                }
             }
-        }, bottomBar = { BottomTabs(AppPage.INBOX, model) }) { padding ->
+        },
+        bottomBar = { BottomTabs(AppPage.INBOX, model) }
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 15.dp, bottom = 19.dp), verticalAlignment = Alignment.CenterVertically) {
-                BrandMark(40); Spacer(Modifier.width(11.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("CrazeChat", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Your private space", color = Muted, fontSize = 11.sp)
-                }
-                IconButton(onClick = { model.refreshChats(silent = false) }) {
-                    if (state.refreshingChats) CircularProgressIndicator(Modifier.size(18.dp), color = PurpleLight, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, "Refresh conversations", tint = Muted)
-                }
-                Box(Modifier.clip(CircleShape).clickable { model.openProfile() }) { Avatar(state.username, state.photoUrl, 39) }
-            }
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                Text("Messages", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-.6).sp)
-                Text(if (state.chats.isEmpty()) "Start a private conversation." else "${state.chats.size} conversations",
-                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-                DarkField(state.search, model::setSearch, "Search conversations", leading = "⌕")
-                Spacer(Modifier.height(17.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("RECENT", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { showNewChat = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                        Icon(Icons.Default.PersonAddAlt1, null, tint = PurpleLight, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(5.dp)); Text("Find people", color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Column(
+                Modifier.fillMaxWidth()
+                    .background(PanelRaised)
+                    .padding(start = 22.dp, end = 22.dp, top = 17.dp, bottom = 18.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "CrazeChat",
+                        color = TextMain,
+                        fontSize = 29.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.8).sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        Modifier.size(42.dp)
+                            .clip(CircleShape)
+                            .border(1.5.dp, TextMain.copy(alpha = 0.9f), CircleShape)
+                            .clickable { model.openProfile() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = "Open profile",
+                            tint = TextMain,
+                            modifier = Modifier.size(25.dp)
+                        )
                     }
                 }
-            }
-            when {
-                state.loading && state.chats.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PurpleLight, strokeWidth = 2.dp)
+
+                Spacer(Modifier.height(17.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth()
+                        .shadow(7.dp, CircleShape),
+                    shape = CircleShape,
+                    color = Panel
+                ) {
+                    TextField(
+                        value = state.search,
+                        onValueChange = model::setSearch,
+                        modifier = Modifier.fillMaxWidth().height(58.dp),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "Search Chats",
+                                color = Muted.copy(alpha = 0.88f),
+                                fontSize = 18.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search chats",
+                                tint = Muted,
+                                modifier = Modifier.size(29.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (state.search.isNotEmpty()) {
+                                IconButton(onClick = { model.setSearch("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Muted)
+                                }
+                            } else if (state.refreshingChats) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(19.dp),
+                                    color = Purple,
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        },
+                        shape = CircleShape,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Panel,
+                            unfocusedContainerColor = Panel,
+                            disabledContainerColor = Panel,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            cursorColor = Purple,
+                            focusedTextColor = TextMain,
+                            unfocusedTextColor = TextMain,
+                            focusedPlaceholderColor = Muted,
+                            unfocusedPlaceholderColor = Muted
+                        )
+                    )
                 }
-                state.chats.isEmpty() -> EmptyState("No conversations yet", "Find someone by username to start a private, encrypted conversation.", "Find people") { showNewChat = true }
-                state.filteredChats.isEmpty() -> EmptyState("No matches", "Try another username or clear your search.", null, null)
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 100.dp)) {
-                    items(state.filteredChats, key = { it.id }) { chat ->
-                        chat.peer(state.userId.orEmpty())?.let { peer -> ChatRow(chat, peer) { model.openChat(chat) } }
+            }
+
+            when {
+                state.loading && state.chats.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Purple, strokeWidth = 2.dp)
+                    }
+                }
+
+                state.chats.isEmpty() -> {
+                    InboxEmptyState(
+                        title = "Your chats will appear here",
+                        subtitle = "Find someone and start a private conversation. Your encrypted chats will stay together here.",
+                        onClick = { showNewChat = true }
+                    )
+                }
+
+                state.filteredChats.isEmpty() -> {
+                    InboxEmptyState(
+                        title = "No matching chats",
+                        subtitle = "Try another name or clear your search to see your conversations.",
+                        onClick = null
+                    )
+                }
+
+                else -> {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 18.dp,
+                            end = 18.dp,
+                            top = 13.dp,
+                            bottom = 90.dp
+                        )
+                    ) {
+                        items(state.filteredChats, key = { it.id }) { chat ->
+                            chat.peer(state.userId.orEmpty())?.let { peer ->
+                                ChatRow(chat, peer) { model.openChat(chat) }
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
     if (showNewChat) NewChatDialog(model, { showNewChat = false })
 }
 
 @Composable
-private fun BottomTabs(selected: AppPage, model: MainViewModel) {
-    NavigationBar(containerColor = Panel, contentColor = Muted, tonalElevation = 0.dp,
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(23.dp))
-            .border(1.dp, Line, RoundedCornerShape(23.dp))) {
-        NavigationBarItem(selected == AppPage.INBOX, { model.backToInbox() },
-            icon = { Icon(Icons.Default.ChatBubbleOutline, null) }, label = { Text("Chats") }, colors = navColors())
-        NavigationBarItem(selected == AppPage.PROFILE, { model.openProfile() },
-            icon = { Icon(Icons.Default.PersonOutline, null) }, label = { Text("Me") }, colors = navColors())
-        NavigationBarItem(selected == AppPage.SETTINGS, { model.openSettings() },
-            icon = { Icon(Icons.Default.Tune, null) }, label = { Text("Settings") }, colors = navColors())
+private fun InboxEmptyState(
+    title: String,
+    subtitle: String,
+    onClick: (() -> Unit)?
+) {
+    BoxWithConstraints(
+        Modifier.fillMaxSize().padding(horizontal = 22.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(top = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                title,
+                color = TextMain,
+                fontSize = (maxWidth.value * 0.085f).coerceIn(26f, 34f).sp,
+                lineHeight = (maxWidth.value * 0.105f).coerceIn(32f, 40f).sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Normal,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Spacer(Modifier.height(82.dp))
+
+            Text(
+                subtitle,
+                color = Muted,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontFamily = FontFamily.Serif,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = if (onClick != null) {
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onClick() }
+                        .padding(horizontal = 3.dp, vertical = 4.dp)
+                } else {
+                    Modifier.fillMaxWidth().padding(horizontal = 3.dp, vertical = 4.dp)
+                }
+            )
+        }
     }
 }
 
 @Composable
-private fun navColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Color.White, selectedTextColor = Color.White,
-    indicatorColor = Purple, unselectedIconColor = Muted, unselectedTextColor = Muted
-)
+private fun BottomTabs(selected: AppPage, model: MainViewModel) {
+    val selectedCircle = MaterialTheme.colorScheme.primaryContainer
+    val normalCircle = PanelRaised
+
+    Row(
+        Modifier.fillMaxWidth()
+            .background(PanelRaised)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BottomTabItem(
+            label = "Chats",
+            icon = Icons.Default.ChatBubble,
+            selected = selected == AppPage.INBOX,
+            selectedCircle = selectedCircle,
+            normalCircle = normalCircle,
+            onClick = model::backToInbox
+        )
+        BottomTabItem(
+            label = "Profile",
+            icon = Icons.Default.Person,
+            selected = selected == AppPage.PROFILE,
+            selectedCircle = selectedCircle,
+            normalCircle = normalCircle,
+            onClick = model::openProfile
+        )
+        BottomTabItem(
+            label = "Settings",
+            icon = Icons.Default.Settings,
+            selected = selected == AppPage.SETTINGS,
+            selectedCircle = selectedCircle,
+            normalCircle = normalCircle,
+            onClick = model::openSettings
+        )
+    }
+}
+
+@Composable
+private fun BottomTabItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    selectedCircle: Color,
+    normalCircle: Color,
+    onClick: () -> Unit
+) {
+    val iconTint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else TextMain
+
+    Column(
+        Modifier.weight(1f)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier.size(42.dp).clip(CircleShape)
+                .background(if (selected) selectedCircle else normalCircle),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(23.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            color = TextMain,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
+}
 
 @Composable
 private fun ChatRow(chat: ChatSummary, peer: ChatUser, onClick: () -> Unit) {
