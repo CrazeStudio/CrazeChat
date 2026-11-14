@@ -3736,13 +3736,16 @@ class _ChatScreenState extends State<ChatScreen> {
                           ? 'Delivered'
                           : 'Sent';
                       final fullText = message['clearText']?.toString() ?? '';
+                      final fullCharacters = fullText.characters;
                       final collapsed =
-                          fullText.length > _collapseAfterChars &&
+                          fullCharacters.length > _collapseAfterChars &&
                           searchQuery.isEmpty &&
                           !(messageId != null &&
                               _expandedIds.contains(messageId));
+                      // Truncate by grapheme clusters, never in the middle of
+                      // an emoji, combining mark, or multi-code-unit character.
                       final shownText = collapsed
-                          ? '${fullText.substring(0, _collapseAfterChars).trimRight()}\u2026'
+                          ? '${fullCharacters.take(_collapseAfterChars).toString().trimRight()}\u2026'
                           : fullText;
                       final meta = Row(
                         mainAxisSize: MainAxisSize.min,
@@ -3765,18 +3768,28 @@ class _ChatScreenState extends State<ChatScreen> {
                                       unawaited(_retryPendingMessages());
                                     }
                                   : null,
-                              child: Semantics(
-                                label: stateLabel,
-                                child: Icon(
-                                  state == 'queued'
-                                      ? Icons.schedule_rounded
-                                      : (state == 'read' || state == 'delivered')
-                                      ? Icons.done_all_rounded
-                                      : Icons.check_rounded,
-                                  size: 14,
-                                  color: state == 'read'
-                                      ? colors.primary
-                                      : colors.onSurfaceVariant,
+                              child: SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: Center(
+                                  child: Semantics(
+                                    button: state == 'queued',
+                                    label: stateLabel,
+                                    hint: state == 'queued'
+                                        ? 'Tap to retry sending this message'
+                                        : null,
+                                    child: Icon(
+                                      state == 'queued'
+                                          ? Icons.schedule_rounded
+                                          : (state == 'read' || state == 'delivered')
+                                          ? Icons.done_all_rounded
+                                          : Icons.check_rounded,
+                                      size: 14,
+                                      color: state == 'read'
+                                          ? colors.primary
+                                          : colors.onSurfaceVariant,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -3880,12 +3893,15 @@ class _ChatScreenState extends State<ChatScreen> {
                               ],
                             ),
                             if (collapsed && messageId != null)
-                              GestureDetector(
-                                behavior: HitTestBehavior.opaque,
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
                                 onTap: () =>
                                     setState(() => _expandedIds.add(messageId)),
                                 child: Padding(
-                                  padding: const EdgeInsets.only(top: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 4,
+                                  ),
                                   child: Text(
                                     'Read more',
                                     style: TextStyle(
