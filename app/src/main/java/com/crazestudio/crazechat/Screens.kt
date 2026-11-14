@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,8 +34,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -211,99 +216,361 @@ private fun BrandTitle(size: Int = 24) {
     }
 }
 
+private val AuthHeroShape = GenericShape { size, _ ->
+    val corner = size.width * 0.035f
+    val bottomEdge = size.height * 0.86f
+    moveTo(corner, 0f)
+    lineTo(size.width - corner, 0f)
+    quadraticTo(size.width, 0f, size.width, corner)
+    lineTo(size.width, bottomEdge)
+    cubicTo(
+        size.width * 0.98f, size.height * 0.95f,
+        size.width * 0.72f, size.height * 0.99f,
+        size.width * 0.5f, size.height * 0.99f
+    )
+    cubicTo(
+        size.width * 0.28f, size.height * 0.99f,
+        size.width * 0.02f, size.height * 0.95f,
+        0f, bottomEdge
+    )
+    lineTo(0f, corner)
+    quadraticTo(0f, 0f, corner, 0f)
+    close()
+}
+
 @Composable
 private fun AuthPage(model: MainViewModel, state: CrazeUiState) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
     val signup = state.signup
     val cleanUsername = username.trim()
     val validName = Regex("^[a-zA-Z0-9_]{3,20}$").matches(cleanUsername)
     val validPassword = password.length >= 12
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink, Panel)))) {
-        Box(Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 8.dp).size(240.dp)
-            .clip(CircleShape).background(Brush.radialGradient(listOf(Purple.copy(alpha = .16f), Color.Transparent))))
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())
-            .padding(horizontal = 25.dp, vertical = 26.dp), verticalArrangement = Arrangement.Center) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(68.dp).clip(RoundedCornerShape(23.dp))
-                    .background(Brush.linearGradient(listOf(Purple, PurpleLight)))
-                    .border(1.dp, Color.White.copy(alpha = .24f), RoundedCornerShape(23.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.ChatBubble, null, tint = Color.White, modifier = Modifier.size(34.dp))
-                }
-                Spacer(Modifier.height(15.dp))
-                Text("CrazeChat", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-.8).sp)
-                Spacer(Modifier.height(5.dp))
-                Text("PRIVATE. ENCRYPTED. YOURS.", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(34.dp))
-            Text(if (signup) "Create your account" else "Welcome back", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(if (signup) "Your private conversations start here." else "Sign in to continue your conversations.", color = Muted, fontSize = 14.sp)
-            Spacer(Modifier.height(22.dp))
-            Surface(color = Panel, shape = RoundedCornerShape(28.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Line.copy(alpha = .8f)), shadowElevation = 18.dp) {
-                Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(PanelRaised).padding(4.dp)) {
-                        AuthTab("Log in", !signup, Modifier.weight(1f)) { model.setSignup(false) }
-                        AuthTab("Sign up", signup, Modifier.weight(1f)) { model.setSignup(true) }
+    val canSubmit = validName && validPassword &&
+        (!signup || confirmation == password) && !state.loading
+    val darkMode = state.themeMode == "dark" ||
+        (state.themeMode == "system" && isSystemInDarkTheme())
+    val orange = if (darkMode) Color(0xFFFF7835) else Color(0xFFFF6B16)
+    val blue = if (darkMode) Color(0xFF91BFFF) else Color(0xFF0753B8)
+    val pageBackground = if (darkMode) Color(0xFF101318) else Color.White
+    val fieldFill = if (darkMode) Color(0xFF1C232D) else Color(0xFFFFF8F2)
+    val fieldText = if (darkMode) Color(0xFFF1F4F8) else Color(0xFF38465B)
+    val placeholderText = if (darkMode) Color(0xFFAEB9C8) else fieldText.copy(alpha = 0.82f)
+    val footerText = if (darkMode) Color(0xFFE7EAF0) else Color(0xFF171717)
+    val mutedText = if (darkMode) Color(0xFFB0BAC8) else Color(0xFF706A64)
+    val sideAccent = if (darkMode) Color(0xFFB94C1B).copy(alpha = 0.42f)
+        else Color(0xFFFF8C48).copy(alpha = 0.82f)
+    val disabledButton = if (darkMode) Color(0xFF49362D) else Color(0xFFE6DAD1)
+    val disabledButtonText = if (darkMode) Color(0xFFC8B7AE) else Color(0xFF83766F)
+
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(pageBackground)
+    ) {
+        val heroHeight = (maxHeight * 0.43f).coerceIn(190.dp, 360.dp)
+        val titleFontSize = if (maxWidth < 360.dp) 35.sp else 42.sp
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(heroHeight)
+                .clip(AuthHeroShape)
+                .background(orange),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "CrazeChat",
+                color = Color.White,
+                fontSize = 49.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-1.4).sp
+            )
+        }
+
+        // Soft orange shapes overlap the curved edge, matching the supplied reference.
+        Box(
+            Modifier.align(Alignment.TopStart)
+                .offset(x = (-38).dp, y = heroHeight * 0.80f)
+                .size(width = 154.dp, height = 86.dp)
+                .clip(RoundedCornerShape(50))
+                .background(sideAccent)
+        )
+        Box(
+            Modifier.align(Alignment.TopEnd)
+                .offset(x = 38.dp, y = heroHeight * 0.75f)
+                .size(width = 154.dp, height = 92.dp)
+                .clip(RoundedCornerShape(50))
+                .background(sideAccent)
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+                .padding(top = heroHeight + 24.dp)
+                .imePadding(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 560.dp)
+                ) {
+                    Text(
+                        text = if (signup) "Create Account" else "Welcome Back",
+                        color = blue,
+                        fontSize = titleFontSize,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1.1).sp,
+                        maxLines = 1
+                    )
+                    Spacer(Modifier.height(25.dp))
+
+                    Text(
+                        "Username",
+                        color = blue,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "Enter your username",
+                                color = placeholderText,
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 15.sp
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next
+                        ),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = fieldText,
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 15.sp
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = fieldFill,
+                            unfocusedContainerColor = fieldFill,
+                            focusedBorderColor = blue,
+                            unfocusedBorderColor = blue,
+                            focusedTextColor = fieldText,
+                            unfocusedTextColor = fieldText,
+                            cursorColor = blue,
+                            focusedPlaceholderColor = placeholderText,
+                            unfocusedPlaceholderColor = placeholderText
+                        )
+                    )
+
+                    Spacer(Modifier.height(17.dp))
+                    Text(
+                        "Password",
+                        color = blue,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "Enter your password",
+                                color = fieldText.copy(alpha = 0.82f),
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 15.sp
+                            )
+                        },
+                        trailingIcon = {
+                            TextButton(
+                                onClick = { passwordVisible = !passwordVisible },
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) {
+                                Text(
+                                    if (passwordVisible) "Hide" else "Show",
+                                    color = blue,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        },
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (canSubmit) model.authenticate(cleanUsername, password, signup)
+                            }
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = fieldText,
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 15.sp
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = fieldFill,
+                            unfocusedContainerColor = fieldFill,
+                            focusedBorderColor = blue,
+                            unfocusedBorderColor = blue,
+                            focusedTextColor = fieldText,
+                            unfocusedTextColor = fieldText,
+                            cursorColor = blue,
+                            focusedPlaceholderColor = fieldText,
+                            unfocusedPlaceholderColor = fieldText
+                        )
+                    )
+
+                    if (signup) {
+                        Spacer(Modifier.height(17.dp))
+                        Text(
+                            "Confirm Password",
+                            color = blue,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(7.dp))
+                        OutlinedTextField(
+                            value = confirmation,
+                            onValueChange = { confirmation = it },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            singleLine = true,
+                            placeholder = {
+                                Text(
+                                    "Enter your password again",
+                                    color = fieldText.copy(alpha = 0.82f),
+                                    fontFamily = FontFamily.Serif,
+                                    fontSize = 15.sp
+                                )
+                            },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = fieldText,
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 15.sp
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = fieldFill,
+                                unfocusedContainerColor = fieldFill,
+                                focusedBorderColor = blue,
+                                unfocusedBorderColor = blue,
+                                focusedTextColor = fieldText,
+                                unfocusedTextColor = fieldText,
+                                cursorColor = blue,
+                                focusedPlaceholderColor = fieldText,
+                                unfocusedPlaceholderColor = fieldText
+                            )
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Your encryption identity is created automatically and protected by your account password.",
+                            color = mutedText,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                        if (confirmation.isNotEmpty() && confirmation != password) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Passwords do not match.",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = { model.authenticate(cleanUsername, password, signup) },
+                        enabled = canSubmit,
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = orange,
+                            disabledContainerColor = disabledButton,
+                            disabledContentColor = disabledButtonText
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 2.dp,
+                            pressedElevation = 0.dp
+                        )
+                    ) {
+                        if (state.loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(9.dp))
+                        }
+                        Text(
+                            if (state.loading) "Please wait..." else if (signup) "Create Account" else "Log In",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!state.loading) {
+                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Default.ArrowForward, null, modifier = Modifier.size(18.dp))
+                        }
                     }
                     Spacer(Modifier.height(22.dp))
-                    FormLabel("USERNAME")
-                    DarkField(username, { username = it }, "Your username", leading = "@")
-                    Spacer(Modifier.height(16.dp))
-                    FormLabel("PASSWORD")
-                    DarkField(password, { password = it }, "Your password", password = true)
-                    if (signup) {
-                        Spacer(Modifier.height(16.dp))
-                        FormLabel("CONFIRM PASSWORD")
-                        DarkField(confirmation, { confirmation = it }, "Enter password again", password = true)
-                        Spacer(Modifier.height(14.dp))
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(PanelRaised).padding(13.dp),
-                            verticalAlignment = Alignment.Top) {
-                            Icon(Icons.Default.Shield, null, tint = PurpleLight, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Your encryption identity is generated automatically and protected by your account password. No separate phrase to manage.",
-                                color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
-                        }
-                        if (confirmation.isNotEmpty() && confirmation != password) {
-                            Spacer(Modifier.height(7.dp))
-                            Text("Passwords do not match.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(21.dp))
-                    Button(onClick = { model.authenticate(cleanUsername, password, signup) },
-                        enabled = validName && validPassword && (!signup || confirmation == password) && !state.loading,
-                        modifier = Modifier.fillMaxWidth().height(55.dp), shape = RoundedCornerShape(17.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE87532), disabledContainerColor = Line),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 5.dp, pressedElevation = 1.dp)) {
-                        Text(if (signup) "Create account" else "Log in", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(Modifier.height(15.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null, tint = Color(0xFF58D5B4), modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text("End-to-end encrypted direct messages", color = Color(0xFF9EADC4), fontSize = 10.sp)
-                    }
                 }
             }
-            Spacer(Modifier.height(18.dp))
-            Text("Your username is visible to other people. Your password and message contents are not.",
-                color = Color(0xFF8394AF), fontSize = 11.sp, lineHeight = 16.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (signup) "Already have an Account? " else "Don't have an Account? ",
+                    color = footerText,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 16.sp
+                )
+                Text(
+                    if (signup) "Log In" else "Create One",
+                    color = if (darkMode) Color.White else Color.Black,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable {
+                        model.setSignup(!signup)
+                    }
+                )
+            }
         }
     }
-}
-
-@Composable
-private fun AuthTab(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Box(
-        modifier.clip(RoundedCornerShape(15.dp))
-            .background(if (selected) PanelRaised else Color.Transparent)
-            .clickable(onClick = onClick).padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center
-    ) { Text(label, color = if (selected) TextMain else Muted, fontWeight = FontWeight.SemiBold) }
 }
 
 @Composable
