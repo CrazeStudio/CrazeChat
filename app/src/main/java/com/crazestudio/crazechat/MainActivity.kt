@@ -51,9 +51,6 @@ class MainActivity : ComponentActivity() {
         createNotificationChannels()
         chatModel = ViewModelProvider(this)[MainViewModel::class.java]
         setContent { CrazeChatRoot(chatModel) }
-        window.decorView.post {
-            consumeLaunchChatId()?.let(chatModel::openChatById)
-        }
     }
 
     override fun onResume() {
