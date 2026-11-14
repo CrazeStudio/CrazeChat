@@ -583,25 +583,32 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
     }
 
     Column(Modifier.fillMaxSize().background(Ink)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = model::backFromChat) { Icon(Icons.Default.ArrowBack, null, tint = TextMain) }
-            Avatar(peer?.username ?: "?", peer?.photoUrl, 43)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(peer?.username ?: "Conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text(if (state.keyVerified) "Verified contact key" else "Security check required",
-                    color = if (state.keyVerified) Green else Color(0xFFFFBF69), fontSize = 11.sp)
-            }
-            IconButton(onClick = { showSearch = !showSearch }) { Icon(Icons.Default.Search, "Search messages", tint = Muted) }
-            IconButton(onClick = { showFingerprint = true }) {
-                Icon(if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint,
-                    "Contact fingerprint", tint = if (state.keyVerified) Green else PurpleLight)
+        Surface(color = Color(0xFF0D1728), shadowElevation = 3.dp) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = model::backFromChat) { Icon(Icons.Default.ArrowBack, null, tint = TextMain) }
+                Avatar(peer?.username ?: "?", peer?.photoUrl, 45)
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(peer?.username ?: "Conversation", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).clip(CircleShape).background(if (state.keyVerified) Green else Color(0xFFFFBF69)))
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (state.keyVerified) "Verified contact" else "Verification required",
+                            color = Muted, fontSize = 10.sp)
+                    }
+                }
+                IconButton(onClick = { showSearch = !showSearch }) { Icon(Icons.Default.Search, "Search messages", tint = Muted) }
+                IconButton(onClick = { showFingerprint = true }) {
+                    Icon(if (state.keyVerified) Icons.Default.VerifiedUser else Icons.Default.Fingerprint,
+                        "Contact fingerprint", tint = if (state.keyVerified) Green else PurpleLight)
+                }
             }
         }
         if (showSearch) {
-            Box(Modifier.padding(horizontal = 14.dp)) { DarkField(state.chatSearch, model::setChatSearch, "Search in this conversation") }
-            Spacer(Modifier.height(7.dp))
+            Box(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                DarkField(state.chatSearch, model::setChatSearch, "Search in this conversation", leading = "⌕")
+            }
         }
         HorizontalDivider(color = Line.copy(alpha = .7f))
         if (!state.keyVerified) {
@@ -652,33 +659,34 @@ private fun ChatPage(model: MainViewModel, state: CrazeUiState) {
                 IconButton(onClick = model::clearReplyTarget) { Icon(Icons.Default.Close, "Cancel reply", tint = Muted) }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Bottom) {
+        Row(Modifier.fillMaxWidth().background(Color(0xFF0D1728)).padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Bottom) {
             OutlinedTextField(
-                value = input,
-                onValueChange = { if (it.length <= 1500) input = it },
+                value = input, onValueChange = { if (it.length <= 1500) input = it },
                 enabled = state.keyVerified && !state.composing,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Message", color = Muted) },
-                shape = RoundedCornerShape(23.dp),
+                placeholder = { Text(if (state.keyVerified) "Message" else "Verify contact to message", color = Muted, fontSize = 14.sp) },
+                shape = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Panel, unfocusedContainerColor = Panel,
-                    disabledContainerColor = Panel, focusedBorderColor = Purple,
-                    unfocusedBorderColor = Line, focusedTextColor = TextMain,
-                    unfocusedTextColor = TextMain, disabledTextColor = Muted, cursorColor = Purple
+                    focusedContainerColor = Color(0xFF17263B), unfocusedContainerColor = Color(0xFF17263B),
+                    disabledContainerColor = Color(0xFF17263B), focusedBorderColor = Color(0xFF4388FF),
+                    unfocusedBorderColor = Color(0xFF30435F), focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White, disabledTextColor = Muted, cursorColor = PurpleLight
                 ),
                 maxLines = 5
             )
             Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = { model.sendMessage(input.trim()); input = "" },
+            IconButton(onClick = { model.sendMessage(input.trim()); input = "" },
                 enabled = state.keyVerified && !state.composing && input.isNotBlank(),
-                modifier = Modifier.size(50.dp).clip(CircleShape).background(Purple)
-            ) {
+                modifier = Modifier.size(51.dp).clip(CircleShape).background(
+                    if (state.keyVerified && input.isNotBlank()) Brush.linearGradient(listOf(Color(0xFF286CF5), Color(0xFF4B9BFF)))
+                    else Brush.linearGradient(listOf(Color(0xFF26364F), Color(0xFF26364F)))
+                )) {
                 if (state.composing) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                 else Icon(Icons.Default.Send, "Send message", tint = Color.White)
             }
         }
-        Text("End-to-end encrypted on this device", color = Muted, fontSize = 10.sp,
+        Text("END-TO-END ENCRYPTED", color = Color(0xFF7286A4), fontSize = 9.sp, letterSpacing = 1.2.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
     }
 
