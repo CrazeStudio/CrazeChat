@@ -852,7 +852,7 @@ private fun PrivacyPage(model: MainViewModel, state: CrazeUiState) {
         Spacer(Modifier.height(12.dp))
         SecurityCard(Icons.Default.Lock, "Encrypted local vault", "Session data and cached message envelopes are protected using AES-256-GCM with a key held by Android Keystore.")
         SecurityCard(Icons.Default.Fingerprint, "Contact identity verification", "A contact's X25519 public-key fingerprint must be compared outside the chat and verified before remote messages can sync or send.")
-        SecurityCard(Icons.Default.Encrypted, "End-to-end message encryption", "X25519 key agreement, HKDF-SHA256 and AES-256-GCM encrypt message content on the device. The backend stores encrypted envelopes.")
+        SecurityCard(Icons.Default.Lock, "End-to-end message encryption", "X25519 key agreement, HKDF-SHA256 and AES-256-GCM encrypt message content on the device. The backend stores encrypted envelopes.")
         SecurityCard(Icons.Default.Code, "Native security layer", "libcraze.so validates request fields and holds an XOR-obfuscated build configuration. It increases reverse-engineering effort; it cannot make an APK-embedded gateway key secret.")
         Spacer(Modifier.height(8.dp))
         GradientButton("Lock CrazeChat") { model.lock() }
