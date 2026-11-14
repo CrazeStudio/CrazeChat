@@ -787,16 +787,26 @@ private fun InboxPage(model: MainViewModel, state: CrazeUiState) {
                             )
                         },
                         trailingIcon = {
-                            if (state.search.isNotEmpty()) {
-                                IconButton(onClick = { model.setSearch("") }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Muted)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (state.search.isNotEmpty()) {
+                                    IconButton(onClick = { model.setSearch("") }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Muted)
+                                    }
                                 }
-                            } else if (state.refreshingChats) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(19.dp),
-                                    color = Purple,
-                                    strokeWidth = 2.dp
-                                )
+                                IconButton(
+                                    onClick = { model.refreshChats(silent = false) },
+                                    enabled = !state.refreshingChats
+                                ) {
+                                    if (state.refreshingChats) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(19.dp),
+                                            color = Purple,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Refresh conversations", tint = Muted)
+                                    }
+                                }
                             }
                         },
                         shape = CircleShape,
