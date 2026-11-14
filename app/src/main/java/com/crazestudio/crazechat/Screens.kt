@@ -53,7 +53,16 @@ private val TextMain = Color(0xFFF7F5FC)
 @Composable
 fun CrazeChatRoot(model: MainViewModel = viewModel()) {
     val state by model.state.collectAsState()
+    val context = LocalContext.current
+    val activity = context as? MainActivity
     val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.ready) {
+        if (state.ready) activity?.consumeLaunchChatId()?.let(model::openChatById)
+    }
+    LaunchedEffect(state.screenSecureEnabled) {
+        activity?.setScreenSecure(state.screenSecureEnabled)
+    }
     LaunchedEffect(state.error) {
         state.error?.let { snackbar.showSnackbar(it); model.consumeMessage() }
     }
